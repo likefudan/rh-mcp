@@ -1,6 +1,8 @@
 # rh-mcp — Design
 
-Status: **design agreed, not implemented.** No code in this PR.
+Status: **design agreed, not implemented.** No code yet. The two open items
+that previously blocked the auth layer are resolved — see §5.0 for the
+discovery documents and §9 for what remains.
 
 ## 1. What this is
 
@@ -89,32 +91,100 @@ We supply three pieces:
 | `redirect_handler` | Opens the browser at the authorization URL |
 | `callback_handler` | One-shot `localhost` listener returning `AuthorizationCodeResult(code, state, iss)` |
 
-### 5.1 Client registration — open
+### 5.0 Discovery — resolved
 
-`OAuthClientProvider` supports dynamic client registration, and
-`redirect_uris` is required in the client metadata. Whether Robinhood permits
-DCR is **unverified** (this environment's egress policy blocks the host), and
-it decides the first-run experience:
+Both discovery documents are public and were read directly. Verbatim:
 
-- **DCR supported** — `rh-mcp login` self-registers. No `client_id` to manage.
-- **DCR not supported** — the user registers an app and supplies `client_id`
-  (and possibly a fixed redirect URI/port) via environment.
+`GET /.well-known/oauth-protected-resource/mcp/trading`
 
-Resolved by reading `registration_endpoint` from the authorization server's
-`/.well-known/oauth-authorization-server` document. Both paths are cheap; we
-build whichever the metadata dictates.
+```json
+{
+  "authorization_servers": ["https://agent.robinhood.com/mcp/trading"],
+  "bearer_methods_supported": ["header"],
+  "resource": "https://agent.robinhood.com/mcp/trading",
+  "scopes_supported": ["internal"]
+}
+```
 
-### 5.2 Scope
+`GET /.well-known/oauth-authorization-server`
 
-`login` requests the narrowest scope that permits reads. The exact scope
-strings are **unverified**, to be read from `scopes_supported` in the same
-metadata document. If Robinhood offers no granular scopes, we request none and
-accept the server's default rather than guessing a string that could fail
-authorization outright.
+```json
+{
+  "issuer": "https://agent.robinhood.com/mcp/trading",
+  "authorization_endpoint": "https://robinhood.com/oauth",
+  "token_endpoint": "https://api.robinhood.com/oauth2/token/",
+  "registration_endpoint": "https://agent.robinhood.com/oauth/trading/register",
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "response_types_supported": ["code"],
+  "code_challenge_methods_supported": ["S256"],
+  "scopes_supported": ["internal"],
+  "token_endpoint_auth_methods_supported": ["none"]
+}
+```
 
-Read-only is v0's scope request, not a client-enforced rule. When the executor
-later needs to trade, it widens the scope request here; the gating decision
-still belongs to the executor.
+Four consequences worth stating before §5.1 and §5.2 read them off:
+
+- **The client is public.** `token_endpoint_auth_methods_supported: ["none"]`
+  plus `code_challenge_methods_supported: ["S256"]` means PKCE-only, no client
+  secret. Nothing secret-shaped is ever stored except the tokens themselves.
+- **Three hosts are in play.** Issuer and registration live on
+  `agent.robinhood.com`, authorization on `robinhood.com`, token exchange on
+  `api.robinhood.com`. Any egress allowlist in front of the executor must
+  cover all three, and the browser leaves the issuer's origin during `login`.
+- **Issuer equals resource.** The authorization server identifier is the MCP
+  endpoint URL itself, so RFC 8707 resource-indicator handling and issuer
+  validation both compare against the same string.
+- **Discovery is served at both paths.** The issuer carries a path component
+  (`/mcp/trading`), so RFC 8414 wants
+  `/.well-known/oauth-authorization-server/mcp/trading`; the OIDC-style
+  root path also works and returns a byte-identical document. Whichever URL
+  the SDK probes first will succeed, so we do not pin one.
+  `/.well-known/openid-configuration` is 404 — this is OAuth, not OIDC, and
+  no ID token is issued.
+
+### 5.1 Client registration — resolved: DCR supported
+
+`registration_endpoint` is present. `rh-mcp login` self-registers on first
+run; there is no `client_id` for the user to obtain or manage, and no
+`RH_MCP_CLIENT_ID` in §7. `redirect_uris` still has to be supplied in the
+client metadata we register with, which means the callback listener's port is
+part of the registration and cannot drift between runs.
+
+The registration response is a credential-shaped object and is persisted
+through `FileTokenStorage.set_client_info` under the same `0600` rules as
+tokens (§5.3). Re-registering on every `login` would be wasteful and may be
+rate-limited; `get_client_info` returning a stored registration short-circuits
+it.
+
+**Untested from here:** whether the endpoint accepts an unauthenticated
+registration in practice, and whether it pins or rejects particular
+`redirect_uris` values. Both surface on the first real `login` and neither
+changes the design — only the error message we should write for them.
+
+### 5.2 Scope — resolved: one scope, `internal`
+
+`scopes_supported` is `["internal"]` in both documents. There is no granular
+scope, no read/write split, and the one value on offer is named in a way that
+suggests it was not written with third-party clients in mind.
+
+The §5.2 fallback therefore applies as written: **we request no scope** and
+accept whatever the server's default grant is, rather than sending a string we
+would be guessing at. Sending `internal` explicitly is the obvious
+alternative and we specifically do not, because a scope value that reads as
+server-internal is exactly the kind of thing that gets renamed without notice.
+
+This has one consequence the original text did not anticipate and which should
+be stated plainly: **read-only cannot be enforced at the scope layer.** The
+grant we receive is whatever `internal` confers, which presumably includes
+trading. v0 is read-only only in the sense that the client issues no writes
+and the CLI exposes no write command — a convention, not a boundary. Per §2
+that is consistent (gating belongs to the executor, and now it has to, because
+the authorization server will not do it for us), but "the token can trade" is
+a materially different security posture from "the token is scoped to reads,"
+and the executor's threat model has to account for a stored credential that is
+strictly more powerful than the client using it.
+
+When the executor later needs to trade, there is accordingly nothing to widen.
 
 ### 5.3 Token storage
 
@@ -186,7 +256,10 @@ Environment variables, overridable per-invocation by flags. No config file.
 | `RH_MCP_TRANSPORT` | `http` (default) or `stdio` |
 | `RH_MCP_URL` | Endpoint; defaults to the official server |
 | `RH_MCP_COMMAND` / `RH_MCP_ARGS` / `RH_MCP_ENV` / `RH_MCP_CWD` | stdio transport only |
-| `RH_MCP_CLIENT_ID` | Only if §5.1 resolves to "no DCR" |
+| `RH_MCP_CALLBACK_PORT` | Fixed port for the `login` callback listener; must match the registered `redirect_uris` (§5.1) |
+
+`RH_MCP_CLIENT_ID` is **dropped** — §5.1 resolved to "DCR supported", so there
+is no client ID for a user to supply.
 
 ## 8. Testing
 
@@ -200,15 +273,27 @@ tested with a fake authorization server rather than a live one.
 
 ## 9. Open items
 
-1. **`registration_endpoint` present?** (§5.1) — decides the login UX.
-2. **`scopes_supported` values** (§5.2) — decides what `login` requests.
+Both of the original blockers are **closed**; the discovery documents are
+transcribed in §5.0.
 
-Both come from two unauthenticated `curl`s against the server's discovery
-documents, and both must be answered before the auth layer is written.
+1. ~~**`registration_endpoint` present?**~~ Yes — DCR is supported, `login`
+   self-registers, no `client_id` to manage (§5.1).
+2. ~~**`scopes_supported` values?**~~ One value, `internal`. We request no
+   scope and take the default (§5.2).
+
+Nothing now blocks the auth layer. What remains are questions that can only be
+answered by running against the live server, none of which change the
+architecture:
+
+- Does `/oauth/trading/register` accept an unauthenticated registration, and
+  does it constrain `redirect_uris`? (§5.1)
+- Does the default grant actually permit reads without an explicit scope?
+- What does Robinhood's tool surface look like — needed for the CLI's
+  ergonomics, not for the client, which never hardcodes tool names (§3).
 
 ## 10. Build order
 
 1. **This document.**
 2. Non-auth cleanups: HTTP-first defaults, pagination fix, `--output`/exit
    codes, stream discipline. Fully testable offline.
-3. Auth, once §9 is resolved.
+3. Auth. Unblocked as of §9; §5.0 supplies every value it needs.

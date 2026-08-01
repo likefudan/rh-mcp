@@ -302,6 +302,33 @@ class TestResultEnvelope:
         with pytest.raises(GatewayError):
             self._make(data=payload)
 
+    @pytest.mark.parametrize(
+        "value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
+    )
+    def test_rejects_non_finite_floats(self, value: float) -> None:
+        """RFC 8259 has no NaN/Infinity literal, so these are not decoded JSON.
+
+        A NaN that reached a consumer would fail open, not closed: `nan > x`
+        and `nan < x` are both False, so a NaN price silently passes every
+        downstream threshold, risk gate and sanity bound.
+        """
+        with pytest.raises(GatewayError) as excinfo:
+            self._make(data={"price": value})
+        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
+
+    @pytest.mark.parametrize(
+        "value", [float("nan"), float("inf"), float("-inf")], ids=["nan", "inf", "-inf"]
+    )
+    def test_rejects_non_finite_floats_nested(self, value: float) -> None:
+        with pytest.raises(GatewayError):
+            self._make(data={"rows": [{"price": value}]})
+
+    def test_rejects_a_payload_decoded_from_a_non_finite_literal(self) -> None:
+        """`json.loads` accepts the non-standard literals by default."""
+        payload = json.loads('{"price": NaN, "cap": Infinity}')
+        with pytest.raises(GatewayError):
+            self._make(data=payload)
+
     def test_accepts_the_json_scalar_types(self) -> None:
         payload = {"s": "x", "i": 1, "f": 1.5, "t": True, "n": None, "l": [1, "a", None]}
         assert self._make(data=payload).to_json_dict()["data"] == payload

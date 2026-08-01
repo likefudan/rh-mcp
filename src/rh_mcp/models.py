@@ -18,6 +18,7 @@ from provider-derived data, so it raises `protocol_error` (exit 1).
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -86,8 +87,9 @@ def _freeze_json(value: Any, *, depth: int = 0) -> Any:
 
     The walk also enforces that the payload really is decoded JSON. A set, a
     `bytearray`, or a custom object would otherwise fall through by reference
-    and stay mutable through the envelope, and a non-string key would make
-    `to_json_dict()` return something `json.dumps` cannot serialize.
+    and stay mutable through the envelope; a non-string key would make
+    `to_json_dict()` return something `json.dumps` cannot serialize; and a
+    non-finite float is not a JSON value at all.
     """
     if depth > _MAX_STRUCTURAL_DEPTH:
         _invalid(
@@ -106,6 +108,15 @@ def _freeze_json(value: Any, *, depth: int = 0) -> Any:
         return MappingProxyType(frozen)
     if isinstance(value, (list, tuple)):
         return tuple(_freeze_json(item, depth=depth + 1) for item in value)
+    # RFC 8259 has no NaN/Infinity literal, so a non-finite float is not
+    # decoded JSON any more than a `Decimal` is. `json.loads` produces them
+    # from the non-standard literals by default, and `json.dumps` re-emits
+    # them by default as unparseable output — a documented Python extension,
+    # not evidence of validity. It also fails *open*: `nan > x` and `nan < x`
+    # are both False, so a NaN price would pass every downstream threshold,
+    # risk gate and sanity bound a consumer applies (§7.1, §10).
+    if isinstance(value, float) and not math.isfinite(value):
+        _invalid("data may not contain NaN or Infinity", ErrorCode.PROTOCOL_ERROR)
     # `bool` is a subclass of `int`, so it is covered here.
     if value is None or isinstance(value, (str, int, float)):
         return value

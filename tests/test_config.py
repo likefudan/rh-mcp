@@ -1,9 +1,24 @@
+import dataclasses
+
 import pytest
 
-from rh_mcp.config import GatewayConfig, ResourceLimits
+from rh_mcp.config import PRODUCTION_RESOURCE_URL, GatewayConfig, ResourceLimits
 from rh_mcp.errors import ErrorCode, GatewayError
 
 DIGEST = "sha256:" + "a" * 64
+
+
+def _dev(**overrides: object) -> GatewayConfig:
+    """A development config that is valid apart from the overridden fields."""
+    fields: dict[str, object] = {
+        "expected_manifest_digest": DIGEST,
+        "mode": "development",
+        "credential_adapter": "in_memory",
+        "credential_namespace": "dev-test",
+        "dev_url": "http://127.0.0.1:9999/mcp",
+    }
+    fields.update(overrides)
+    return GatewayConfig(**fields)  # type: ignore[arg-type]
 
 
 def test_valid_production_config() -> None:
@@ -91,22 +106,227 @@ def test_callback_port_range() -> None:
         GatewayConfig(expected_manifest_digest=DIGEST, callback_port=80)
 
 
-def test_callback_path_must_start_with_slash() -> None:
-    with pytest.raises(GatewayError):
-        GatewayConfig(expected_manifest_digest=DIGEST, callback_path="callback")
+@pytest.mark.parametrize(
+    "bad_path",
+    [
+        "callback",
+        "/callback?evil=1",
+        "/cb\r\nX-Injected: 1",
+        "/cb#frag",
+        "/a//b",
+        "/../etc/passwd",
+        "/cb/..",
+        "/cb space",
+        "/cb%2e%2e",
+        "//evil.example.com/cb",
+    ],
+)
+def test_rejects_unsafe_callback_path(bad_path: str) -> None:
+    with pytest.raises(GatewayError) as excinfo:
+        GatewayConfig(expected_manifest_digest=DIGEST, callback_path=bad_path)
+    assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+
+@pytest.mark.parametrize("good_path", ["/", "/callback", "/oauth/callback", "/cb-1_2.3~x"])
+def test_accepts_conservative_callback_path(good_path: str) -> None:
+    assert GatewayConfig(expected_manifest_digest=DIGEST, callback_path=good_path).callback_path
+
+
+def test_rejects_expected_digest_with_trailing_newline() -> None:
+    """A digest sourced from a file or CI variable often carries '\\n' (§9)."""
+    with pytest.raises(GatewayError) as excinfo:
+        GatewayConfig(expected_manifest_digest=DIGEST + "\n")
+    assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+
+class TestDevUrl:
+    """§3/§9: a development target can never be the production endpoint."""
+
+    PRODUCTION_SPELLINGS = [
+        PRODUCTION_RESOURCE_URL,
+        "https://AGENT.ROBINHOOD.COM/mcp/trading",
+        "https://Agent.Robinhood.Com/mcp/trading",
+        "https://agent.robinhood.com./mcp/trading",
+        "https://agent.robinhood.com../mcp/trading",
+        "https://agent.robinhood.com:443/mcp/trading",
+        "http://agent.robinhood.com/mcp/trading",
+        "https://localhost@agent.robinhood.com/mcp/trading",
+        "https://127.0.0.1@agent.robinhood.com/mcp/trading",
+        "https://user:pass@agent.robinhood.com/mcp/trading",
+        "https://agent.robinhood.com\t/mcp/trading",
+        "https://agent.robinhood.com\n/mcp/trading",
+        "https://agent.robinhood.com /mcp/trading",
+        "https://localhost。agent.robinhood.com/mcp/trading",
+    ]
+
+    @pytest.mark.parametrize("url", PRODUCTION_SPELLINGS)
+    def test_rejects_every_production_spelling(self, url: str) -> None:
+        with pytest.raises(GatewayError) as excinfo:
+            _dev(dev_url=url)
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://attacker.example.com/mcp",
+            "https://example.com/mcp",
+            "not even a url ://",
+            "",
+            "localhost:9999",
+            "ftp://127.0.0.1/mcp",
+            "file:///etc/passwd",
+            "http://0.0.0.0:9999/mcp",
+            "http://[::]:9999/mcp",
+            "http://169.254.169.254/latest/meta-data",
+            "http://10.0.0.1/mcp",
+            "http://127.0.0.1.attacker.example.com/mcp",
+            "http://localhost.attacker.example.com/mcp",
+            "http://127.1/mcp",
+            "http://2130706433/mcp",
+            "http://[::1]x/mcp",
+            "http://user@127.0.0.1/mcp",
+        ],
+    )
+    def test_rejects_non_loopback_or_unparseable(self, url: str) -> None:
+        with pytest.raises(GatewayError) as excinfo:
+            _dev(dev_url=url)
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://localhost:9999",
+            "http://localhost:9999/mcp",
+            "https://localhost/mcp",
+            "http://LOCALHOST:9999/mcp",
+            "http://localhost./mcp",
+            "http://127.0.0.1:9999/mcp",
+            "http://127.0.0.53/mcp",
+            "https://[::1]:8080/mcp",
+            "HTTP://127.0.0.1:9999/mcp",
+        ],
+    )
+    def test_accepts_loopback_targets(self, url: str) -> None:
+        assert _dev(dev_url=url).effective_resource_url == url
+
+    def test_effective_resource_url_is_never_production_in_development(self) -> None:
+        for url in self.PRODUCTION_SPELLINGS:
+            with pytest.raises(GatewayError):
+                assert _dev(dev_url=url).effective_resource_url is None
+
+    def test_error_does_not_echo_url_query(self) -> None:
+        """§7.3: public errors never contain URLs with queries."""
+        with pytest.raises(GatewayError) as excinfo:
+            _dev(dev_url="http://evil.example.com/mcp?token=SUPERSECRETVALUE")
+        assert "SUPERSECRETVALUE" not in str(excinfo.value)
+        assert "SUPERSECRETVALUE" not in repr(excinfo.value)
+
+    def test_parse_failure_does_not_chain_a_url_bearing_exception(self) -> None:
+        """`urlsplit` reports a bad port by quoting it; §7.3 forbids a traceback."""
+        with pytest.raises(GatewayError) as excinfo:
+            _dev(dev_url="http://127.0.0.1:PORTSECRET/mcp")
+        assert "PORTSECRET" not in str(excinfo.value)
+        assert excinfo.value.__cause__ is None
+        assert excinfo.value.__suppress_context__
+
+    def test_rejects_naming_two_dev_targets(self) -> None:
+        with pytest.raises(GatewayError) as excinfo:
+            _dev(dev_url="http://127.0.0.1:9999/mcp", dev_stdio_command="python")
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+    def test_rejects_stdio_settings_alongside_dev_url(self) -> None:
+        with pytest.raises(GatewayError):
+            _dev(dev_url="http://127.0.0.1:9999/mcp", dev_stdio_env={"FOO": "bar"})
+
+
+class TestDevStdioEnv:
+    def test_is_copied_at_construction(self) -> None:
+        source = {"FOO": "bar"}
+        config = _dev(dev_url=None, dev_stdio_command="python", dev_stdio_env=source)
+        source["LD_PRELOAD"] = "/tmp/evil.so"
+        assert dict(config.dev_stdio_env) == {"FOO": "bar"}
+
+    def test_is_not_mutable_through_the_config(self) -> None:
+        config = _dev(dev_url=None, dev_stdio_command="python", dev_stdio_env={"FOO": "bar"})
+        with pytest.raises(TypeError):
+            config.dev_stdio_env["LD_PRELOAD"] = "/tmp/evil.so"  # type: ignore[index]
+
+    def test_stdio_args_coerced_to_tuple(self) -> None:
+        args = ["-m", "fake_server"]
+        config = _dev(dev_url=None, dev_stdio_command="python", dev_stdio_args=args)
+        args.append("--evil")
+        assert config.dev_stdio_args == ("-m", "fake_server")
+
+
+# (field name, ceiling, whether zero is a legal value). Hard-coded on purpose:
+# if a ceiling in config.py is loosened, this table must be edited too.
+LIMIT_BOUNDS: dict[str, tuple[float, bool]] = {
+    "connect_timeout_s": (30.0, False),
+    "read_timeout_s": (60.0, False),
+    "total_timeout_s": (120.0, False),
+    "oauth_callback_timeout_s": (600.0, False),
+    "discovery_timeout_s": (120.0, False),
+    "pagination_timeout_s": (120.0, False),
+    "max_discovery_pages": (200, False),
+    "max_discovery_tools": (5_000, False),
+    "max_discovery_bytes": (16_777_216, False),
+    "max_cursor_repeats": (0, True),
+    "max_concurrent_calls": (32, False),
+    "max_refresh_attempts": (1, False),
+    "max_request_bytes": (1_048_576, False),
+    "max_response_bytes": (16_777_216, False),
+    "max_json_depth": (64, False),
+    "max_response_nodes": (1_000_000, False),
+    "max_response_string_length": (1_048_576, False),
+}
 
 
 class TestResourceLimits:
     def test_defaults_are_valid(self) -> None:
         ResourceLimits()
 
-    def test_rejects_zero(self) -> None:
-        with pytest.raises(GatewayError):
-            ResourceLimits(connect_timeout_s=0)
+    def test_bounds_table_covers_every_field(self) -> None:
+        assert set(LIMIT_BOUNDS) == {f.name for f in dataclasses.fields(ResourceLimits)}
 
-    def test_rejects_above_ceiling(self) -> None:
+    @pytest.mark.parametrize("name", sorted(LIMIT_BOUNDS))
+    def test_defaults_are_within_the_documented_ceiling(self, name: str) -> None:
+        ceiling, allows_zero = LIMIT_BOUNDS[name]
+        default = getattr(ResourceLimits(), name)
+        assert default <= ceiling
+        assert default >= (0 if allows_zero else 1)
+
+    @pytest.mark.parametrize("name", sorted(LIMIT_BOUNDS))
+    def test_rejects_zero_unless_allowed(self, name: str) -> None:
+        _ceiling, allows_zero = LIMIT_BOUNDS[name]
+        if allows_zero:
+            ResourceLimits(**{name: 0})
+            return
+        with pytest.raises(GatewayError) as excinfo:
+            ResourceLimits(**{name: 0})
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+    @pytest.mark.parametrize("name", sorted(LIMIT_BOUNDS))
+    def test_rejects_negative(self, name: str) -> None:
+        with pytest.raises(GatewayError) as excinfo:
+            ResourceLimits(**{name: -1})
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+    @pytest.mark.parametrize("name", sorted(LIMIT_BOUNDS))
+    def test_rejects_above_ceiling(self, name: str) -> None:
+        ceiling, _allows_zero = LIMIT_BOUNDS[name]
+        with pytest.raises(GatewayError) as excinfo:
+            ResourceLimits(**{name: ceiling + 1})
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+    @pytest.mark.parametrize("name", sorted(LIMIT_BOUNDS))
+    def test_accepts_exactly_the_ceiling(self, name: str) -> None:
+        ceiling, _allows_zero = LIMIT_BOUNDS[name]
+        assert getattr(ResourceLimits(**{name: ceiling}), name) == ceiling
+
+    def test_refresh_attempts_ceiling_matches_the_single_refresh_rule(self) -> None:
+        """§5.1/§8: a coordinated refresh may be attempted once."""
         with pytest.raises(GatewayError):
-            ResourceLimits(max_concurrent_calls=1000)
+            ResourceLimits(max_refresh_attempts=2)
 
 
 class TestFromEnv:
@@ -160,3 +380,39 @@ class TestFromEnv:
                     "RH_MCP_DEV_STDIO_ENV": "not-a-pair",
                 }
             )
+
+    def test_malformed_dev_env_pair_does_not_echo_its_value(self) -> None:
+        """§7.3: RH_MCP_DEV_STDIO_ENV carries secrets; never reflect one back."""
+        with pytest.raises(GatewayError) as excinfo:
+            GatewayConfig.from_env(
+                environ={
+                    "RH_MCP_EXPECTED_MANIFEST_DIGEST": DIGEST,
+                    "RH_MCP_DEV_STDIO_ENV": "TOKEN=abc,supersecret-bearer-value",
+                }
+            )
+        assert "supersecret-bearer-value" not in str(excinfo.value)
+        assert "supersecret-bearer-value" not in repr(excinfo.value)
+        assert "abc" not in str(excinfo.value)
+
+    def test_dev_env_pair_with_bad_key_does_not_echo_its_value(self) -> None:
+        with pytest.raises(GatewayError) as excinfo:
+            GatewayConfig.from_env(
+                environ={
+                    "RH_MCP_EXPECTED_MANIFEST_DIGEST": DIGEST,
+                    "RH_MCP_DEV_STDIO_ENV": "BAD KEY=supersecret-bearer-value",
+                }
+            )
+        assert "supersecret-bearer-value" not in str(excinfo.value)
+
+    def test_dev_url_from_env_is_validated(self) -> None:
+        with pytest.raises(GatewayError) as excinfo:
+            GatewayConfig.from_env(
+                environ={
+                    "RH_MCP_EXPECTED_MANIFEST_DIGEST": DIGEST,
+                    "RH_MCP_MODE": "development",
+                    "RH_MCP_CREDENTIAL_ADAPTER": "file_dev",
+                    "RH_MCP_CREDENTIAL_NAMESPACE": "dev-x",
+                    "RH_MCP_DEV_URL": PRODUCTION_RESOURCE_URL,
+                }
+            )
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR

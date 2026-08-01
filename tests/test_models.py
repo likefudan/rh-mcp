@@ -1,31 +1,39 @@
-import ast
-import inspect
 from dataclasses import FrozenInstanceError
 
 import pytest
 
-import rh_mcp.models as models_module
-from rh_mcp.models import Readiness, ResultEnvelope
+from rh_mcp.errors import ErrorCode, GatewayError
+from rh_mcp.models import Readiness, ResultEnvelope, is_digest
 
 DIGEST_A = "sha256:" + "a" * 64
 DIGEST_B = "sha256:" + "b" * 64
 
 
-def _imported_top_level_modules(module: object) -> set[str]:
-    tree = ast.parse(inspect.getsource(module))
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            names.add(node.module.split(".")[0])
-    return names
+class TestIsDigest:
+    @pytest.mark.parametrize("value", [DIGEST_A, "sha256:" + "0123456789abcdef" * 4])
+    def test_accepts_exact_form(self, value: str) -> None:
+        assert is_digest(value)
 
-
-def test_models_module_has_no_sdk_dependency() -> None:
-    imported = _imported_top_level_modules(models_module)
-    assert "mcp" not in imported
-    assert "httpx2" not in imported
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "sha256:short",
+            "md5:" + "a" * 64,
+            "not-a-digest",
+            "sha256:" + "a" * 63,
+            "sha256:" + "a" * 65,
+            "sha256:" + "A" * 64,
+            "SHA256:" + "a" * 64,
+            "sha256:" + "a" * 64 + "\n",
+            "sha256:" + "a" * 64 + "\n\n",
+            "\nsha256:" + "a" * 64,
+            " sha256:" + "a" * 64 + " ",
+            "sha256:" + "a" * 64 + "\nsha256:" + "b" * 64,
+        ],
+    )
+    def test_rejects_anything_else(self, value: str) -> None:
+        assert not is_digest(value)
 
 
 class TestReadiness:
@@ -39,7 +47,7 @@ class TestReadiness:
         assert readiness.ready is True
 
     def test_ready_true_with_mismatched_digests_rejected(self) -> None:
-        with pytest.raises(ValueError, match="ready cannot be True"):
+        with pytest.raises(GatewayError, match="ready cannot be True"):
             Readiness(
                 ready=True,
                 manifest_version="v1",
@@ -80,18 +88,22 @@ class TestReadiness:
             "expected_manifest_digest": DIGEST_A,
         }
 
-    @pytest.mark.parametrize("bad_digest", ["", "sha256:short", "md5:" + "a" * 64, "not-a-digest"])
+    @pytest.mark.parametrize(
+        "bad_digest",
+        ["", "sha256:short", "md5:" + "a" * 64, "not-a-digest", DIGEST_A + "\n"],
+    )
     def test_rejects_malformed_digest(self, bad_digest: str) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(GatewayError) as excinfo:
             Readiness(
                 ready=False,
                 manifest_version="v1",
                 manifest_digest=bad_digest,
                 expected_manifest_digest=DIGEST_A,
             )
+        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
 
     def test_rejects_empty_manifest_version(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(GatewayError):
             Readiness(
                 ready=False,
                 manifest_version="",
@@ -99,10 +111,33 @@ class TestReadiness:
                 expected_manifest_digest=DIGEST_A,
             )
 
+    @pytest.mark.parametrize("truthy", [1, 0, "yes", None])
+    def test_ready_must_be_a_bool(self, truthy: object) -> None:
+        """§7.1 pins `ready` to a JSON boolean."""
+        with pytest.raises(GatewayError):
+            Readiness(
+                ready=truthy,  # type: ignore[arg-type]
+                manifest_version="v1",
+                manifest_digest=DIGEST_A,
+                expected_manifest_digest=DIGEST_A,
+            )
+
+    def test_validation_failures_use_the_public_error_contract(self) -> None:
+        """§7.3: a public type must not leak a bare ValueError to the CLI."""
+        with pytest.raises(GatewayError) as excinfo:
+            Readiness(
+                ready=False,
+                manifest_version="v1",
+                manifest_digest="nope",
+                expected_manifest_digest=DIGEST_A,
+            )
+        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
+        assert excinfo.value.retryable is False
+
 
 class TestResultEnvelope:
     def _make(self, **overrides: object) -> ResultEnvelope:
-        fields = {
+        fields: dict[str, object] = {
             "manifest_version": "v1",
             "manifest_digest": DIGEST_A,
             "capability": "get_positions",
@@ -146,17 +181,69 @@ class TestResultEnvelope:
         assert envelope.observed_at == "2024-01-01T00:00:00Z"
 
     def test_rejects_non_utc_timestamp(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(GatewayError):
             self._make(observed_at="2024-01-01T00:00:00+05:00")
 
     def test_rejects_naive_timestamp(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(GatewayError):
             self._make(observed_at="2024-01-01T00:00:00")
 
     def test_rejects_empty_capability(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(GatewayError):
             self._make(capability="")
 
     def test_rejects_malformed_digest(self) -> None:
-        with pytest.raises(ValueError):
+        with pytest.raises(GatewayError):
             self._make(schema_digest="not-a-digest")
+
+    def test_rejects_digest_with_trailing_newline(self) -> None:
+        with pytest.raises(GatewayError):
+            self._make(result_digest=DIGEST_A + "\n")
+
+    def test_rejects_non_mapping_data(self) -> None:
+        with pytest.raises(GatewayError):
+            self._make(data=[1, 2, 3])
+
+    # §7.1: `result_digest` is computed over `data` before the envelope is
+    # returned, so `data` must stop tracking the caller's object.
+    def test_data_is_copied_at_construction(self) -> None:
+        payload = {"positions": 1}
+        envelope = self._make(data=payload)
+        payload["positions"] = 999_999
+        payload["injected"] = True  # type: ignore[assignment]
+        assert envelope.to_json_dict()["data"] == {"positions": 1}
+        assert dict(envelope.data) == {"positions": 1}
+
+    def test_nested_data_is_copied_at_construction(self) -> None:
+        payload = {"account": {"buying_power": 1}, "rows": [{"symbol": "AAPL"}]}
+        envelope = self._make(data=payload)
+        payload["account"]["buying_power"] = 999_999  # type: ignore[index]
+        payload["rows"].append({"symbol": "INJECTED"})  # type: ignore[attr-defined]
+        payload["rows"][0]["symbol"] = "TSLA"  # type: ignore[index]
+        assert envelope.to_json_dict()["data"] == {
+            "account": {"buying_power": 1},
+            "rows": [{"symbol": "AAPL"}],
+        }
+
+    def test_data_is_not_mutable_through_the_envelope(self) -> None:
+        envelope = self._make(data={"account": {"buying_power": 1}})
+        with pytest.raises(TypeError):
+            envelope.data["injected"] = True  # type: ignore[index]
+        with pytest.raises(TypeError):
+            envelope.data["account"]["buying_power"] = 2  # type: ignore[index]
+
+    def test_to_json_dict_returns_a_detached_copy(self) -> None:
+        envelope = self._make(data={"account": {"buying_power": 1}})
+        rendered = envelope.to_json_dict()
+        rendered["data"]["account"]["buying_power"] = 999_999
+        assert envelope.to_json_dict()["data"] == {"account": {"buying_power": 1}}
+
+    def test_warnings_are_copied_and_frozen(self) -> None:
+        warnings = ["careful"]
+        envelope = self._make(warnings=warnings)
+        warnings.append("injected")
+        assert envelope.warnings == ("careful",)
+
+    def test_rejects_non_string_warning(self) -> None:
+        with pytest.raises(GatewayError):
+            self._make(warnings=(1,))

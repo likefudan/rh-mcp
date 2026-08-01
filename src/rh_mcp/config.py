@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import ipaddress
 import os
+import re
 import shlex
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Literal, NoReturn
+from urllib.parse import urlsplit
 
 from rh_mcp.errors import ErrorCode, GatewayError
-from rh_mcp.models import DIGEST_PATTERN
+from rh_mcp.models import is_digest
 
 PRODUCTION_RESOURCE_URL = "https://agent.robinhood.com/mcp/trading"
 
@@ -21,37 +25,140 @@ _PRODUCTION_ADAPTERS: frozenset[CredentialAdapter] = frozenset({"keychain"})
 _DEVELOPMENT_ADAPTERS: frozenset[CredentialAdapter] = frozenset({"file_dev", "in_memory"})
 _DEV_NAMESPACE_PREFIX = "dev-"
 
+# The only registrable hostname a development target may use. Everything else
+# must be a loopback IP literal, which is what makes a production spelling of
+# `dev_url` unrepresentable rather than merely blocklisted (DESIGN.md §3, §9).
+_LOOPBACK_HOSTNAMES = frozenset({"localhost"})
+_DEV_URL_SCHEMES = frozenset({"http", "https"})
 
-def _fail(message: str) -> NoReturn:
-    raise GatewayError(ErrorCode.CONFIGURATION_ERROR, message)
+# A registered redirect URI is compared against a request path that carries no
+# query or fragment, so an "exact callback path" (§5.1) is one path with
+# unreserved characters only: no query, fragment, whitespace, CR/LF, percent
+# escape, empty segment, or dot segment.
+_CALLBACK_PATH_PATTERN = re.compile(r"\A/(?:[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*)?\Z")
+
+# Conventional environment-variable name shape; a value is never echoed.
+_ENV_KEY_PATTERN = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
+
+
+def _fail(message: str, *, suppress_context: bool = False) -> NoReturn:
+    """Raise the stable configuration error (DESIGN.md §7.3).
+
+    `suppress_context` drops the chained exception when the underlying error
+    quotes the input it choked on — `urlsplit` reports a bad port by echoing
+    it, which would put a fragment of a URL into a displayed traceback.
+    """
+    error = GatewayError(ErrorCode.CONFIGURATION_ERROR, message)
+    if suppress_context:
+        raise error from None
+    raise error
 
 
 def _bounded(name: str, value: float, *, ceiling: float) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        _fail(f"{name} must be a number, got {type(value).__name__}")
     if not (0 < value <= ceiling):
         _fail(f"{name} must be > 0 and <= {ceiling}, got {value!r}")
 
 
-def _bounded_int(name: str, value: int, *, ceiling: int) -> None:
-    if not (0 < value <= ceiling):
-        _fail(f"{name} must be > 0 and <= {ceiling}, got {value!r}")
+def _bounded_int(name: str, value: int, *, ceiling: int, floor: int = 1) -> None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        _fail(f"{name} must be an int, got {type(value).__name__}")
+    if not (floor <= value <= ceiling):
+        _fail(f"{name} must be >= {floor} and <= {ceiling}, got {value!r}")
+
+
+def _is_loopback_host(host: str) -> bool:
+    """Whether `host` can only ever resolve to this machine.
+
+    Names are an allowlist of exactly `localhost`; everything else must be an
+    IP literal that `ipaddress` agrees is loopback. A name such as
+    `localhost.attacker.example.com`, a decimal or shorthand IPv4 form, or any
+    routable literal therefore fails closed.
+    """
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host in _LOOPBACK_HOSTNAMES
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        return address.ipv4_mapped.is_loopback
+    return address.is_loopback
+
+
+def _validate_dev_url(url: str) -> None:
+    """Constrain a development endpoint to a local server (DESIGN.md §3, §9).
+
+    The production endpoint, its OAuth hosts, and any other remote host are
+    unrepresentable here by construction: a development login must not be able
+    to run an unpinned OAuth flow against production and drop a write-capable
+    `internal`-scope token into a development credential store.
+
+    Errors report the scheme or host at most, never the URL: §7.3 forbids
+    putting a URL with a query into a public error.
+    """
+    # `urlsplit` silently strips ASCII tab/newline, so a value containing them
+    # would be validated in a different form than the one stored.
+    if any(c.isspace() or ord(c) < 0x20 or ord(c) == 0x7F for c in url):
+        _fail("dev_url must not contain whitespace or control characters")
+
+    try:
+        parsed = urlsplit(url)
+        host = parsed.hostname
+        _port = parsed.port  # raises ValueError on a malformed port
+        username = parsed.username
+        password = parsed.password
+    except ValueError:
+        _fail("dev_url must be a parseable http(s) URL", suppress_context=True)
+
+    scheme = parsed.scheme.lower()
+    if scheme not in _DEV_URL_SCHEMES:
+        _fail(f"dev_url scheme must be 'http' or 'https', got {scheme!r}")
+    if username is not None or password is not None:
+        _fail("dev_url must not contain userinfo")
+    if not host:
+        _fail("dev_url must name a host")
+
+    # A trailing root label ('localhost.') is the same name; strip it before
+    # the comparison so the allowlist cannot be side-stepped by spelling.
+    if not _is_loopback_host(host.rstrip(".")):
+        _fail(
+            "dev_url host must be a loopback literal or 'localhost' so a development "
+            f"target can never be a remote endpoint, got {host!r}"
+        )
 
 
 @dataclass(frozen=True)
 class ResourceLimits:
-    """Bounded timeouts/concurrency/payload limits (DESIGN.md §8)."""
+    """Bounded timeouts/concurrency/payload limits (DESIGN.md §8).
+
+    Every bound §8 enumerates has a field here, including the response node
+    count and string length that stop a depth- and byte-bounded payload from
+    still being a decode bomb. Ceilings are hard maximums: a deployment may
+    tighten a limit but never loosen one past the reviewed value.
+    """
 
     connect_timeout_s: float = 5.0
     read_timeout_s: float = 10.0
     total_timeout_s: float = 30.0
     oauth_callback_timeout_s: float = 120.0
     discovery_timeout_s: float = 30.0
+    pagination_timeout_s: float = 60.0
     max_discovery_pages: int = 20
     max_discovery_tools: int = 500
+    max_discovery_bytes: int = 4_194_304
+    # §6.2 makes a repeated pagination cursor a fail-closed readiness
+    # condition, so the reviewed maximum is zero repeats and the ceiling
+    # forbids a deployment from allowing any.
+    max_cursor_repeats: int = 0
     max_concurrent_calls: int = 4
+    # §5.1/§8: a coordinated refresh may be attempted once. The ceiling equals
+    # the default so no configuration can exceed the design's own bound.
     max_refresh_attempts: int = 1
     max_request_bytes: int = 65_536
     max_response_bytes: int = 1_048_576
     max_json_depth: int = 16
+    max_response_nodes: int = 100_000
+    max_response_string_length: int = 262_144
 
     def __post_init__(self) -> None:
         _bounded("connect_timeout_s", self.connect_timeout_s, ceiling=30.0)
@@ -59,13 +166,20 @@ class ResourceLimits:
         _bounded("total_timeout_s", self.total_timeout_s, ceiling=120.0)
         _bounded("oauth_callback_timeout_s", self.oauth_callback_timeout_s, ceiling=600.0)
         _bounded("discovery_timeout_s", self.discovery_timeout_s, ceiling=120.0)
+        _bounded("pagination_timeout_s", self.pagination_timeout_s, ceiling=120.0)
         _bounded_int("max_discovery_pages", self.max_discovery_pages, ceiling=200)
         _bounded_int("max_discovery_tools", self.max_discovery_tools, ceiling=5_000)
+        _bounded_int("max_discovery_bytes", self.max_discovery_bytes, ceiling=16_777_216)
+        _bounded_int("max_cursor_repeats", self.max_cursor_repeats, ceiling=0, floor=0)
         _bounded_int("max_concurrent_calls", self.max_concurrent_calls, ceiling=32)
-        _bounded_int("max_refresh_attempts", self.max_refresh_attempts, ceiling=3)
+        _bounded_int("max_refresh_attempts", self.max_refresh_attempts, ceiling=1)
         _bounded_int("max_request_bytes", self.max_request_bytes, ceiling=1_048_576)
         _bounded_int("max_response_bytes", self.max_response_bytes, ceiling=16_777_216)
         _bounded_int("max_json_depth", self.max_json_depth, ceiling=64)
+        _bounded_int("max_response_nodes", self.max_response_nodes, ceiling=1_000_000)
+        _bounded_int(
+            "max_response_string_length", self.max_response_string_length, ceiling=1_048_576
+        )
 
 
 @dataclass(frozen=True)
@@ -94,10 +208,11 @@ class GatewayConfig:
     def __post_init__(self) -> None:
         if self.mode not in ("production", "development"):
             _fail(f"mode must be 'production' or 'development', got {self.mode!r}")
-        if not DIGEST_PATTERN.match(self.expected_manifest_digest):
+        if not is_digest(self.expected_manifest_digest):
             _fail(
-                "expected_manifest_digest must match 'sha256:<64 hex chars>', "
-                f"got {self.expected_manifest_digest!r}"
+                "expected_manifest_digest must match 'sha256:<64 lowercase hex chars>' "
+                "exactly, with no surrounding whitespace or newline, got "
+                f"{self.expected_manifest_digest!r}"
             )
         if self.callback_host not in _LOOPBACK_HOSTS:
             _fail(
@@ -106,16 +221,34 @@ class GatewayConfig:
             )
         if not (1024 <= self.callback_port <= 65535):
             _fail(f"callback_port must be in [1024, 65535], got {self.callback_port!r}")
-        if not self.callback_path.startswith("/"):
-            _fail(f"callback_path must start with '/', got {self.callback_path!r}")
+        if not _CALLBACK_PATH_PATTERN.fullmatch(self.callback_path) or ".." in self.callback_path:
+            _fail(
+                "callback_path must be an exact path of unreserved characters with no "
+                "query, fragment, empty segment, dot segment, or whitespace, got "
+                f"{self.callback_path!r}"
+            )
         if not isinstance(self.limits, ResourceLimits):
             _fail("limits must be a ResourceLimits instance")
 
-        has_dev_target = bool(self.dev_url) or bool(self.dev_stdio_command)
+        # Detach the mutable containers from the caller so a validated frozen
+        # config cannot be edited afterwards — `dev_stdio_env` reaches a child
+        # process in step 4.
+        object.__setattr__(self, "dev_stdio_args", tuple(self.dev_stdio_args))
+        object.__setattr__(self, "dev_stdio_env", MappingProxyType(dict(self.dev_stdio_env)))
+        for key, value in self.dev_stdio_env.items():
+            if not isinstance(key, str) or not _ENV_KEY_PATTERN.fullmatch(key):
+                _fail(f"dev_stdio_env key {key!r} is not a valid environment variable name")
+            if not isinstance(value, str):
+                _fail(f"dev_stdio_env value for {key!r} must be a string")
+        for argument in self.dev_stdio_args:
+            if not isinstance(argument, str):
+                _fail("dev_stdio_args must be a sequence of strings")
+
+        has_stdio_settings = bool(self.dev_stdio_args or self.dev_stdio_env or self.dev_stdio_cwd)
         if self.mode == "production":
-            if has_dev_target:
+            if self.dev_url or self.dev_stdio_command:
                 _fail("dev_url/dev_stdio_* are not allowed when mode='production'")
-            if self.dev_stdio_args or self.dev_stdio_env or self.dev_stdio_cwd:
+            if has_stdio_settings:
                 _fail("dev_stdio_args/env/cwd are not allowed when mode='production'")
             if self.credential_adapter not in _PRODUCTION_ADAPTERS:
                 _fail(
@@ -128,11 +261,20 @@ class GatewayConfig:
                     f"{_DEV_NAMESPACE_PREFIX!r} prefix when mode='production'"
                 )
         else:
-            if not has_dev_target:
+            if self.dev_url is not None and self.dev_stdio_command is not None:
+                _fail(
+                    "dev_url and dev_stdio_command name two different targets; "
+                    "set exactly one, because transport selection happens once"
+                )
+            if self.dev_url is None and self.dev_stdio_command is None:
                 _fail(
                     "development mode requires dev_url or dev_stdio_command "
                     "to name a non-production target"
                 )
+            if self.dev_url is not None:
+                if has_stdio_settings:
+                    _fail("dev_stdio_args/env/cwd are not allowed alongside dev_url")
+                _validate_dev_url(self.dev_url)
             if self.credential_adapter not in _DEVELOPMENT_ADAPTERS:
                 _fail(
                     f"credential_adapter must be one of {sorted(_DEVELOPMENT_ADAPTERS)} "
@@ -149,7 +291,8 @@ class GatewayConfig:
         """The endpoint the transport should connect to.
 
         `None` in development mode when a stdio target was chosen instead of
-        an HTTP URL.
+        an HTTP URL. In development mode the value is always a validated
+        loopback URL, never the production endpoint.
         """
         if self.mode == "production":
             return PRODUCTION_RESOURCE_URL
@@ -196,13 +339,30 @@ class GatewayConfig:
 
 
 def _parse_env_pairs(raw: str) -> dict[str, str]:
+    """Parse `KEY=VALUE,KEY=VALUE`.
+
+    This variable carries values destined for a child process — a test token
+    or API key lives here. §7.3 therefore allows an error to name the failing
+    entry's position, and a key only once it is known to be a well-formed key,
+    but never any part of a value.
+    """
     pairs: dict[str, str] = {}
-    for item in raw.split(","):
+    for index, item in enumerate(raw.split(",")):
         item = item.strip()
         if not item:
             continue
         if "=" not in item:
-            _fail(f"env pair {item!r} must be in KEY=VALUE form")
+            _fail(
+                f"RH_MCP_DEV_STDIO_ENV entry {index} must be in KEY=VALUE form "
+                "(its content is omitted because it may be a secret)"
+            )
         key, _, value = item.partition("=")
+        if not _ENV_KEY_PATTERN.fullmatch(key):
+            _fail(
+                f"RH_MCP_DEV_STDIO_ENV entry {index} does not start with a valid "
+                "environment variable name"
+            )
+        if key in pairs:
+            _fail(f"RH_MCP_DEV_STDIO_ENV sets {key!r} more than once")
         pairs[key] = value
     return pairs

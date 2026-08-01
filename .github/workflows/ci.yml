@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # `requires-python = ">=3.11"` is a promise the suite has to keep, so
+        # every supported minor is tested rather than whichever interpreter the
+        # runner happens to ship.
+        #
+        # 3.12.3 is pinned deliberately alongside latest-3.12. Two stdlib
+        # behaviours this package's security boundary depends on are *patch*-
+        # version dependent, and both differ between 3.12.3 and 3.12.13:
+        #   - IPv6Address('::ffff:127.0.0.1').is_loopback
+        #   - urlsplit('http://[::1]extra:80/mcp').hostname
+        # Testing only the newest patch of each minor is what let a regression
+        # through once already; the second of those fails open.
+        python-version: ["3.11", "3.12.3", "3.12", "3.13"]
+    env:
+      # setup-uv's own `python-version` does not constrain `uv sync`/`uv run`,
+      # which resolve an interpreter themselves — this is what silently made CI
+      # test 3.12.3 while the workflow claimed 3.11. UV_PYTHON applies to every
+      # uv command in the job.
+      UV_PYTHON: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - run: uv sync --frozen
+      # Assert, don't just print. If UV_PYTHON ever stops constraining uv, every
+      # matrix leg would silently collapse onto one interpreter and stay green —
+      # which is the exact failure this matrix was written in response to.
+      - run: |
+          uv run python -VV
+          uv run python -c "import sys; want='${{ matrix.python-version }}'.split('.'); got=[str(n) for n in sys.version_info[:len(want)]]; assert got == want, f'expected {want}, running {got}'; print(f'interpreter confirmed: {\".\".join(got)}')"
+      - run: uv run ruff check .
+      - run: uv run mypy src
+      - run: uv run pytest

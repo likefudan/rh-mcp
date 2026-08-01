@@ -26,7 +26,11 @@ gateway.
 
 ## Status
 
-**Pre-implementation.** The corrected security architecture is documented in
-[`DESIGN.md`](DESIGN.md). A production release also requires owner-assisted
-authenticated discovery and independent review of the live Robinhood tool
-schemas; no client code or production manifest exists yet.
+**Not usable yet.** The security architecture is documented in
+[`DESIGN.md`](DESIGN.md), and build-order step 1 has landed: the package
+scaffold, SDK-neutral models, validated configuration, and the stable error
+contract. Nothing that talks to Robinhood exists yet — no manifest enforcement,
+no MCP transport, no credential or OAuth handling, and no gateway or CLI. A
+production release additionally requires owner-assisted authenticated discovery
+and independent review of the live Robinhood tool schemas, and no production
+manifest exists.

@@ -40,6 +40,12 @@ _CALLBACK_PATH_PATTERN = re.compile(r"\A/(?:[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+
 # Conventional environment-variable name shape; a value is never echoed.
 _ENV_KEY_PATTERN = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
+# §5.2 makes the namespace the separation control between the production
+# store, the development store, and any future write client. An empty or
+# whitespace-only value is the most likely thing to collide with a store's
+# default or an unset variable, so require a conservative, non-empty name.
+_CREDENTIAL_NAMESPACE_PATTERN = re.compile(r"\A[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?\Z")
+
 
 def _fail(message: str, *, suppress_context: bool = False) -> NoReturn:
     """Raise the stable configuration error (DESIGN.md §7.3).
@@ -61,11 +67,11 @@ def _bounded(name: str, value: float, *, ceiling: float) -> None:
         _fail(f"{name} must be > 0 and <= {ceiling}, got {value!r}")
 
 
-def _bounded_int(name: str, value: int, *, ceiling: int, floor: int = 1) -> None:
+def _bounded_int(name: str, value: int, *, ceiling: int) -> None:
     if isinstance(value, bool) or not isinstance(value, int):
         _fail(f"{name} must be an int, got {type(value).__name__}")
-    if not (floor <= value <= ceiling):
-        _fail(f"{name} must be >= {floor} and <= {ceiling}, got {value!r}")
+    if not (0 < value <= ceiling):
+        _fail(f"{name} must be > 0 and <= {ceiling}, got {value!r}")
 
 
 def _is_loopback_host(host: str) -> bool:
@@ -74,14 +80,14 @@ def _is_loopback_host(host: str) -> bool:
     Names are an allowlist of exactly `localhost`; everything else must be an
     IP literal that `ipaddress` agrees is loopback. A name such as
     `localhost.attacker.example.com`, a decimal or shorthand IPv4 form, or any
-    routable literal therefore fails closed.
+    routable literal therefore fails closed. IPv4-mapped IPv6 literals are
+    resolved correctly by `is_loopback` itself, and the accept/reject tests
+    pin that for `::ffff:127.0.0.1` and `::ffff:8.8.8.8`.
     """
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
         return host in _LOOPBACK_HOSTNAMES
-    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
-        return address.ipv4_mapped.is_loopback
     return address.is_loopback
 
 
@@ -117,6 +123,15 @@ def _validate_dev_url(url: str) -> None:
         _fail("dev_url must not contain userinfo")
     if not host:
         _fail("dev_url must name a host")
+    # A dev endpoint needs neither, and both are components nothing here
+    # validates that would ride along into the §3 dev-mode diagnostic — which
+    # §7.3 forbids from carrying a URL with a query.
+    # Checked against the raw string, not the parsed components: the
+    # delimiter is what matters, wherever it appears.
+    if "?" in url:
+        _fail("dev_url must not contain a query")
+    if "#" in url:
+        _fail("dev_url must not contain a fragment")
 
     # A trailing root label ('localhost.') is the same name; strip it before
     # the comparison so the allowlist cannot be side-stepped by spelling.
@@ -131,10 +146,16 @@ def _validate_dev_url(url: str) -> None:
 class ResourceLimits:
     """Bounded timeouts/concurrency/payload limits (DESIGN.md §8).
 
-    Every bound §8 enumerates has a field here, including the response node
-    count and string length that stop a depth- and byte-bounded payload from
-    still being a decode bomb. Ceilings are hard maximums: a deployment may
-    tighten a limit but never loosen one past the reviewed value.
+    Every bound §8 enumerates that is a *budget* has a field here, including
+    the response node count and string length that stop a depth- and
+    byte-bounded payload from still being a decode bomb. Ceilings are hard
+    maximums: a deployment may tighten a limit but never loosen one past the
+    reviewed value, and a larger number is always more permissive.
+
+    A repeated pagination cursor is deliberately not a field. §6.2 makes it a
+    fail-closed readiness condition alongside "does not terminate", not a
+    budget, so step 3 enforces it directly in `transport.py` rather than
+    offering a knob that could only ever hold one value.
     """
 
     connect_timeout_s: float = 5.0
@@ -146,10 +167,6 @@ class ResourceLimits:
     max_discovery_pages: int = 20
     max_discovery_tools: int = 500
     max_discovery_bytes: int = 4_194_304
-    # §6.2 makes a repeated pagination cursor a fail-closed readiness
-    # condition, so the reviewed maximum is zero repeats and the ceiling
-    # forbids a deployment from allowing any.
-    max_cursor_repeats: int = 0
     max_concurrent_calls: int = 4
     # §5.1/§8: a coordinated refresh may be attempted once. The ceiling equals
     # the default so no configuration can exceed the design's own bound.
@@ -170,7 +187,6 @@ class ResourceLimits:
         _bounded_int("max_discovery_pages", self.max_discovery_pages, ceiling=200)
         _bounded_int("max_discovery_tools", self.max_discovery_tools, ceiling=5_000)
         _bounded_int("max_discovery_bytes", self.max_discovery_bytes, ceiling=16_777_216)
-        _bounded_int("max_cursor_repeats", self.max_cursor_repeats, ceiling=0, floor=0)
         _bounded_int("max_concurrent_calls", self.max_concurrent_calls, ceiling=32)
         _bounded_int("max_refresh_attempts", self.max_refresh_attempts, ceiling=1)
         _bounded_int("max_request_bytes", self.max_request_bytes, ceiling=1_048_576)
@@ -214,6 +230,12 @@ class GatewayConfig:
                 "exactly, with no surrounding whitespace or newline, got "
                 f"{self.expected_manifest_digest!r}"
             )
+        if not _CREDENTIAL_NAMESPACE_PATTERN.fullmatch(self.credential_namespace):
+            _fail(
+                "credential_namespace must be 1-64 characters of letters, digits, '.', "
+                "'_' or '-', starting and ending alphanumeric, got "
+                f"{self.credential_namespace!r}"
+            )
         if self.callback_host not in _LOOPBACK_HOSTS:
             _fail(
                 f"callback_host must be an explicit loopback literal {sorted(_LOOPBACK_HOSTS)}, "
@@ -246,7 +268,9 @@ class GatewayConfig:
 
         has_stdio_settings = bool(self.dev_stdio_args or self.dev_stdio_env or self.dev_stdio_cwd)
         if self.mode == "production":
-            if self.dev_url or self.dev_stdio_command:
+            # Presence, not truthiness: `dev_url=""` is still a dev field set
+            # on a production config, and must be rejected like any other.
+            if self.dev_url is not None or self.dev_stdio_command is not None:
                 _fail("dev_url/dev_stdio_* are not allowed when mode='production'")
             if has_stdio_settings:
                 _fail("dev_stdio_args/env/cwd are not allowed when mode='production'")

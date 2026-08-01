@@ -1,8 +1,15 @@
+import json
 from dataclasses import FrozenInstanceError
 
 import pytest
 
-from rh_mcp.errors import ErrorCode, GatewayError
+from rh_mcp.errors import (
+    EXIT_CODE_CONFIGURATION_ERROR,
+    EXIT_CODE_PROVIDER_FAILURE,
+    ErrorCode,
+    GatewayError,
+    exit_code_for,
+)
 from rh_mcp.models import Readiness, ResultEnvelope, is_digest
 
 DIGEST_A = "sha256:" + "a" * 64
@@ -100,7 +107,7 @@ class TestReadiness:
                 manifest_digest=bad_digest,
                 expected_manifest_digest=DIGEST_A,
             )
-        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
+        assert excinfo.value.code is ErrorCode.NOT_READY
 
     def test_rejects_empty_manifest_version(self) -> None:
         with pytest.raises(GatewayError):
@@ -131,8 +138,25 @@ class TestReadiness:
                 manifest_digest="nope",
                 expected_manifest_digest=DIGEST_A,
             )
-        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
+        assert excinfo.value.code is ErrorCode.NOT_READY
         assert excinfo.value.retryable is False
+
+    def test_local_faults_land_in_the_configuration_exit_bucket(self) -> None:
+        """§7.3: a mis-pinned digest is a local fault, not a provider failure.
+
+        Exit 1 would send an operator to the "Robinhood had a transient
+        failure, retry" runbook during precisely the §6.2 drift scenario that
+        readiness exists to surface.
+        """
+        cases = [
+            {"manifest_digest": DIGEST_A, "expected_manifest_digest": "bad"},
+            {"manifest_digest": DIGEST_A, "expected_manifest_digest": DIGEST_B},
+        ]
+        for overrides in cases:
+            with pytest.raises(GatewayError) as excinfo:
+                Readiness(ready=True, manifest_version="v1", **overrides)  # type: ignore[arg-type]
+            assert excinfo.value.code is ErrorCode.NOT_READY
+            assert exit_code_for(excinfo.value) == EXIT_CODE_CONFIGURATION_ERROR
 
 
 class TestResultEnvelope:
@@ -247,3 +271,61 @@ class TestResultEnvelope:
     def test_rejects_non_string_warning(self) -> None:
         with pytest.raises(GatewayError):
             self._make(warnings=(1,))
+
+    def test_validation_failures_are_protocol_errors(self) -> None:
+        """An envelope is assembled from provider-derived data (§7.1)."""
+        with pytest.raises(GatewayError) as excinfo:
+            self._make(schema_digest="not-a-digest")
+        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
+        assert exit_code_for(excinfo.value) == EXIT_CODE_PROVIDER_FAILURE
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"rows": {1, 2}},
+            {"blob": bytearray(b"abc")},
+            {"blob": b"abc"},
+            {"when": object()},
+            {"nested": {"rows": {1, 2}}},
+            {"rows": [{"tags": {"a"}}]},
+        ],
+    )
+    def test_rejects_non_json_value_types(self, payload: object) -> None:
+        """Anything outside the JSON type set stays mutable by reference."""
+        with pytest.raises(GatewayError) as excinfo:
+            self._make(data=payload)
+        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
+
+    @pytest.mark.parametrize("payload", [{1: "a"}, {("a", "b"): 1}, {None: 1}, {"ok": {2: "x"}}])
+    def test_rejects_non_string_keys(self, payload: object) -> None:
+        """`to_json_dict()` must stay serializable; a tuple key raises."""
+        with pytest.raises(GatewayError):
+            self._make(data=payload)
+
+    def test_accepts_the_json_scalar_types(self) -> None:
+        payload = {"s": "x", "i": 1, "f": 1.5, "t": True, "n": None, "l": [1, "a", None]}
+        assert self._make(data=payload).to_json_dict()["data"] == payload
+
+    def test_cyclic_payload_raises_the_public_error_not_recursionerror(self) -> None:
+        payload: dict[str, object] = {}
+        payload["self"] = payload
+        with pytest.raises(GatewayError) as excinfo:
+            self._make(data=payload)
+        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
+
+    def test_deeply_nested_payload_raises_the_public_error(self) -> None:
+        payload: dict[str, object] = {}
+        cursor = payload
+        for _ in range(5_000):
+            child: dict[str, object] = {}
+            cursor["next"] = child
+            cursor = child
+        with pytest.raises(GatewayError):
+            self._make(data=payload)
+
+    def test_rendered_payload_is_json_serializable(self) -> None:
+        envelope = self._make(data={"rows": [{"symbol": "AAPL", "qty": 3}], "ok": True})
+        assert json.loads(json.dumps(envelope.to_json_dict()))["data"] == {
+            "rows": [{"symbol": "AAPL", "qty": 3}],
+            "ok": True,
+        }

@@ -7,6 +7,13 @@ SDK major version the gateway happens to use internally.
 Validation failures raise `GatewayError`, not a bare `ValueError`: these are
 public types, and §7.3 requires every failure that can reach a caller or the
 CLI to carry a stable code and a safe message rather than a traceback.
+
+The two classes use different codes because their failures have different
+causes and belong in different §7.3 exit buckets. A `Readiness` that cannot be
+constructed is a local fault — a mis-pinned or mismatched digest — so it
+raises `not_ready` (configuration bucket, exit 3) and points an operator at
+the §6.2 drift they actually need to look at. A `ResultEnvelope` is assembled
+from provider-derived data, so it raises `protocol_error` (exit 1).
 """
 
 from __future__ import annotations
@@ -31,50 +38,81 @@ def is_digest(value: object) -> bool:
     return isinstance(value, str) and DIGEST_PATTERN.fullmatch(value) is not None
 
 
-def _invalid(message: str) -> NoReturn:
-    raise GatewayError(ErrorCode.PROTOCOL_ERROR, message)
+def _invalid(message: str, code: ErrorCode) -> NoReturn:
+    raise GatewayError(code, message)
 
 
-def _require_digest(name: str, value: str) -> None:
+def _require_digest(name: str, value: str, code: ErrorCode) -> None:
     if not is_digest(value):
-        _invalid(f"{name} must match 'sha256:<64 lowercase hex chars>', got {value!r}")
+        _invalid(f"{name} must match 'sha256:<64 lowercase hex chars>', got {value!r}", code)
 
 
-def _require_nonempty(name: str, value: str) -> None:
+def _require_nonempty(name: str, value: str, code: ErrorCode) -> None:
     if not isinstance(value, str) or not value:
-        _invalid(f"{name} must be a non-empty string")
+        _invalid(f"{name} must be a non-empty string", code)
 
 
-def _require_bool(name: str, value: object) -> None:
+def _require_bool(name: str, value: object, code: ErrorCode) -> None:
     if not isinstance(value, bool):
-        _invalid(f"{name} must be a bool, got {type(value).__name__}")
+        _invalid(f"{name} must be a bool, got {type(value).__name__}", code)
 
 
-def _require_utc_timestamp(name: str, value: str) -> None:
+def _require_utc_timestamp(name: str, value: str, code: ErrorCode) -> None:
     if not isinstance(value, str):
-        _invalid(f"{name} must be an ISO-8601 timestamp string")
+        _invalid(f"{name} must be an ISO-8601 timestamp string", code)
     try:
         parsed = datetime.fromisoformat(value)
     except ValueError:
-        _invalid(f"{name} must be an ISO-8601 timestamp, got {value!r}")
+        _invalid(f"{name} must be an ISO-8601 timestamp, got {value!r}", code)
     offset = parsed.utcoffset()
     if offset is None or offset.total_seconds() != 0:
-        _invalid(f"{name} must be timezone-aware UTC, got {value!r}")
+        _invalid(f"{name} must be timezone-aware UTC, got {value!r}", code)
 
 
-def _freeze_json(value: Any) -> Any:
+# A structural rail so a cyclic or pathologically nested payload raises the
+# public error contract instead of `RecursionError`. This is deliberately well
+# above the configurable §8 `max_json_depth` ceiling (64) — enforcing that
+# bound while decoding is step 3's job, not this copy's.
+_MAX_STRUCTURAL_DEPTH = 128
+
+
+def _freeze_json(value: Any, *, depth: int = 0) -> Any:
     """Deep-copy decoded JSON into a structure nothing else can mutate.
 
     §7.1 computes `result_digest` over the payload *before* the envelope is
     returned, so the envelope must stop sharing structure with whatever buffer
     the payload was decoded into; otherwise a later mutation silently breaks
     the consumer's digest verification.
+
+    The walk also enforces that the payload really is decoded JSON. A set, a
+    `bytearray`, or a custom object would otherwise fall through by reference
+    and stay mutable through the envelope, and a non-string key would make
+    `to_json_dict()` return something `json.dumps` cannot serialize.
     """
+    if depth > _MAX_STRUCTURAL_DEPTH:
+        _invalid(
+            f"data nests deeper than {_MAX_STRUCTURAL_DEPTH} levels or contains a cycle",
+            ErrorCode.PROTOCOL_ERROR,
+        )
     if isinstance(value, Mapping):
-        return MappingProxyType({key: _freeze_json(item) for key, item in value.items()})
+        frozen: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                _invalid(
+                    f"data object keys must be strings, got {type(key).__name__}",
+                    ErrorCode.PROTOCOL_ERROR,
+                )
+            frozen[key] = _freeze_json(item, depth=depth + 1)
+        return MappingProxyType(frozen)
     if isinstance(value, (list, tuple)):
-        return tuple(_freeze_json(item) for item in value)
-    return value
+        return tuple(_freeze_json(item, depth=depth + 1) for item in value)
+    # `bool` is a subclass of `int`, so it is covered here.
+    if value is None or isinstance(value, (str, int, float)):
+        return value
+    _invalid(
+        f"data may contain only JSON types, got {type(value).__name__}",
+        ErrorCode.PROTOCOL_ERROR,
+    )
 
 
 def _json_safe(value: Any) -> Any:
@@ -96,12 +134,16 @@ class Readiness:
     expected_manifest_digest: str
 
     def __post_init__(self) -> None:
-        _require_bool("ready", self.ready)
-        _require_nonempty("manifest_version", self.manifest_version)
-        _require_digest("manifest_digest", self.manifest_digest)
-        _require_digest("expected_manifest_digest", self.expected_manifest_digest)
+        # A readiness object that cannot be constructed describes a gateway
+        # that is not ready; §7.3 puts that in the configuration bucket, not
+        # the provider-failure one.
+        code = ErrorCode.NOT_READY
+        _require_bool("ready", self.ready, code)
+        _require_nonempty("manifest_version", self.manifest_version, code)
+        _require_digest("manifest_digest", self.manifest_digest, code)
+        _require_digest("expected_manifest_digest", self.expected_manifest_digest, code)
         if self.ready and self.manifest_digest != self.expected_manifest_digest:
-            _invalid("ready cannot be True when manifest_digest != expected_manifest_digest")
+            _invalid("ready cannot be True when manifest_digest != expected_manifest_digest", code)
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
@@ -130,21 +172,24 @@ class ResultEnvelope:
     envelope_version: str = field(default=_ENVELOPE_VERSION, init=False)
 
     def __post_init__(self) -> None:
-        _require_nonempty("manifest_version", self.manifest_version)
-        _require_digest("manifest_digest", self.manifest_digest)
-        _require_nonempty("capability", self.capability)
-        _require_digest("schema_digest", self.schema_digest)
-        _require_digest("result_digest", self.result_digest)
-        _require_utc_timestamp("observed_at", self.observed_at)
+        # An envelope is assembled from provider-derived data, so a malformed
+        # one is a protocol-level fault (§7.1, §7.3).
+        code = ErrorCode.PROTOCOL_ERROR
+        _require_nonempty("manifest_version", self.manifest_version, code)
+        _require_digest("manifest_digest", self.manifest_digest, code)
+        _require_nonempty("capability", self.capability, code)
+        _require_digest("schema_digest", self.schema_digest, code)
+        _require_digest("result_digest", self.result_digest, code)
+        _require_utc_timestamp("observed_at", self.observed_at, code)
 
         if not isinstance(self.data, Mapping):
-            _invalid(f"data must be a JSON object, got {type(self.data).__name__}")
+            _invalid(f"data must be a JSON object, got {type(self.data).__name__}", code)
         if isinstance(self.warnings, (str, bytes)) or not isinstance(self.warnings, Iterable):
-            _invalid("warnings must be a sequence of strings")
+            _invalid("warnings must be a sequence of strings", code)
         warnings = tuple(self.warnings)
         for warning in warnings:
             if not isinstance(warning, str):
-                _invalid("warnings must be a sequence of strings")
+                _invalid("warnings must be a sequence of strings", code)
 
         # Detach from the caller's objects so the envelope stays immutable and
         # `result_digest` keeps binding exactly the payload it was computed over.

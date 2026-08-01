@@ -185,6 +185,7 @@ class TestDevUrl:
             "http://2130706433/mcp",
             "http://[::1]x/mcp",
             "http://user@127.0.0.1/mcp",
+            "http://[::ffff:8.8.8.8]/mcp",
         ],
     )
     def test_rejects_non_loopback_or_unparseable(self, url: str) -> None:
@@ -204,10 +205,46 @@ class TestDevUrl:
             "http://127.0.0.53/mcp",
             "https://[::1]:8080/mcp",
             "HTTP://127.0.0.1:9999/mcp",
+            "http://[::ffff:127.0.0.1]:9999/mcp",
         ],
     )
     def test_accepts_loopback_targets(self, url: str) -> None:
         assert _dev(dev_url=url).effective_resource_url == url
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "https://localhost#@agent.robinhood.com/",
+            "https://localhost?@agent.robinhood.com/",
+            "http://127.0.0.1:9999/mcp?token=abc",
+            "http://127.0.0.1:9999/mcp#fragment",
+            "http://localhost/mcp?",
+            "http://localhost/mcp#",
+        ],
+    )
+    def test_rejects_query_or_fragment(self, url: str) -> None:
+        """A dev endpoint needs neither, and §7.3 bars a URL with a query
+        from the §3 dev-mode diagnostic that prints this value in step 5."""
+        with pytest.raises(GatewayError) as excinfo:
+            _dev(dev_url=url)
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+    def test_rejects_whitespace_inside_the_authority(self) -> None:
+        """The only case the whitespace guard alone catches.
+
+        `urlsplit` strips the tab and reports the host as `localhost`, so
+        without the guard this URL is accepted and stored with an embedded
+        tab that a transport would later see.
+        """
+        with pytest.raises(GatewayError, match="whitespace or control characters"):
+            _dev(dev_url="https://local\thost/")
+
+    @pytest.mark.parametrize(
+        "url", ["https://local\nhost/", "https://local\rhost/", "https://local host/"]
+    )
+    def test_rejects_other_whitespace_in_the_authority(self, url: str) -> None:
+        with pytest.raises(GatewayError, match="whitespace or control characters"):
+            _dev(dev_url=url)
 
     def test_effective_resource_url_is_never_production_in_development(self) -> None:
         for url in self.PRODUCTION_SPELLINGS:
@@ -239,6 +276,33 @@ class TestDevUrl:
             _dev(dev_url="http://127.0.0.1:9999/mcp", dev_stdio_env={"FOO": "bar"})
 
 
+class TestCredentialNamespace:
+    """§5.2: the namespace is the separation control between stores."""
+
+    @pytest.mark.parametrize("namespace", ["", "   ", "\t", "rh mcp", "rh/mcp", "-rh", "rh\nmcp"])
+    def test_production_rejects_empty_or_unsafe(self, namespace: str) -> None:
+        with pytest.raises(GatewayError) as excinfo:
+            GatewayConfig(expected_manifest_digest=DIGEST, credential_namespace=namespace)
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+    @pytest.mark.parametrize("namespace", ["dev-", "dev- x", "dev-\t"])
+    def test_development_rejects_unsafe(self, namespace: str) -> None:
+        with pytest.raises(GatewayError):
+            _dev(credential_namespace=namespace)
+
+    def test_accepts_the_defaults(self) -> None:
+        assert GatewayConfig(expected_manifest_digest=DIGEST).credential_namespace == "rh-mcp"
+        assert _dev(credential_namespace="dev-test").credential_namespace == "dev-test"
+
+
+@pytest.mark.parametrize("field_name", ["dev_url", "dev_stdio_command"])
+def test_production_rejects_empty_string_dev_fields(field_name: str) -> None:
+    """The production guard must test presence, not truthiness."""
+    with pytest.raises(GatewayError) as excinfo:
+        GatewayConfig(expected_manifest_digest=DIGEST, **{field_name: ""})  # type: ignore[arg-type]
+    assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+
 class TestDevStdioEnv:
     def test_is_copied_at_construction(self) -> None:
         source = {"FOO": "bar"}
@@ -258,26 +322,26 @@ class TestDevStdioEnv:
         assert config.dev_stdio_args == ("-m", "fake_server")
 
 
-# (field name, ceiling, whether zero is a legal value). Hard-coded on purpose:
-# if a ceiling in config.py is loosened, this table must be edited too.
-LIMIT_BOUNDS: dict[str, tuple[float, bool]] = {
-    "connect_timeout_s": (30.0, False),
-    "read_timeout_s": (60.0, False),
-    "total_timeout_s": (120.0, False),
-    "oauth_callback_timeout_s": (600.0, False),
-    "discovery_timeout_s": (120.0, False),
-    "pagination_timeout_s": (120.0, False),
-    "max_discovery_pages": (200, False),
-    "max_discovery_tools": (5_000, False),
-    "max_discovery_bytes": (16_777_216, False),
-    "max_cursor_repeats": (0, True),
-    "max_concurrent_calls": (32, False),
-    "max_refresh_attempts": (1, False),
-    "max_request_bytes": (1_048_576, False),
-    "max_response_bytes": (16_777_216, False),
-    "max_json_depth": (64, False),
-    "max_response_nodes": (1_000_000, False),
-    "max_response_string_length": (1_048_576, False),
+# field name -> hard maximum. Hard-coded on purpose: if a ceiling in config.py
+# is loosened, this table must be edited too. Every field is a budget where a
+# larger number is more permissive, so a single uniform bounds contract holds.
+LIMIT_BOUNDS: dict[str, float] = {
+    "connect_timeout_s": 30.0,
+    "read_timeout_s": 60.0,
+    "total_timeout_s": 120.0,
+    "oauth_callback_timeout_s": 600.0,
+    "discovery_timeout_s": 120.0,
+    "pagination_timeout_s": 120.0,
+    "max_discovery_pages": 200,
+    "max_discovery_tools": 5_000,
+    "max_discovery_bytes": 16_777_216,
+    "max_concurrent_calls": 32,
+    "max_refresh_attempts": 1,
+    "max_request_bytes": 1_048_576,
+    "max_response_bytes": 16_777_216,
+    "max_json_depth": 64,
+    "max_response_nodes": 1_000_000,
+    "max_response_string_length": 1_048_576,
 }
 
 
@@ -290,17 +354,11 @@ class TestResourceLimits:
 
     @pytest.mark.parametrize("name", sorted(LIMIT_BOUNDS))
     def test_defaults_are_within_the_documented_ceiling(self, name: str) -> None:
-        ceiling, allows_zero = LIMIT_BOUNDS[name]
         default = getattr(ResourceLimits(), name)
-        assert default <= ceiling
-        assert default >= (0 if allows_zero else 1)
+        assert 1 <= default <= LIMIT_BOUNDS[name]
 
     @pytest.mark.parametrize("name", sorted(LIMIT_BOUNDS))
-    def test_rejects_zero_unless_allowed(self, name: str) -> None:
-        _ceiling, allows_zero = LIMIT_BOUNDS[name]
-        if allows_zero:
-            ResourceLimits(**{name: 0})
-            return
+    def test_rejects_zero(self, name: str) -> None:
         with pytest.raises(GatewayError) as excinfo:
             ResourceLimits(**{name: 0})
         assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
@@ -313,14 +371,13 @@ class TestResourceLimits:
 
     @pytest.mark.parametrize("name", sorted(LIMIT_BOUNDS))
     def test_rejects_above_ceiling(self, name: str) -> None:
-        ceiling, _allows_zero = LIMIT_BOUNDS[name]
         with pytest.raises(GatewayError) as excinfo:
-            ResourceLimits(**{name: ceiling + 1})
+            ResourceLimits(**{name: LIMIT_BOUNDS[name] + 1})
         assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
 
     @pytest.mark.parametrize("name", sorted(LIMIT_BOUNDS))
     def test_accepts_exactly_the_ceiling(self, name: str) -> None:
-        ceiling, _allows_zero = LIMIT_BOUNDS[name]
+        ceiling = LIMIT_BOUNDS[name]
         assert getattr(ResourceLimits(**{name: ceiling}), name) == ceiling
 
     def test_refresh_attempts_ceiling_matches_the_single_refresh_rule(self) -> None:

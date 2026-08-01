@@ -184,6 +184,11 @@ class TestDevUrl:
             "http://127.1/mcp",
             "http://2130706433/mcp",
             "http://[::1]x/mcp",
+            "http://[::1]extra:80/mcp",
+            "http://[::1]agent.robinhood.com/mcp",
+            "http://[127.0.0.1]/mcp",
+            "http://[not-an-ipv6]/mcp",
+            "http://localhost:/mcp",
             "http://user@127.0.0.1/mcp",
             "http://[::ffff:8.8.8.8]/mcp",
         ],
@@ -257,6 +262,41 @@ class TestDevUrl:
             _dev(dev_url="http://evil.example.com/mcp?token=SUPERSECRETVALUE")
         assert "SUPERSECRETVALUE" not in str(excinfo.value)
         assert "SUPERSECRETVALUE" not in repr(excinfo.value)
+
+    def test_ipv4_mapped_loopback_is_accepted_on_every_supported_python(self) -> None:
+        """`IPv6Address.is_loopback` for a mapped address is patch-dependent.
+
+        True on 3.11.15/3.12.13/3.13.14 but False on 3.12.3, so this must go
+        through `ipv4_mapped` delegation. Removing that branch as a "no-op"
+        broke CI, which runs 3.12.3.
+        """
+        assert _dev(dev_url="http://[::ffff:127.0.0.1]:9999/mcp").dev_url is not None
+
+    def test_ipv4_mapped_public_address_is_still_rejected(self) -> None:
+        """The dangerous direction, pinned under both semantics."""
+        with pytest.raises(GatewayError):
+            _dev(dev_url="http://[::ffff:8.8.8.8]/mcp")
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://[::1]agent.robinhood.com/mcp",
+            "http://[::1]extra:80/mcp",
+            "http://[::1]x/mcp",
+        ],
+    )
+    def test_rejects_trailing_garbage_after_a_bracketed_literal(self, url: str) -> None:
+        """On 3.12.3 `urlsplit` drops it and reports the host as '::1'.
+
+        The authority must be validated as a whole, or we validate one reading
+        of the URL and store a string another client may read differently.
+        Which guard rejects first differs by version — the port parse raises
+        on 3.11/3.12.13/3.13, the authority pattern catches it on 3.12.3 — so
+        this pins the rejection, not the message.
+        """
+        with pytest.raises(GatewayError) as excinfo:
+            _dev(dev_url=url)
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
 
     def test_parse_failure_does_not_chain_a_url_bearing_exception(self) -> None:
         """`urlsplit` reports a bad port by quoting it; §7.3 forbids a traceback."""

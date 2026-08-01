@@ -31,6 +31,14 @@ _DEV_NAMESPACE_PREFIX = "dev-"
 _LOOPBACK_HOSTNAMES = frozenset({"localhost"})
 _DEV_URL_SCHEMES = frozenset({"http", "https"})
 
+# `host[:port]` or `[ipv6-literal][:port]`, and nothing else — no userinfo, no
+# trailing characters after a bracketed literal. Matched against the whole
+# authority so validation does not depend on `urlsplit`'s patch-dependent
+# strictness (see `_validate_dev_url`).
+_AUTHORITY_PATTERN = re.compile(
+    r"\A(?:\[(?P<v6>[0-9A-Fa-f:.]+)\]|(?P<host>[A-Za-z0-9._-]+))(?::(?P<port>[0-9]{1,5}))?\Z"
+)
+
 # A registered redirect URI is compared against a request path that carries no
 # query or fragment, so an "exact callback path" (§5.1) is one path with
 # unreserved characters only: no query, fragment, whitespace, CR/LF, percent
@@ -74,21 +82,46 @@ def _bounded_int(name: str, value: int, *, ceiling: int) -> None:
         _fail(f"{name} must be > 0 and <= {ceiling}, got {value!r}")
 
 
+def _is_loopback_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Whether an IP literal is loopback, consistently across supported Pythons.
+
+    DO NOT simplify this to `address.is_loopback`. For an IPv4-mapped IPv6
+    address, `IPv6Address.is_loopback` is **patch-version dependent** —
+    CPython changed it to delegate to the embedded IPv4 address, and that
+    landed in a later 3.12.x than 3.12.3. Measured directly:
+
+        3.11.15  IPv6Address('::ffff:127.0.0.1').is_loopback -> True
+        3.12.3   IPv6Address('::ffff:127.0.0.1').is_loopback -> False
+        3.12.13  IPv6Address('::ffff:127.0.0.1').is_loopback -> True
+        3.13.14  IPv6Address('::ffff:127.0.0.1').is_loopback -> True
+
+    `ipv4_mapped` delegation is True on every one of those, so it is the
+    version-independent spelling. This branch was once removed as a "no-op"
+    because every interpreter to hand happened to be a newer patch release;
+    CI on 3.12.3 then rejected a legitimate loopback dev URL. The
+    `::ffff:127.0.0.1` / `::ffff:8.8.8.8` accept-reject tests pin both
+    directions — keep them.
+    """
+    if isinstance(address, ipaddress.IPv6Address):
+        mapped = address.ipv4_mapped
+        if mapped is not None:
+            return mapped.is_loopback
+    return address.is_loopback
+
+
 def _is_loopback_host(host: str) -> bool:
     """Whether `host` can only ever resolve to this machine.
 
     Names are an allowlist of exactly `localhost`; everything else must be an
     IP literal that `ipaddress` agrees is loopback. A name such as
     `localhost.attacker.example.com`, a decimal or shorthand IPv4 form, or any
-    routable literal therefore fails closed. IPv4-mapped IPv6 literals are
-    resolved correctly by `is_loopback` itself, and the accept/reject tests
-    pin that for `::ffff:127.0.0.1` and `::ffff:8.8.8.8`.
+    routable literal therefore fails closed.
     """
     try:
         address = ipaddress.ip_address(host)
     except ValueError:
         return host in _LOOPBACK_HOSTNAMES
-    return address.is_loopback
+    return _is_loopback_address(address)
 
 
 def _validate_dev_url(url: str) -> None:
@@ -109,33 +142,61 @@ def _validate_dev_url(url: str) -> None:
 
     try:
         parsed = urlsplit(url)
-        host = parsed.hostname
         _port = parsed.port  # raises ValueError on a malformed port
-        username = parsed.username
-        password = parsed.password
     except ValueError:
         _fail("dev_url must be a parseable http(s) URL", suppress_context=True)
 
     scheme = parsed.scheme.lower()
     if scheme not in _DEV_URL_SCHEMES:
         _fail(f"dev_url scheme must be 'http' or 'https', got {scheme!r}")
-    if username is not None or password is not None:
-        _fail("dev_url must not contain userinfo")
-    if not host:
-        _fail("dev_url must name a host")
     # A dev endpoint needs neither, and both are components nothing here
     # validates that would ride along into the §3 dev-mode diagnostic — which
-    # §7.3 forbids from carrying a URL with a query.
-    # Checked against the raw string, not the parsed components: the
-    # delimiter is what matters, wherever it appears.
+    # §7.3 forbids from carrying a URL with a query. Checked against the raw
+    # string, not the parsed components: the delimiter is what matters,
+    # wherever it appears.
     if "?" in url:
         _fail("dev_url must not contain a query")
     if "#" in url:
         _fail("dev_url must not contain a fragment")
+    if "@" in parsed.netloc:
+        _fail("dev_url must not contain userinfo")
+
+    # The authority is matched here rather than read off `parsed.hostname`,
+    # because how strictly `urlsplit` validates a bracketed IPv6 authority is
+    # *also* patch-version dependent. Measured directly on
+    # `http://[::1]extra:80/mcp`:
+    #
+    #     3.11.15  hostname -> ValueError
+    #     3.12.3   hostname -> '::1'        (trailing garbage silently dropped)
+    #     3.12.13  hostname -> ValueError
+    #     3.13.14  hostname -> ValueError
+    #
+    # Trusting `hostname` on 3.12.3 means validating one reading of the
+    # authority while storing a string another client may read differently —
+    # the same parser-differential the whitespace guard above exists to stop,
+    # and this one fails *open*. Matching the whole authority ourselves is
+    # version-independent.
+    authority = _AUTHORITY_PATTERN.fullmatch(parsed.netloc)
+    if authority is None:
+        _fail("dev_url authority must be a plain host or [ipv6 literal] with an optional port")
+
+    literal = authority.group("v6")
+    if literal is not None:
+        try:
+            address = ipaddress.IPv6Address(literal)
+        except ValueError:
+            _fail("dev_url bracketed authority must be an IPv6 literal", suppress_context=True)
+        if not _is_loopback_address(address):
+            _fail(
+                "dev_url host must be a loopback literal or 'localhost' so a development "
+                f"target can never be a remote endpoint, got {literal!r}"
+            )
+        return
 
     # A trailing root label ('localhost.') is the same name; strip it before
     # the comparison so the allowlist cannot be side-stepped by spelling.
-    if not _is_loopback_host(host.rstrip(".")):
+    host = authority.group("host").lower().rstrip(".")
+    if not _is_loopback_host(host):
         _fail(
             "dev_url host must be a loopback literal or 'localhost' so a development "
             f"target can never be a remote endpoint, got {host!r}"

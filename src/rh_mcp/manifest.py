@@ -66,6 +66,28 @@ from rh_mcp.validation import (
 MANIFEST_FORMAT_VERSION: Final = "1.0"
 SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_FORMAT_VERSION})
 
+# When to bump MANIFEST_FORMAT_VERSION — the rule, before there is a shipped
+# manifest to get it wrong on.
+#
+# Bump it for any change that alters what `compute_full_manifest_digest` hashes
+# or how: a new or removed document field, a change to entry ordering, a change
+# to the digest's input construction. Do *not* bump it for a change confined to
+# loader behaviour that leaves the hashed bytes identical.
+#
+# The reason is a diagnostic one, and it matters more than it looks. A manifest
+# sealed under an older derivation does not announce itself as stale — it fails
+# with "full_manifest_digest does not match the manifest contents", which is
+# also exactly what a *tampered* manifest reports. An operator reading that
+# message has one obvious remediation available: reseal the file. That is
+# precisely the action §6 exists to defeat, and the fail-closed check would
+# have handed them the motive to defeat it. A version mismatch reports itself
+# as a version mismatch and points at a migration instead.
+#
+# CANONICALIZATION_VERSION is a different knob and moves for a different
+# reason: it names the canonical form itself — how bytes are produced from a
+# JSON value — and is published for non-Python implementers. Changing what gets
+# fed into that form is a format change, not a canonicalization change.
+
 # The self-referential field that is excluded from its own digest (§6).
 FULL_MANIFEST_DIGEST_FIELD: Final = "full_manifest_digest"
 
@@ -209,13 +231,21 @@ class ObservedSurface:
     carry. Making it unrepresentable-by-omission costs one keyword at every
     construction site and removes a permissive fallback from the seam.
 
+    `tools` has no default either, for the same reason: an omitted `tools` is
+    the positive claim "the provider returned zero tools". An empty surface
+    does fail closed today — every reviewed entry reports
+    `missing_provider_tool` — but only because `entries` must be non-empty and
+    contain at least one `read_allowed`. That is safety by accident, resting on
+    a property of a different type, and it is the same reasoning eliminated for
+    the digest tag below.
+
     Duplicate tool names are *not* rejected here. §6.2 requires a duplicate to
     be a fail-closed readiness condition, so it has to survive into the drift
     comparison where it is reported, rather than being deduplicated or raised
     away at construction.
     """
 
-    tools: tuple[ObservedTool, ...] = ()
+    tools: tuple[ObservedTool, ...]
     complete: bool = field(kw_only=True)
 
     def __post_init__(self) -> None:
@@ -755,6 +785,16 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
         if raw_output_schema is None
         else _require_json_object(f"entries[{index}].output_schema", raw_output_schema, _LOCAL)
     )
+    # Same rule as input_schema, for symmetry: a declared-but-empty output
+    # schema constrains nothing, so §7.1's "checked against the pinned output
+    # schema when one exists" would silently check nothing. A tool with no
+    # output schema says so with null, not with {}.
+    if output_schema is not None and not output_schema:
+        invalid(
+            f"entries[{index}].output_schema must not be empty: use null to declare "
+            "that the tool supplies no output schema",
+            _LOCAL,
+        )
     annotations = _require_json_object(f"entries[{index}].annotations", entry["annotations"],
                                        _LOCAL)
 
@@ -864,10 +904,14 @@ class DriftFinding:
             invalid("error_code must be an ErrorCode", _LOCAL)
 
     def to_json_dict(self) -> dict[str, Any]:
-        rendered: dict[str, Any] = {"reason": str(self.reason), "detail": self.detail}
-        if self.error_code is not None:
-            rendered["error_code"] = str(self.error_code)
-        return rendered
+        # `error_code` is always present, `null` when there was no originating
+        # error: a conditional key would make step 5 branch on key existence
+        # rather than on a value, and a stable shape is cheaper to consume.
+        return {
+            "reason": str(self.reason),
+            "detail": self.detail,
+            "error_code": None if self.error_code is None else str(self.error_code),
+        }
 
 
 @dataclass(frozen=True)

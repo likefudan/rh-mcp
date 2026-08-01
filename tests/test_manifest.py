@@ -8,6 +8,7 @@ these tests can assert rather than assume.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 from collections.abc import Coroutine
 from dataclasses import replace
@@ -148,6 +149,33 @@ class TestTheDiscoverySeamHasNoPermissiveDefaults:
     def test_surface_completeness_is_required(self) -> None:
         with pytest.raises(TypeError, match="complete"):
             ObservedSurface(tools=())
+
+    def test_surface_tools_are_required(self) -> None:
+        with pytest.raises(TypeError, match="tools"):
+            ObservedSurface(complete=True)  # type: ignore[call-arg]
+
+    @pytest.mark.parametrize("cls", [ObservedTool, ObservedSurface])
+    def test_no_observed_field_may_carry_a_default(self, cls: type) -> None:
+        """Closes the class rather than sampling it.
+
+        The enumerated tests above name specific fields, so they give a better
+        message when one breaks — but they cannot catch a *new* defaulted field
+        added later, which is how this seam acquired its permissive defaults in
+        the first place.
+        """
+        defaulted = [
+            f.name
+            for f in dataclasses.fields(cls)
+            if f.init
+            and (
+                f.default is not dataclasses.MISSING
+                or f.default_factory is not dataclasses.MISSING
+            )
+        ]
+        assert not defaulted, (
+            f"{cls.__name__} field(s) {defaulted} carry a default; every observed "
+            "field is a positive claim about the provider and must be stated"
+        )
 
 
 def config_for(digest: str) -> GatewayConfig:
@@ -515,6 +543,19 @@ class TestDocumentValidation:
         )
         document = reseal(build_manifest(entries))
         assert load_manifest_text(dumps(document)).capabilities["alpha_reading"].input_schema
+
+    def test_rejects_an_empty_output_schema(self) -> None:
+        """§7.1 checks output "when one exists"; `{}` would check nothing."""
+        entries = default_entries()
+        entries[0] = build_entry(
+            provider_tool_name="synthetic_alpha_read",
+            capability="alpha_reading",
+            description=entries[0]["description"],
+            input_schema=ALPHA_INPUT_SCHEMA,
+            output_schema={},
+            rationale=entries[0]["rationale"],
+        )
+        expect_local_failure(reseal(build_manifest(entries)), "output_schema must not be empty")
 
     def test_rejects_duplicate_provider_tools(self) -> None:
         entries = default_entries()
@@ -959,6 +1000,20 @@ class TestDriftFailsClosed:
         # must not have to parse an English sentence to do it.
         assert assessment.findings[0].error_code is code
         assert assessment.findings[0].to_json_dict()["error_code"] == str(code)
+
+    def test_every_finding_carries_the_error_code_key(
+        self, document: dict[str, Any]
+    ) -> None:
+        """A stable shape: step 5 branches on a value, never on key existence."""
+        tools = observed_tools(document)[:-1]
+        findings = assess_surface(
+            load_manifest_text(dumps(document)),
+            ObservedSurface(tools=tuple(tools), complete=True),
+        )
+        assert findings
+        for finding in findings:
+            assert "error_code" in finding.to_json_dict()
+            assert finding.to_json_dict()["error_code"] is None
 
     def test_a_discovery_failure_does_not_leak_the_upstream_message(
         self, manifest: ReviewedManifest

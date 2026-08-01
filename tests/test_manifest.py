@@ -97,7 +97,7 @@ def observed_tools(document: dict[str, Any]) -> list[ObservedTool]:
 
 
 def matching_surface(document: dict[str, Any]) -> ObservedSurface:
-    return ObservedSurface(tools=tuple(observed_tools(document)))
+    return ObservedSurface(tools=tuple(observed_tools(document)), complete=True)
 
 
 def config_for(digest: str) -> GatewayConfig:
@@ -775,20 +775,20 @@ class TestDriftFailsClosed:
     def test_an_unknown_provider_tool(self, document: dict[str, Any]) -> None:
         surface = ObservedSurface(
             tools=(*observed_tools(document), ObservedTool(name="synthetic_unreviewed_tool"))
-        )
+        , complete=True)
         assessment = self._assess(document, surface)
         assert not assessment.ready
         assert DriftReason.UNKNOWN_PROVIDER_TOOL in {f.reason for f in assessment.findings}
 
     def test_a_missing_provider_tool(self, document: dict[str, Any]) -> None:
-        surface = ObservedSurface(tools=tuple(observed_tools(document)[:-1]))
+        surface = ObservedSurface(tools=tuple(observed_tools(document)[:-1]), complete=True)
         assessment = self._assess(document, surface)
         assert not assessment.ready
         assert DriftReason.MISSING_PROVIDER_TOOL in {f.reason for f in assessment.findings}
 
     def test_a_duplicate_provider_tool(self, document: dict[str, Any]) -> None:
         tools = observed_tools(document)
-        surface = ObservedSurface(tools=(*tools, tools[0]))
+        surface = ObservedSurface(tools=(*tools, tools[0]), complete=True)
         assessment = self._assess(document, surface)
         assert not assessment.ready
         assert DriftReason.DUPLICATE_PROVIDER_TOOL in {f.reason for f in assessment.findings}
@@ -802,7 +802,7 @@ class TestDriftFailsClosed:
             output_schema=tools[0].output_schema,
             annotations=tools[0].annotations,
         )
-        assessment = self._assess(document, ObservedSurface(tools=tuple(tools)))
+        assessment = self._assess(document, ObservedSurface(tools=tuple(tools), complete=True))
         assert not assessment.ready
         assert DriftReason.SCHEMA_DIGEST_MISMATCH in {f.reason for f in assessment.findings}
 
@@ -815,7 +815,7 @@ class TestDriftFailsClosed:
             output_schema={"type": "object"},
             annotations=tools[1].annotations,
         )
-        assessment = self._assess(document, ObservedSurface(tools=tuple(tools)))
+        assessment = self._assess(document, ObservedSurface(tools=tuple(tools), complete=True))
         assert not assessment.ready
         assert DriftReason.SCHEMA_DIGEST_MISMATCH in {f.reason for f in assessment.findings}
 
@@ -829,7 +829,7 @@ class TestDriftFailsClosed:
             output_schema=tools[0].output_schema,
             annotations={"readOnlyHint": False, "title": "Synthetic Alpha"},
         )
-        assessment = self._assess(document, ObservedSurface(tools=tuple(tools)))
+        assessment = self._assess(document, ObservedSurface(tools=tuple(tools), complete=True))
         assert not assessment.ready
         assert DriftReason.METADATA_DIGEST_MISMATCH in {f.reason for f in assessment.findings}
 
@@ -842,9 +842,14 @@ class TestDriftFailsClosed:
             output_schema=tools[0].output_schema,
             annotations=tools[0].annotations,
         )
-        assessment = self._assess(document, ObservedSurface(tools=tuple(tools)))
+        assessment = self._assess(document, ObservedSurface(tools=tuple(tools), complete=True))
         assert not assessment.ready
         assert DriftReason.METADATA_DIGEST_MISMATCH in {f.reason for f in assessment.findings}
+
+    def test_a_surface_cannot_claim_completeness_by_omission(self) -> None:
+        """`complete` has no default, so a transport must state it (§6.2)."""
+        with pytest.raises(TypeError):
+            ObservedSurface(tools=())  # type: ignore[call-arg]
 
     def test_an_incompletely_enumerated_surface(self, document: dict[str, Any]) -> None:
         """§6.2's pagination conditions arrive here as `complete=False`."""
@@ -893,7 +898,7 @@ class TestDriftFailsClosed:
             annotations=tools[0].annotations,
         )
         findings = assess_surface(
-            load_manifest_text(dumps(document)), ObservedSurface(tools=tuple(tools))
+            load_manifest_text(dumps(document)), ObservedSurface(tools=tuple(tools), complete=True)
         )
         assert DriftReason.PROVIDER_SURFACE_DIGEST_MISMATCH in {f.reason for f in findings}
 
@@ -901,7 +906,9 @@ class TestDriftFailsClosed:
         self, document: dict[str, Any]
     ) -> None:
         """A re-ordered `tools/list` response is not a security-relevant change."""
-        surface = ObservedSurface(tools=tuple(reversed(observed_tools(document))))
+        surface = ObservedSurface(
+            tools=tuple(reversed(observed_tools(document))), complete=True
+        )
         assert self._assess(document, surface).ready
 
     def test_all_findings_are_collected_not_just_the_first(
@@ -909,7 +916,7 @@ class TestDriftFailsClosed:
     ) -> None:
         tools = observed_tools(document)[:-1]
         tools.append(ObservedTool(name="synthetic_unreviewed_tool"))
-        assessment = self._assess(document, ObservedSurface(tools=tuple(tools)))
+        assessment = self._assess(document, ObservedSurface(tools=tuple(tools), complete=True))
         reasons = {f.reason for f in assessment.findings}
         assert DriftReason.UNKNOWN_PROVIDER_TOOL in reasons
         assert DriftReason.MISSING_PROVIDER_TOOL in reasons
@@ -922,7 +929,7 @@ class TestFindingsAreSafeToLog:
         """§8 keeps `tools/list` response data out of logs."""
         surface = ObservedSurface(
             tools=(*observed_tools(document), ObservedTool(name="synthetic_secret_tool"))
-        )
+        , complete=True)
         manifest = load_manifest_text(dumps(document))
         findings = assess_surface(manifest, surface)
         rendered = json.dumps([f.to_json_dict() for f in findings])
@@ -930,7 +937,7 @@ class TestFindingsAreSafeToLog:
         assert "<unreviewed:" in rendered
 
     def test_a_reviewed_tool_name_is_reported(self, document: dict[str, Any]) -> None:
-        surface = ObservedSurface(tools=tuple(observed_tools(document)[:-1]))
+        surface = ObservedSurface(tools=tuple(observed_tools(document)[:-1]), complete=True)
         findings = assess_surface(load_manifest_text(dumps(document)), surface)
         rendered = json.dumps([f.to_json_dict() for f in findings])
         assert "synthetic_gamma_mutate" in rendered
@@ -947,7 +954,7 @@ class TestFindingsAreSafeToLog:
             annotations=tools[0].annotations,
         )
         findings = assess_surface(
-            load_manifest_text(dumps(document)), ObservedSurface(tools=tuple(tools))
+            load_manifest_text(dumps(document)), ObservedSurface(tools=tuple(tools), complete=True)
         )
         rendered = json.dumps([f.to_json_dict() for f in findings])
         assert "must not be logged" not in rendered

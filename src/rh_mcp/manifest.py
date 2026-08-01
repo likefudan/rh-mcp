@@ -186,10 +186,14 @@ class ObservedSurface:
 
     `complete` is the seam for §6.2's pagination conditions. A transport that
     hit a page limit, saw a repeated cursor, or failed to terminate must
-    either raise or return `complete=False`; both make readiness false. It
-    defaults to `True` only because the fixtures and the happy path say so
-    explicitly — a transport that forgets to set it is reporting a complete
-    surface, so step 3 must set it deliberately.
+    either raise or pass `complete=False`; both make readiness false.
+
+    It is a **required keyword argument with no default** on purpose. The
+    obvious default is `True`, and that is exactly the wrong one: a step-3
+    transport that forgot the field would silently assert it had enumerated
+    the whole provider surface, which is the one claim this type exists to
+    carry. Making it unrepresentable-by-omission costs one keyword at every
+    construction site and removes a permissive fallback from the seam.
 
     Duplicate tool names are *not* rejected here. §6.2 requires a duplicate to
     be a fail-closed readiness condition, so it has to survive into the drift
@@ -198,7 +202,7 @@ class ObservedSurface:
     """
 
     tools: tuple[ObservedTool, ...] = ()
-    complete: bool = True
+    complete: bool = field(kw_only=True)
 
     def __post_init__(self) -> None:
         code = ErrorCode.PROTOCOL_ERROR

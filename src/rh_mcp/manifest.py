@@ -142,13 +142,27 @@ class ObservedTool:
     `mcp.*` type. Malformed values raise `protocol_error` because they are
     provider-derived (§7.3); `establish_readiness` turns that into a
     fail-closed `Readiness(ready=False)` rather than letting it escape.
+
+    **Every observed field is a required keyword argument with no default**,
+    for the same reason as `ObservedSurface.complete`. Each omission would be
+    a positive security claim about the provider — "it declared no
+    annotations", "no output schema", "an unconstrained input schema" — and
+    the defaults would let a transport make all four by accident. The
+    `annotations` case is the dangerous one: MCP's `annotations` is optional,
+    so it is the most natural field to drop while writing the SDK mapping, and
+    dropping it would record `{}` for every tool at discovery *and* at
+    runtime. Both sides would agree forever, `metadata_digest_mismatch` could
+    never fire, and every `readOnlyHint` in the surface would be silently
+    unpinned — defeating §2's requirement that an annotation change surface as
+    review evidence. A field that cannot be omitted cannot be omitted by
+    accident.
     """
 
     name: str
-    description: str = ""
-    input_schema: Mapping[str, Any] = field(default_factory=dict)
-    output_schema: Mapping[str, Any] | None = None
-    annotations: Mapping[str, Any] = field(default_factory=dict)
+    description: str = field(kw_only=True)
+    input_schema: Mapping[str, Any] = field(kw_only=True)
+    output_schema: Mapping[str, Any] | None = field(kw_only=True)
+    annotations: Mapping[str, Any] = field(kw_only=True)
     schema_digest: str = field(init=False, default="")
     metadata_digest: str = field(init=False, default="")
 
@@ -398,6 +412,13 @@ def compute_full_manifest_digest(document: Mapping[str, Any]) -> str:
     order a file happens to list it in. The loader separately *requires* the
     committed file to already be in that order, so what a human reviews and
     what gets hashed are the same sequence.
+
+    Like the schema and metadata digests, the hashed input is tagged with its
+    `digest_kind` and the canonicalization version. Without the tag this digest
+    was distinct from the others only because manifest documents happen not to
+    share a key set with them — an accident nothing enforced, and one a later
+    field addition could quietly undo. The manifest is nested under its own key
+    so the tag can never collide with a document field.
     """
     payload = {key: value for key, value in document.items() if key != FULL_MANIFEST_DIGEST_FIELD}
     entries = payload.get("entries")
@@ -405,7 +426,14 @@ def compute_full_manifest_digest(document: Mapping[str, Any]) -> str:
         payload["entries"] = tuple(
             sorted(entries, key=lambda entry: _entry_sort_key(entry))
         )
-    return canonical_digest(payload, code=_LOCAL)
+    return canonical_digest(
+        {
+            "digest_kind": "full_manifest",
+            "canonicalization": CANONICALIZATION_VERSION,
+            "manifest": payload,
+        },
+        code=_LOCAL,
+    )
 
 
 def _name_sort_key(name: Any) -> str:
@@ -711,6 +739,16 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
 
     input_schema = _require_json_object(f"entries[{index}].input_schema", entry["input_schema"],
                                         _LOCAL)
+    # An empty schema constrains nothing, so it would make step 5's argument
+    # validation vacuous for this entry — a reviewed capability whose input is
+    # in practice unvalidated. A tool that genuinely takes no arguments still
+    # says so, as `{"type": "object", "properties": {}}`.
+    if not input_schema:
+        invalid(
+            f"entries[{index}].input_schema must not be empty: an empty schema "
+            "constrains nothing and would leave arguments unvalidated",
+            _LOCAL,
+        )
     raw_output_schema = entry["output_schema"]
     output_schema = (
         None
@@ -804,18 +842,32 @@ class DriftFinding:
     unreviewed tool is identified by a short digest of its name instead, which
     is enough to correlate with `rh-mcp admin discover` output — the reviewed
     place to see the real thing (§6.1).
+
+    `error_code` carries the originating `ErrorCode` when this finding stands
+    in for a raised `GatewayError`. It is a **structured field, not prose**:
+    step 5 has to map `auth_required` onto exit 4, and recovering that by
+    parsing an English sentence would be neither reliable nor stable. The
+    message that accompanied the error is deliberately *not* carried — it is
+    provider-derived text, §7.3 forbids it in public output, and it has been
+    observed to contain an account identifier.
     """
 
     reason: DriftReason
     detail: str
+    error_code: ErrorCode | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.reason, DriftReason):
             invalid("reason must be a DriftReason", _LOCAL)
         require_nonempty("detail", self.detail, _LOCAL)
+        if self.error_code is not None and not isinstance(self.error_code, ErrorCode):
+            invalid("error_code must be an ErrorCode", _LOCAL)
 
     def to_json_dict(self) -> dict[str, Any]:
-        return {"reason": str(self.reason), "detail": self.detail}
+        rendered: dict[str, Any] = {"reason": str(self.reason), "detail": self.detail}
+        if self.error_code is not None:
+            rendered["error_code"] = str(self.error_code)
+        return rendered
 
 
 @dataclass(frozen=True)
@@ -1001,9 +1053,15 @@ async def establish_readiness(
         return ReadinessAssessment(
             readiness=readiness_for(False),
             findings=(
+                # The error's message is dropped, not reformatted: it is
+                # provider-derived and has been observed carrying an account
+                # identifier into this consumer-visible JSON (§7.3). The code
+                # survives as a structured field so step 5 can map
+                # `auth_required` onto exit 4 without parsing prose.
                 DriftFinding(
                     DriftReason.DISCOVERY_FAILED,
-                    f"provider discovery failed with {error.code}: {error.message}",
+                    "provider discovery failed",
+                    error_code=error.code,
                 ),
             ),
         )
@@ -1033,9 +1091,21 @@ def preflight_read(
     failure never discloses whether a name exists in the manifest.
 
     Validating `arguments` against `entry.input_schema` is the remaining
-    preflight step and belongs to step 5; it needs a JSON Schema decision this
-    step deliberately did not take unilaterally. Until then a caller must not
-    treat a returned entry as permission to send unvalidated input.
+    preflight step and belongs to step 5. Until then a caller must not treat a
+    returned entry as permission to send unvalidated input.
+
+    **Guidance for whoever implements it, settled in review of this step:**
+
+    - Write a **strict-subset validator**; do not reach for `jsonschema`. That
+      library *ignores* keywords it does not recognize, which is default-allow
+      on precisely the axis this package is default-deny — an unreviewed or
+      mistyped constraint would silently pass rather than refuse.
+    - Reject unsupported keywords at **load** time, not call time, so an
+      unenforceable manifest fails closed before any gateway becomes ready
+      instead of at the first call that happens to exercise the keyword.
+    - Fold the validation into this function rather than adding a second one a
+      caller must remember to invoke, so "resolved an entry" and "validated the
+      input" are one event.
     """
     if not assessment.ready:
         invalid("the gateway is not ready, so no read may be sent", _LOCAL)

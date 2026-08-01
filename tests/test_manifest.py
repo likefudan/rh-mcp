@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from rh_mcp.canonical import tool_metadata_digest, tool_schema_digest
+from rh_mcp.canonical import canonical_digest, tool_metadata_digest, tool_schema_digest
 from rh_mcp.config import GatewayConfig
 from rh_mcp.errors import (
     EXIT_CODE_CONFIGURATION_ERROR,
@@ -56,7 +56,7 @@ from tests.support import (
 # The golden full-manifest digest of the synthetic fixture. Written out by
 # hand: if a change to canonicalization, the manifest format, or the fixture
 # moves it, that is exactly the explicit migration DESIGN.md §6 requires.
-BASE_DIGEST = "sha256:a37642e4074680c989f0c85bee099657defcbba0779d3c3bb64204f55e157307"
+BASE_DIGEST = "sha256:463295e635f21ed81c3792da15f3474c6096d8821cd815d9cbddc6867dc8b705"
 OTHER_DIGEST = "sha256:" + "b" * 64
 
 
@@ -96,8 +96,58 @@ def observed_tools(document: dict[str, Any]) -> list[ObservedTool]:
     ]
 
 
+def bare_tool(name: str) -> ObservedTool:
+    """A tool observed to declare nothing beyond its name.
+
+    Spelled out rather than defaulted: every field of `ObservedTool` is a
+    positive claim about what the provider returned, so a test that means
+    "this tool really did declare no annotations" has to say so.
+    """
+    return ObservedTool(
+        name=name,
+        description="",
+        input_schema={},
+        output_schema=None,
+        annotations={},
+    )
+
+
 def matching_surface(document: dict[str, Any]) -> ObservedSurface:
     return ObservedSurface(tools=tuple(observed_tools(document)), complete=True)
+
+
+class TestTheDiscoverySeamHasNoPermissiveDefaults:
+    """Every observed field must be a positive claim (§2, §6.2).
+
+    A default here is a security claim a step-3 transport could make by
+    omission — "no annotations", "no output schema", "a complete surface" —
+    and nothing downstream could tell the difference between "the provider
+    declared nothing" and "the mapping code forgot the field". The
+    `annotations` case is the sharpest: a default of `{}` would be recorded
+    identically at discovery and at runtime, so `metadata_digest_mismatch`
+    could never fire and every `readOnlyHint` would be silently unpinned.
+
+    These tests fail if any default is reintroduced.
+    """
+
+    @pytest.mark.parametrize(
+        "omit", ["description", "input_schema", "output_schema", "annotations"]
+    )
+    def test_every_observed_tool_field_is_required(self, omit: str) -> None:
+        fields: dict[str, Any] = {
+            "name": "synthetic_tool",
+            "description": "",
+            "input_schema": {},
+            "output_schema": None,
+            "annotations": {},
+        }
+        del fields[omit]
+        with pytest.raises(TypeError, match=omit):
+            ObservedTool(**fields)
+
+    def test_surface_completeness_is_required(self) -> None:
+        with pytest.raises(TypeError, match="complete"):
+            ObservedSurface(tools=())
 
 
 def config_for(digest: str) -> GatewayConfig:
@@ -320,6 +370,18 @@ MUTATIONS: dict[str, Any] = {
 }
 
 
+def test_the_full_manifest_digest_is_domain_separated(document: dict[str, Any]) -> None:
+    """It must not collide with a schema or metadata digest by construction.
+
+    Before this tag it was distinct from them only because manifest documents
+    happen not to share a key set — an accident nothing enforced, and one a
+    later field addition could quietly undo.
+    """
+    payload = {k: v for k, v in document.items() if k != "full_manifest_digest"}
+    untagged = canonical_digest(payload)
+    assert compute_full_manifest_digest(document) != untagged
+
+
 class TestFullManifestDigestCoverage:
     """Every §6 change class necessarily produces a new full-manifest digest."""
 
@@ -434,6 +496,25 @@ class TestDocumentValidation:
         for entry in entries:
             entry["disposition"] = "denied"
         expect_local_failure(reseal(build_manifest(entries)), "no reviewed read capabilities")
+
+    def test_rejects_an_empty_input_schema(self) -> None:
+        """An empty schema would leave step 5's argument validation vacuous."""
+        entries = default_entries()
+        entries[0]["input_schema"] = {}
+        expect_local_failure(reseal(build_manifest(entries)), "input_schema must not be empty")
+
+    def test_accepts_a_schema_declaring_no_properties(self) -> None:
+        """A tool that genuinely takes no arguments still has to say so."""
+        entries = default_entries()
+        entries[0] = build_entry(
+            provider_tool_name="synthetic_alpha_read",
+            capability="alpha_reading",
+            description=entries[0]["description"],
+            input_schema={"type": "object", "properties": {}},
+            rationale=entries[0]["rationale"],
+        )
+        document = reseal(build_manifest(entries))
+        assert load_manifest_text(dumps(document)).capabilities["alpha_reading"].input_schema
 
     def test_rejects_duplicate_provider_tools(self) -> None:
         entries = default_entries()
@@ -774,8 +855,9 @@ class TestDriftFailsClosed:
 
     def test_an_unknown_provider_tool(self, document: dict[str, Any]) -> None:
         surface = ObservedSurface(
-            tools=(*observed_tools(document), ObservedTool(name="synthetic_unreviewed_tool"))
-        , complete=True)
+            tools=(*observed_tools(document), bare_tool("synthetic_unreviewed_tool")),
+            complete=True,
+        )
         assessment = self._assess(document, surface)
         assert not assessment.ready
         assert DriftReason.UNKNOWN_PROVIDER_TOOL in {f.reason for f in assessment.findings}
@@ -873,14 +955,29 @@ class TestDriftFailsClosed:
         assessment = run(establish_readiness(config_for(BASE_DIGEST), manifest, discovery))
         assert not assessment.ready
         assert [f.reason for f in assessment.findings] == [DriftReason.DISCOVERY_FAILED]
-        assert str(code) in assessment.findings[0].detail
+        # Structured, not prose: step 5 maps `auth_required` onto exit 4 and
+        # must not have to parse an English sentence to do it.
+        assert assessment.findings[0].error_code is code
+        assert assessment.findings[0].to_json_dict()["error_code"] == str(code)
+
+    def test_a_discovery_failure_does_not_leak_the_upstream_message(
+        self, manifest: ReviewedManifest
+    ) -> None:
+        """§7.3: provider-derived text has been seen carrying an account id."""
+        secret = "account 7f3a-SUPERSECRET-9911 is not entitled"
+        discovery = SpyDiscovery(error=GatewayError(ErrorCode.PROVIDER_ERROR, secret))
+        assessment = run(establish_readiness(config_for(BASE_DIGEST), manifest, discovery))
+        rendered = json.dumps([f.to_json_dict() for f in assessment.findings])
+        assert "SUPERSECRET" not in rendered
+        assert secret not in rendered
+        assert assessment.findings[0].error_code is ErrorCode.PROVIDER_ERROR
 
     def test_a_malformed_provider_tool_makes_readiness_false(
         self, manifest: ReviewedManifest
     ) -> None:
         """A malformed tool raises at construction; readiness must absorb it."""
         with pytest.raises(GatewayError) as excinfo:
-            ObservedTool(name="has space")
+            bare_tool("has space")
         assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
         discovery = SpyDiscovery(error=excinfo.value)
         assessment = run(establish_readiness(config_for(BASE_DIGEST), manifest, discovery))
@@ -915,7 +1012,7 @@ class TestDriftFailsClosed:
         self, document: dict[str, Any]
     ) -> None:
         tools = observed_tools(document)[:-1]
-        tools.append(ObservedTool(name="synthetic_unreviewed_tool"))
+        tools.append(bare_tool("synthetic_unreviewed_tool"))
         assessment = self._assess(document, ObservedSurface(tools=tuple(tools), complete=True))
         reasons = {f.reason for f in assessment.findings}
         assert DriftReason.UNKNOWN_PROVIDER_TOOL in reasons
@@ -928,8 +1025,9 @@ class TestFindingsAreSafeToLog:
     ) -> None:
         """§8 keeps `tools/list` response data out of logs."""
         surface = ObservedSurface(
-            tools=(*observed_tools(document), ObservedTool(name="synthetic_secret_tool"))
-        , complete=True)
+            tools=(*observed_tools(document), bare_tool("synthetic_secret_tool")),
+            complete=True,
+        )
         manifest = load_manifest_text(dumps(document))
         findings = assess_surface(manifest, surface)
         rendered = json.dumps([f.to_json_dict() for f in findings])

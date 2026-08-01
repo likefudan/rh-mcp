@@ -200,7 +200,7 @@ tool in the observed provider surface:
 - deterministic canonical schema and metadata digests;
 - review disposition (`read_allowed` or `denied`) and review rationale;
 - manifest format version, provider-surface digest, observation timestamp,
-  and reviewer metadata.
+  reviewer metadata, and a canonical full-manifest digest.
 
 The schema digest covers the provider name and complete input/output schemas;
 the metadata digest covers description and annotations. Canonicalization is a
@@ -208,6 +208,22 @@ documented, test-vector-backed algorithm over UTF-8 JSON, followed by SHA-256.
 Object key order and insignificant whitespace do not change a digest; array
 order and semantically meaningful values do. The manifest format and digest
 algorithm are versioned so an algorithm change is an explicit migration.
+
+The **full-manifest digest** is SHA-256 over the canonical form of the complete
+manifest except the self-referential `full_manifest_digest` field. It therefore
+covers the manifest/digest format versions, provider-surface digest,
+observation and reviewer metadata, every public capability-to-provider-tool
+mapping, exact descriptions/schemas/annotations, every `read_allowed` or
+`denied` disposition and rationale, and every other manifest field. Entries
+have a defined canonical order. A capability remap, permission change,
+same-version replacement, or metadata/schema edit necessarily produces a new
+full-manifest digest; changing only the stored digest to match altered content
+does not satisfy a separately configured expected digest.
+
+The loader requires the manifest's declared `full_manifest_digest`, the
+locally recomputed value, and the configured expected value to be identical.
+The shorter public field name `manifest_digest` always means this same
+full-manifest digest; it is not a per-tool or provider-surface digest.
 
 ### 6.1 Owner-assisted discovery
 
@@ -224,14 +240,22 @@ not enter the production manifest without authenticated discovery and review.
 ### 6.2 Startup and call preflight
 
 Before becoming ready, the gateway discovers the complete provider surface
-and compares it with the committed manifest. Readiness fails closed on:
+and compares it with the committed manifest. It also recomputes the active
+full-manifest digest and compares it with the consumer-supplied
+`expected_manifest_digest`. Readiness fails closed, before a tool call, on:
 
 - an unknown, missing, duplicate, or malformed tool;
 - any input schema, output schema, annotation, or security-relevant metadata
   digest mismatch;
 - pagination that exceeds limits, repeats a cursor, or does not terminate;
 - a manifest with an unsupported version, invalid digest, duplicate entry, or
-  no reviewed read capabilities.
+  no reviewed read capabilities; or
+- a missing, malformed, or mismatched expected full-manifest digest.
+
+The expected value is never inferred from the installed manifest and cannot be
+overridden by a request. Thus package pinning and manifest pinning are separate
+checks: a consumer must deliberately accept a new full-manifest digest even if
+the package version or human-readable manifest version did not change.
 
 For each request, the gateway resolves a public capability identifier through
 the active manifest, verifies its `read_allowed` disposition and exact digest,
@@ -245,10 +269,33 @@ transport. Callers cannot supply an arbitrary provider tool name.
 The conceptual interface is:
 
 ```python
+config = GatewayConfig(expected_manifest_digest="sha256:...")
 async with RobinhoodReadGateway(config, credential_store) as gateway:
     readiness = await gateway.readiness()
     result = await gateway.read(capability, arguments)
 ```
+
+Every gateway instance that can invoke reads requires the expected digest as a
+trusted constructor/configuration input. A separate discovery-only
+administrative context may create a candidate manifest but cannot invoke a
+read capability or become ready.
+
+Readiness is an immutable, SDK-neutral object whose JSON form includes at
+least:
+
+```json
+{
+  "ready": true,
+  "manifest_version": "...",
+  "manifest_digest": "sha256:...",
+  "expected_manifest_digest": "sha256:..."
+}
+```
+
+On success the two digest values are equal. On mismatch, readiness is false,
+reports only safe digest/configuration diagnostics, and no read can be sent.
+The active `manifest_digest` is always the locally recomputed full-manifest
+digest, never a value trusted directly from the manifest file.
 
 `capability` is resolved only from the reviewed manifest. The exact Python
 type may be generated from that manifest or represented by a validated enum;
@@ -260,6 +307,7 @@ The result is an immutable, SDK-neutral envelope with a versioned JSON form:
 {
   "envelope_version": "1.0",
   "manifest_version": "...",
+  "manifest_digest": "sha256:...",
   "capability": "...",
   "schema_digest": "sha256:...",
   "result_digest": "sha256:...",
@@ -276,7 +324,10 @@ test-covered JSON decoding rule. Images, audio, resource links, embedded
 resources, unexpected content types, ambiguous multiple payloads, and invalid
 JSON fail with `protocol_error`; provider error content becomes a sanitized
 `provider_error`. The canonical result digest is computed before returning the
-envelope.
+envelope. Every successful envelope carries the same locally recomputed
+full-manifest digest that made the gateway ready, allowing the consumer to
+verify and audit the exact capability and permission contract used for that
+call.
 
 ### 7.2 CLI
 
@@ -343,7 +394,16 @@ Production configuration is intentionally narrow:
 - credential-store adapter and namespace;
 - callback port and exact loopback host/path;
 - bounded timeout/concurrency settings; and
-- active committed manifest selected by the installed package version.
+- active committed manifest selected by the installed package version; and
+- required `expected_manifest_digest`, supplied independently by the consumer
+  (`RH_MCP_EXPECTED_MANIFEST_DIGEST` for the CLI).
+
+The expected digest must use the supported algorithm prefix and exact digest
+length. Missing or malformed values are configuration errors. The expected
+value is not read from the manifest itself, a provider response, or a mutable
+per-request argument. `ainvest` passes its deployment-pinned digest into
+`GatewayConfig`; CLI users pin the reviewed release digest through trusted
+deployment configuration.
 
 The official endpoint, issuer, OAuth hosts, TLS policy, and production
 transport are not ordinary runtime overrides. Development-only endpoint,
@@ -364,7 +424,9 @@ credentials.
 
 `ainvest` owns:
 
-- pinning a reviewed `rh-mcp` release and expected manifest version/digest;
+- pinning a reviewed `rh-mcp` release and expected full-manifest digest,
+  supplying that digest to `GatewayConfig`, and verifying it on readiness and
+  every result envelope;
 - mapping gateway payloads into its versioned Quote, Position, Portfolio,
   Order, and other domain contracts;
 - account/symbol consistency, freshness, data-quality, and tradability checks;
@@ -385,7 +447,15 @@ services, fake transports, temporary or in-memory credential stores, and a
 controllable clock. Required coverage includes:
 
 - canonicalization and digest golden vectors;
+- full-manifest golden vectors proving that capability mapping, provider tool,
+  schema, metadata, allow/deny disposition, rationale, and same-version
+  replacement changes alter the digest;
 - manifest validation and every fail-closed drift case in §6.2;
+- missing/malformed/mismatched expected-digest tests proving readiness is false
+  and no read reaches the transport, with locally detectable mismatches
+  rejected before provider discovery;
+- readiness/envelope contract tests proving the locally recomputed active
+  full-manifest digest is present and equals the configured expected digest;
 - proof that denied/unknown/invalid requests never reach the transport;
 - input/output schema validation and every supported MCP content mapping;
 - pagination, repeated-cursor, timeout, cancellation, concurrency, and all
@@ -414,6 +484,8 @@ Before another repository depends on `rh-mcp`, it must have:
   package-install smoke tests in CI;
 - semantic versioning, changelog, tagged release, immutable artifact, and
   checksums or provenance suitable for consumer pinning;
+- publication of the reviewed full-manifest digest in the release artifact and
+  release notes so consumers can pin it independently of package version;
 - documented public API and compatibility policy for envelope, errors,
   manifest format, and credential-store protocol;
 - a release gate requiring independent review of manifest changes and all
@@ -436,7 +508,9 @@ remain before the first production release:
    sanitized candidate manifest.
 4. Review each observed tool for read behavior and side effects, then commit
    both allowed and denied dispositions.
-5. Confirm real response content shapes and pagination using manifest-approved
+5. Compute, independently review, and publish the resulting full-manifest
+   digest for consumers to pin.
+6. Confirm real response content shapes and pagination using manifest-approved
    reads without retaining account data.
 
 These items block a production manifest, not implementation of the offline
@@ -446,13 +520,14 @@ review rather than a permissive fallback.
 ## 14. Build order
 
 1. Package/CI scaffold, SDK-neutral models, configuration, and error contract.
-2. Canonicalization, manifest format, offline fixtures, and fail-closed
-   readiness/preflight enforcement.
+2. Canonicalization, full-manifest digest and expected-digest configuration,
+   manifest format, offline fixtures, and fail-closed readiness/preflight
+   enforcement.
 3. Private MCP SDK v2 transport with bounded pagination, payload handling, and
    synthetic-server tests.
 4. CredentialStore protocol/adapters and hardened OAuth/DCR/callback flow.
 5. Public gateway and safe CLI composed over the tested lower layers.
-6. Owner-assisted authenticated discovery and human review of the candidate
-   manifest.
+6. Owner-assisted authenticated discovery, human review of the candidate
+   manifest, and publication of its full-manifest digest.
 7. Independent security/compatibility review, tagged release, and consumer
    contract integration.

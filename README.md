@@ -27,10 +27,29 @@ gateway.
 ## Status
 
 **Not usable yet.** The security architecture is documented in
-[`DESIGN.md`](DESIGN.md), and build-order step 1 has landed: the package
-scaffold, SDK-neutral models, validated configuration, and the stable error
-contract. Nothing that talks to Robinhood exists yet — no manifest enforcement,
-no MCP transport, no credential or OAuth handling, and no gateway or CLI. A
-production release additionally requires owner-assisted authenticated discovery
-and independent review of the live Robinhood tool schemas, and no production
-manifest exists.
+[`DESIGN.md`](DESIGN.md). Build-order steps 1 and 2 have landed:
+
+- **Step 1** — package scaffold, SDK-neutral models, validated configuration,
+  and the stable error contract.
+- **Step 2** — the `rh-canon-1` canonicalization algorithm and SHA-256 digests,
+  the versioned reviewed-manifest format and its fail-closed loader, and
+  readiness/preflight enforcement against a discovered provider surface.
+
+Nothing that talks to Robinhood exists yet — no MCP transport, no credential or
+OAuth handling, and no gateway or CLI. **No reviewed manifest ships with this
+release**: `load_active_manifest()` deliberately fails rather than falling back
+to a permissive default, because a production manifest requires owner-assisted
+authenticated discovery and independent human review of the live Robinhood tool
+schemas (DESIGN.md §6.1, §13). Every manifest and schema in the test suite is
+synthetic.
+
+### Canonicalization and digests
+
+Digest comparisons are the whole read-only boundary, so the canonical form is
+specified rather than left to an implementation. `rh-canon-1` is written out in
+the module docstring of `src/rh_mcp/canonical.py` and pinned by golden vectors
+in `tests/test_canonical.py`. Object key order and insignificant whitespace do
+not change a digest; array order and semantically meaningful values do. The
+algorithm version is recorded inside every derived digest and inside the
+manifest, so changing it is an explicit migration rather than a silent
+revaluation of every pin.

@@ -35,7 +35,15 @@ def _imported_top_level_modules(source: str) -> set[str]:
 
 def test_discovery_found_the_package_modules() -> None:
     """Guard against the sweep below passing because it found nothing."""
-    assert {"__init__.py", "config.py", "errors.py", "models.py"} <= set(MODULE_IDS)
+    assert {
+        "__init__.py",
+        "canonical.py",
+        "config.py",
+        "errors.py",
+        "manifest.py",
+        "models.py",
+        "validation.py",
+    } <= set(MODULE_IDS)
 
 
 @pytest.mark.parametrize("path", MODULE_PATHS, ids=MODULE_IDS)

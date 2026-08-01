@@ -11,23 +11,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # `requires-python = ">=3.11"` is a promise the suite has to keep, so
-        # every supported minor is tested rather than whichever interpreter the
+        # `requires-python = ">=3.12"` is a promise the suite has to keep, so
+        # the supported range is tested rather than whichever interpreter the
         # runner happens to ship.
         #
-        # 3.12.3 is pinned deliberately alongside latest-3.12. Two stdlib
+        # Two legs, not four, because only two behavioural classes exist among
+        # the versions we support. 3.12.3 is pinned deliberately: two stdlib
         # behaviours this package's security boundary depends on are *patch*-
         # version dependent, and both differ between 3.12.3 and 3.12.13:
         #   - IPv6Address('::ffff:127.0.0.1').is_loopback
         #   - urlsplit('http://[::1]extra:80/mcp').hostname
-        # Testing only the newest patch of each minor is what let a regression
-        # through once already; the second of those fails open.
-        python-version: ["3.11", "3.12.3", "3.12", "3.13"]
+        # Every later version measured agrees with 3.13, so latest-3.12 would
+        # only restate what 3.13 already proves. Testing solely the newest
+        # patch of each minor is what let a regression through once already;
+        # the second behaviour above fails open.
+        #
+        # Note this pin is a regression guard, not a general policy: it covers
+        # the one old patch known to have bitten us, not the oldest patch of
+        # every supported minor.
+        python-version: ["3.12.3", "3.13"]
     env:
       # setup-uv's own `python-version` does not constrain `uv sync`/`uv run`,
       # which resolve an interpreter themselves — this is what silently made CI
-      # test 3.12.3 while the workflow claimed 3.11. UV_PYTHON applies to every
-      # uv command in the job.
+      # test an arbitrary runner interpreter while the workflow claimed
+      # otherwise. UV_PYTHON applies to every uv command in the job.
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4

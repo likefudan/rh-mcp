@@ -33,7 +33,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --frozen
-      - run: uv run python -VV
+      # Assert, don't just print. If UV_PYTHON ever stops constraining uv, every
+      # matrix leg would silently collapse onto one interpreter and stay green —
+      # which is the exact failure this matrix was written in response to.
+      - run: |
+          uv run python -VV
+          uv run python -c "import sys; want='${{ matrix.python-version }}'.split('.'); got=[str(n) for n in sys.version_info[:len(want)]]; assert got == want, f'expected {want}, running {got}'; print(f'interpreter confirmed: {\".\".join(got)}')"
       - run: uv run ruff check .
       - run: uv run mypy src
       - run: uv run pytest

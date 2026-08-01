@@ -77,6 +77,15 @@ def _require_utc_timestamp(name: str, value: str, code: ErrorCode) -> None:
 _MAX_STRUCTURAL_DEPTH = 128
 
 
+def _is_encodable(value: str) -> bool:
+    """Whether `value` can be encoded as UTF-8 (no unpaired surrogates)."""
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def _freeze_json(value: Any, *, depth: int = 0) -> Any:
     """Deep-copy decoded JSON into a structure nothing else can mutate.
 
@@ -104,6 +113,11 @@ def _freeze_json(value: Any, *, depth: int = 0) -> Any:
                     f"data object keys must be strings, got {type(key).__name__}",
                     ErrorCode.PROTOCOL_ERROR,
                 )
+            if not _is_encodable(key):
+                _invalid(
+                    "data object keys may not contain unpaired surrogates",
+                    ErrorCode.PROTOCOL_ERROR,
+                )
             frozen[key] = _freeze_json(item, depth=depth + 1)
         return MappingProxyType(frozen)
     if isinstance(value, (list, tuple)):
@@ -117,6 +131,13 @@ def _freeze_json(value: Any, *, depth: int = 0) -> Any:
     # risk gate and sanity bound a consumer applies (§7.1, §10).
     if isinstance(value, float) and not math.isfinite(value):
         _invalid("data may not contain NaN or Infinity", ErrorCode.PROTOCOL_ERROR)
+    # A lone UTF-16 surrogate survives `json.loads` (from a `\udXXX` escape)
+    # but cannot be encoded to UTF-8, so it is not representable JSON text.
+    # Rejecting it here keeps the failure inside the §7.3 error contract:
+    # otherwise the first component to encode the payload — the canonical
+    # `result_digest` — raises an uncaught `UnicodeEncodeError`.
+    if isinstance(value, str) and not _is_encodable(value):
+        _invalid("data may not contain unpaired surrogates", ErrorCode.PROTOCOL_ERROR)
     # `bool` is a subclass of `int`, so it is covered here.
     if value is None or isinstance(value, (str, int, float)):
         return value

@@ -329,6 +329,37 @@ class TestResultEnvelope:
         with pytest.raises(GatewayError):
             self._make(data=payload)
 
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {"symbol": "\ud800"},
+            {"rows": [{"symbol": "AAPL\udfff"}]},
+            {"\udc00": "value"},
+        ],
+        ids=["value", "nested-value", "key"],
+    )
+    def test_rejects_unpaired_surrogates(self, payload: dict[str, object]) -> None:
+        """A lone surrogate is not encodable text, so it is not JSON (§7.3).
+
+        Without this the failure escapes the error contract: the first
+        component to encode the payload — the canonical `result_digest` —
+        raises an uncaught `UnicodeEncodeError` instead of a `GatewayError`.
+        """
+        with pytest.raises(GatewayError) as excinfo:
+            self._make(data=payload)
+        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
+
+    def test_rejects_a_payload_decoded_from_a_surrogate_escape(self) -> None:
+        """`json.loads` produces a lone surrogate from a `\\udXXX` escape."""
+        payload = json.loads('{"symbol": "\\ud800"}')
+        with pytest.raises(GatewayError):
+            self._make(data=payload)
+
+    def test_accepts_astral_plane_text(self) -> None:
+        """A correctly paired surrogate is ordinary text and must survive."""
+        envelope = self._make(data={"emoji": "\U0001f4c8"})
+        assert envelope.to_json_dict()["data"] == {"emoji": "\U0001f4c8"}
+
     def test_accepts_the_json_scalar_types(self) -> None:
         payload = {"s": "x", "i": 1, "f": 1.5, "t": True, "n": None, "l": [1, "a", None]}
         assert self._make(data=payload).to_json_dict()["data"] == payload

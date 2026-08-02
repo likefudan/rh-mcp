@@ -283,3 +283,48 @@ class TestStatusHonoursTheOriginatingErrorCode:
         assert code == EXIT_CODE_CONFIGURATION_ERROR
         assert "rh-mcp login" not in err
         assert json.loads(out)["ready"] is False
+
+
+class TestLogoutAsksBeforeItPrepares:
+    """Consent comes before any setup that can fail for unrelated reasons.
+
+    CI caught the original ordering: `open_credential_store` ran first, and on
+    a host without a keychain it raised before the prompt was ever reached, so
+    the refusal a user saw had nothing to do with what they were asked.
+    """
+
+    def test_the_store_is_not_opened_before_confirmation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        opened: list[Any] = []
+
+        def spy_open(*args: Any, **kwargs: Any) -> Any:
+            opened.append(args)
+            raise AssertionError("the credential store must not be opened before consent")
+
+        class NotATty(io.StringIO):
+            def isatty(self) -> bool:
+                return False
+
+        monkeypatch.setattr(cli, "open_credential_store", spy_open)
+        monkeypatch.setattr(cli.sys, "stdin", NotATty(""))
+        exit_code, out, err = invoke(["logout"])
+        assert exit_code == EXIT_CODE_USAGE_ERROR
+        assert opened == []
+        assert out == ""
+
+    def test_a_declined_confirmation_opens_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        opened: list[Any] = []
+
+        class Tty(io.StringIO):
+            def isatty(self) -> bool:
+                return True
+
+        monkeypatch.setattr(cli, "open_credential_store", lambda *a, **k: opened.append(a))
+        monkeypatch.setattr(cli.sys, "stdin", Tty("n\n"))
+        exit_code, out, _ = invoke(["logout"])
+        assert exit_code == EXIT_CODE_USAGE_ERROR
+        assert opened == []
+        assert out == ""

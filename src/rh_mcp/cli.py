@@ -113,12 +113,18 @@ async def _cmd_login(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
 
 async def _cmd_logout(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     config = GatewayConfig.from_env()
-    store = open_credential_store(config)
+    # Consent first, store second. Opening the credential store can fail for
+    # reasons that have nothing to do with the user's intent — a keychain
+    # adapter on a host that has no keychain, for one — and that failure
+    # arriving *before* the prompt turns "are you sure?" into an unrelated
+    # error the user never gets to answer. CI caught this: on Linux the
+    # confirmation was never reached at all.
     confirmed = args.yes or _confirm(
         "delete the stored Robinhood credential and client registration?", err, sys.stdin
     )
     if not confirmed:
         raise GatewayError(ErrorCode.INPUT_INVALID, "logout was not confirmed; nothing removed")
+    store = open_credential_store(config)
     _emit(await logout(store, confirm=True), out)
     return 0
 

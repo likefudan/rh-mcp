@@ -4,7 +4,23 @@ version = "0.1.0"
 description = "A default-deny Python Read Gateway for Robinhood's official MCP server"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+# DESIGN.md §12: pinned compatible MCP SDK v2 constraints. Both are *private*
+# implementation dependencies (§4) — no public signature, exception, serialized
+# result, or type annotation may contain an `mcp.*` or `httpx2.*` type, and
+# `tests/test_dependency_boundary.py` enforces that mechanically.
+#
+# The upper bounds are the point. A consumer that holds its own MCP SDK must
+# not have a major-version bump forced on it by installing this package, and a
+# v3 SDK could change the wire contract this gateway's fail-closed checks are
+# written against. Widening either bound is a security-boundary change: it
+# needs the §12 release-gate review, not a dependency-update PR.
+#
+# `httpx2` (not `httpx`) is what MCP SDK v2 depends on and what the guarded
+# transport in `transport.py` subclasses.
+dependencies = [
+    "httpx2>=2.5.0,<3.0.0",
+    "mcp>=2.0.0,<3.0.0",
+]
 
 [dependency-groups]
 dev = [

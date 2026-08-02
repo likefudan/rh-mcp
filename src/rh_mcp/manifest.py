@@ -113,6 +113,12 @@ FULL_MANIFEST_DIGEST_FIELD: Final = "full_manifest_digest"
 MAX_MANIFEST_BYTES: Final = 4_194_304
 MAX_MANIFEST_TEXT_DEPTH: Final = 32
 
+# A structural rail on the argument walk, not the §8 `max_json_depth` payload
+# bound — that one is enforced downstream of this check, which is too late to
+# stop a `RecursionError` escaping the §7.3 error contract. Generous enough
+# that no plausible reviewed schema reaches it.
+_MAX_ARGUMENT_DEPTH: Final = 64
+
 _TOP_LEVEL_FIELDS: Final[frozenset[str]] = frozenset(
     {
         "manifest_format_version",
@@ -1285,7 +1291,7 @@ def _subschema_for(schema: Any, name: str) -> Any:
     return None
 
 
-def _refuse_undeclared(value: Any, schema: Any, *, path: str) -> None:
+def _refuse_undeclared(value: Any, schema: Any, *, path: str, depth: int = 0) -> None:
     """Walk the payload, refusing any object key the schema does not declare.
 
     Enforced at **every** depth, not just the root. The first version of this
@@ -1295,9 +1301,26 @@ def _refuse_undeclared(value: Any, schema: Any, *, path: str) -> None:
     the same hole and the more likely one, since a batch or filter argument is
     exactly where they appear.
 
-    `items` and `additionalProperties`-as-schema are followed too, so a
-    declared container cannot become an unchecked bag.
+    Descent follows `properties`, `items`, and the `allOf`/`anyOf`/`oneOf`
+    branches — and **deliberately not `additionalProperties`**. Do not "fix"
+    that: a key governed only by `additionalProperties` never enters
+    `_declared_names`, so it is refused at its parent before any descent could
+    happen. Adding the descent would turn that refusal into a permit and
+    reopen exactly the hole this function exists to close.
+
+    `_subschema_for` returning `None` is likewise safe by construction: a child
+    walked against no schema declares no names, so every key in it is refused.
+
+    The depth rail is a structural guard, not the §8 `max_json_depth` bound —
+    that one is enforced downstream, which is too late here. Without this,
+    caller-supplied `--input` nesting a few thousand levels raises an uncaught
+    `RecursionError` instead of the stable `input_invalid` contract.
     """
+    if depth > _MAX_ARGUMENT_DEPTH:
+        invalid(
+            f"{path} nests deeper than {_MAX_ARGUMENT_DEPTH} levels",
+            ErrorCode.INPUT_INVALID,
+        )
     if isinstance(value, Mapping):
         allowed = _declared_names(schema)
         # Keys are compared and reported as text: a non-string key cannot be
@@ -1313,13 +1336,15 @@ def _refuse_undeclared(value: Any, schema: Any, *, path: str) -> None:
                 ErrorCode.INPUT_INVALID,
             )
         for key, item in value.items():
-            _refuse_undeclared(item, _subschema_for(schema, key), path=f"{path}.{key}")
+            _refuse_undeclared(
+                item, _subschema_for(schema, key), path=f"{path}.{key}", depth=depth + 1
+            )
         return
 
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         items = schema.get("items") if isinstance(schema, Mapping) else None
         for index, item in enumerate(value):
-            _refuse_undeclared(item, items, path=f"{path}[{index}]")
+            _refuse_undeclared(item, items, path=f"{path}[{index}]", depth=depth + 1)
 
 
 def manifest_to_json_dict(manifest: ReviewedManifest) -> dict[str, Any]:

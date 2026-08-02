@@ -524,3 +524,119 @@ class TestReadSurfacesTheOriginatingError:
         with pytest.raises(GatewayError) as excinfo:
             run(gateway.read("alpha_reading", VALID_ARGS))
         assert excinfo.value.code is ErrorCode.NOT_READY
+
+
+class TestTheArgumentWalkIsBounded:
+    """A RecursionError would escape the §7.3 error contract.
+
+    `max_json_depth` is a §8 payload bound enforced downstream of this check,
+    which is too late: the crash happens while validating caller input, before
+    anything reaches the transport.
+    """
+
+    def test_a_deeply_nested_payload_is_refused_not_a_crash(self) -> None:
+        gateway, transport = TestUndeclaredArgumentsAtEveryDepth._gateway(
+            {"type": "object", "properties": {"rows": {"type": "array"}}}
+        )
+        payload: dict[str, Any] = {"rows": []}
+        cursor: list[Any] = payload["rows"]
+        for _ in range(5000):
+            nxt: list[Any] = []
+            cursor.append(nxt)
+            cursor = nxt
+        with pytest.raises(GatewayError) as excinfo:
+            run(gateway.read("alpha_reading", payload))
+        assert excinfo.value.code is ErrorCode.INPUT_INVALID
+        assert "nests deeper" in excinfo.value.message
+        assert transport.call_tool_calls == []
+
+    def test_a_realistically_nested_payload_still_passes(self) -> None:
+        """The rail must not refuse a schema a reviewer would plausibly write."""
+        gateway, transport = TestUndeclaredArgumentsAtEveryDepth._gateway(
+            {
+                "type": "object",
+                "properties": {
+                    "a": {
+                        "type": "object",
+                        "properties": {
+                            "b": {
+                                "type": "object",
+                                "properties": {"c": {"type": "string"}},
+                            }
+                        },
+                    }
+                },
+            }
+        )
+        run(gateway.read("alpha_reading", {"a": {"b": {"c": "x"}}}))
+        assert transport.call_tool_calls
+
+
+class TestCombinatorDescent:
+    """`_subschema_for` searches combinator branches, and that is load-bearing.
+
+    Without it a legal argument nested under an `allOf` branch is refused —
+    the branch survived mutation against the whole suite until this test.
+    """
+
+    def test_a_legal_argument_nested_under_a_combinator_is_accepted(self) -> None:
+        gateway, transport = TestUndeclaredArgumentsAtEveryDepth._gateway(
+            {
+                "type": "object",
+                "allOf": [
+                    {
+                        "properties": {
+                            "filter": {
+                                "type": "object",
+                                "properties": {"ok": {"type": "string"}},
+                            }
+                        }
+                    }
+                ],
+            }
+        )
+        run(gateway.read("alpha_reading", {"filter": {"ok": "x"}}))
+        assert transport.call_tool_calls == [("synthetic_alpha_read", {"filter": {"ok": "x"}})]
+
+    def test_an_undeclared_name_under_a_combinator_is_still_refused(self) -> None:
+        gateway, transport = TestUndeclaredArgumentsAtEveryDepth._gateway(
+            {
+                "type": "object",
+                "allOf": [
+                    {
+                        "properties": {
+                            "filter": {
+                                "type": "object",
+                                "properties": {"ok": {"type": "string"}},
+                            }
+                        }
+                    }
+                ],
+            }
+        )
+        with pytest.raises(GatewayError) as excinfo:
+            run(gateway.read("alpha_reading", {"filter": {"ok": "x", "side": "sell"}}))
+        assert excinfo.value.code is ErrorCode.INPUT_INVALID
+        assert transport.call_tool_calls == []
+
+
+class TestAdditionalPropertiesIsDeliberatelyNotFollowed:
+    """Not descending is what makes it safe — a regression guard on the docstring.
+
+    A key governed only by `additionalProperties` never enters
+    `_declared_names`, so it is refused at its parent. Adding the descent would
+    turn that refusal into a permit and reopen the blocking finding.
+    """
+
+    def test_a_key_under_additional_properties_is_refused(self) -> None:
+        gateway, transport = TestUndeclaredArgumentsAtEveryDepth._gateway(
+            {
+                "type": "object",
+                "properties": {"s": {"type": "string"}},
+                "additionalProperties": {"type": "object"},
+            }
+        )
+        with pytest.raises(GatewayError) as excinfo:
+            run(gateway.read("alpha_reading", {"s": "A", "anything": {"side": "sell"}}))
+        assert excinfo.value.code is ErrorCode.INPUT_INVALID
+        assert transport.call_tool_calls == []

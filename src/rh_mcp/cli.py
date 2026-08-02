@@ -167,12 +167,27 @@ async def _cmd_status(args: argparse.Namespace, out: TextIO, err: TextIO) -> int
 async def _cmd_capabilities(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     config = GatewayConfig.from_env()
     async with open_gateway(config) as gateway:
+        # Both digests and an explicit comparison. This command reports the
+        # *committed* manifest, so it stays exit 0 and never establishes
+        # readiness — making it fail under a mismatch would break the one
+        # command that best explains a mismatch. But a listing of
+        # `read_allowed: true` entries could be misread as a statement about
+        # what is currently permitted, so it says plainly whether the active
+        # manifest is the one the deployment pinned.
+        matches = gateway.manifest_digest == config.expected_manifest_digest
         payload = {
             "manifest_version": gateway.manifest_version,
             "manifest_digest": gateway.manifest_digest,
+            "expected_manifest_digest": config.expected_manifest_digest,
+            "digest_matches": matches,
             "capabilities": [c.to_json_dict() for c in gateway.capabilities()],
         }
     _emit(payload, out)
+    if not matches:
+        err.write(
+            f"{PROGRAM}: the active manifest is not the one this deployment pinned; "
+            "these capabilities are not currently permitted\n"
+        )
     return 0
 
 
@@ -190,6 +205,8 @@ async def _cmd_admin_discover(args: argparse.Namespace, out: TextIO, err: TextIO
     err.write(
         "observing the provider surface. This grants nothing: every tool is written out\n"
         "as denied, and a human must review each one before it can be allowed.\n"
+        "The candidate on stdout is unsanitized provider data by design (§6.1) — treat it\n"
+        "as sensitive, review it before committing, and do not paste it into a log.\n"
     )
     async with open_admin_discovery(config) as admin:
         document = await admin.candidate_document()

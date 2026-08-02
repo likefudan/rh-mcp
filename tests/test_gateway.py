@@ -386,3 +386,141 @@ class TestReadinessIsSingleFlight:
 
         run(eight())
         assert transport.discover_calls == 1
+
+
+class TestUndeclaredArgumentsAtEveryDepth:
+    """The round-2 blocking finding: the first fix was depth-0 only.
+
+    A hostile payload simply moved one level down — a declared object with no
+    properties of its own accepted anything. Objects inside an array are the
+    same hole and the likelier one, since a batch or filter argument is exactly
+    where they appear.
+    """
+
+    @staticmethod
+    def _gateway(schema: dict[str, Any]) -> tuple[RobinhoodReadGateway, SpyTransport]:
+        from tests.support import build_entry, default_entries, reseal
+
+        entries = default_entries()
+        entries[0] = build_entry(
+            provider_tool_name="synthetic_alpha_read",
+            capability="alpha_reading",
+            description=entries[0]["description"],
+            input_schema=schema,
+            rationale=entries[0]["rationale"],
+        )
+        document = reseal(build_manifest(entries))
+        manifest = load_manifest_text(dumps(document))
+        transport = SpyTransport(document)
+        return (
+            RobinhoodReadGateway(
+                GatewayConfig(expected_manifest_digest=manifest.digest), manifest, transport
+            ),
+            transport,
+        )
+
+    HOSTILE = {"side": "sell", "quantity": 100, "account_id": "RH-9999"}
+
+    @pytest.mark.parametrize(
+        ("schema", "arguments"),
+        [
+            (
+                {
+                    "type": "object",
+                    "properties": {"s": {"type": "string"}, "f": {"type": "object"}},
+                },
+                {"s": "A", "f": HOSTILE},
+            ),
+            (
+                {
+                    "type": "object",
+                    "properties": {
+                        "s": {"type": "string"},
+                        "f": {"type": "object", "properties": {"ok": {"type": "string"}}},
+                    },
+                },
+                {"s": "A", "f": {"ok": "x", **HOSTILE}},
+            ),
+            (
+                {
+                    "type": "object",
+                    "properties": {
+                        "rows": {
+                            "type": "array",
+                            "items": {"type": "object", "properties": {"ok": {"type": "string"}}},
+                        }
+                    },
+                },
+                {"rows": [{"ok": "x"}, {"ok": "y", **HOSTILE}]},
+            ),
+        ],
+        ids=["declared-object-no-properties", "declared-object-with-properties", "array-item"],
+    )
+    def test_nested_undeclared_names_never_reach_the_provider(
+        self, schema: dict[str, Any], arguments: dict[str, Any]
+    ) -> None:
+        gateway, transport = self._gateway(schema)
+        with pytest.raises(GatewayError) as excinfo:
+            run(gateway.read("alpha_reading", arguments))
+        assert excinfo.value.code is ErrorCode.INPUT_INVALID
+        assert transport.call_tool_calls == []
+
+    def test_a_combinator_schema_still_accepts_its_declared_names(self) -> None:
+        """allOf/anyOf/oneOf declare properties too.
+
+        Ignoring them would load, become ready, then refuse every argument set
+        including the legal one — a defect surfaced at first call rather than
+        at load.
+        """
+        gateway, transport = self._gateway(
+            {"type": "object", "allOf": [{"properties": {"synthetic_symbol": {"type": "string"}}}]}
+        )
+        run(gateway.read("alpha_reading", {"synthetic_symbol": "AAPL"}))
+        assert transport.call_tool_calls
+
+    @pytest.mark.parametrize(
+        "inner",
+        [{1: "x"}, {"ok": "x", 1: "y"}, {"ok": "x", None: "y"}, {2: "a", "b": "c"}],
+        ids=["int-only", "str-then-int", "str-then-none", "int-then-str"],
+    )
+    def test_a_non_string_key_is_refused_not_a_crash(self, inner: dict[Any, Any]) -> None:
+        """A mixed-type key set is the hazard: sorting one raises TypeError.
+
+        `{"ok": ..., 1: ...}` is the case that matters — a set holding both a
+        str and an int cannot be sorted, so the refusal would escape as an
+        uncaught TypeError instead of the stable INPUT_INVALID contract.
+        """
+        gateway, transport = self._gateway(
+            {"type": "object", "properties": {"s": {"type": "object",
+                                                   "properties": {"ok": {"type": "string"}}}}}
+        )
+        with pytest.raises(GatewayError) as excinfo:
+            run(gateway.read("alpha_reading", {"s": inner}))
+        assert excinfo.value.code is ErrorCode.INPUT_INVALID
+        assert transport.call_tool_calls == []
+
+
+class TestReadSurfacesTheOriginatingError:
+    """§5.1 covers *all* read operations, not just the CLI's `status`."""
+
+    def test_an_auth_failure_during_discovery_reaches_the_library_caller(
+        self, document: dict[str, Any]
+    ) -> None:
+        class AuthFailingTransport(SpyTransport):
+            async def discover(self) -> ObservedSurface:
+                self.discover_calls += 1
+                raise GatewayError(ErrorCode.AUTH_REQUIRED, "credential expired")
+
+        transport = AuthFailingTransport(document)
+        gateway = gateway_for(document, transport)
+        with pytest.raises(GatewayError) as excinfo:
+            run(gateway.read("alpha_reading", VALID_ARGS))
+        assert excinfo.value.code is ErrorCode.AUTH_REQUIRED
+        assert transport.call_tool_calls == []
+
+    def test_plain_drift_still_reports_not_ready(self, document: dict[str, Any]) -> None:
+        transport = SpyTransport(document)
+        gateway = gateway_for(document, transport, OTHER_DIGEST)
+        with pytest.raises(GatewayError) as excinfo:
+            run(gateway.read("alpha_reading", VALID_ARGS))
+        assert excinfo.value.code is ErrorCode.NOT_READY

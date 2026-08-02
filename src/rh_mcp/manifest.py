@@ -1242,17 +1242,84 @@ def _refuse_undeclared_arguments(entry: ManifestEntry, arguments: Mapping[str, A
     refused. A schema declaring no properties therefore accepts no arguments,
     which is the fail-closed reading of "this tool takes nothing".
     """
-    declared = entry.input_schema.get("properties")
-    allowed = frozenset(declared) if isinstance(declared, Mapping) else frozenset()
-    undeclared = sorted(set(arguments) - allowed)
-    if undeclared:
-        # The names came from the caller, not the provider, so echoing them is
-        # safe and is the only useful thing this error can say (§7.3).
-        invalid(
-            f"arguments contain name(s) {undeclared} that the pinned input schema does "
-            "not declare; only reviewed argument names may be sent",
-            ErrorCode.INPUT_INVALID,
-        )
+    _refuse_undeclared(arguments, entry.input_schema, path="arguments")
+
+
+def _declared_names(schema: Any) -> frozenset[str]:
+    """Property names a schema declares, including through combinators.
+
+    `allOf`/`anyOf`/`oneOf` are how a schema most naturally says "an object
+    shaped like one of these", and their branches declare properties just as
+    the root can. Ignoring them would load, become ready, and then refuse every
+    argument set including the legal one — the same defect class as refusing a
+    denied entry's schema, surfaced at first call instead of at load.
+    """
+    if not isinstance(schema, Mapping):
+        return frozenset()
+    names: set[str] = set()
+    properties = schema.get("properties")
+    if isinstance(properties, Mapping):
+        names.update(k for k in properties if isinstance(k, str))
+    for combinator in ("allOf", "anyOf", "oneOf"):
+        branches = schema.get(combinator)
+        if isinstance(branches, Sequence) and not isinstance(branches, (str, bytes)):
+            for branch in branches:
+                names |= _declared_names(branch)
+    return frozenset(names)
+
+
+def _subschema_for(schema: Any, name: str) -> Any:
+    """The schema governing property `name`, searched through combinators."""
+    if not isinstance(schema, Mapping):
+        return None
+    properties = schema.get("properties")
+    if isinstance(properties, Mapping) and name in properties:
+        return properties[name]
+    for combinator in ("allOf", "anyOf", "oneOf"):
+        branches = schema.get(combinator)
+        if isinstance(branches, Sequence) and not isinstance(branches, (str, bytes)):
+            for branch in branches:
+                found = _subschema_for(branch, name)
+                if found is not None:
+                    return found
+    return None
+
+
+def _refuse_undeclared(value: Any, schema: Any, *, path: str) -> None:
+    """Walk the payload, refusing any object key the schema does not declare.
+
+    Enforced at **every** depth, not just the root. The first version of this
+    check looked only at the top level, and a hostile payload simply moved one
+    level down: a declared object with no properties of its own accepted
+    `{"side": "sell", "quantity": 100}` wholesale. Objects inside an array are
+    the same hole and the more likely one, since a batch or filter argument is
+    exactly where they appear.
+
+    `items` and `additionalProperties`-as-schema are followed too, so a
+    declared container cannot become an unchecked bag.
+    """
+    if isinstance(value, Mapping):
+        allowed = _declared_names(schema)
+        # Keys are compared and reported as text: a non-string key cannot be
+        # a declared property, and sorting a mixed-type set raises TypeError.
+        present = {key if isinstance(key, str) else repr(key) for key in value}
+        undeclared = sorted(present - allowed)
+        if undeclared:
+            # The names came from the caller, not the provider, so echoing them
+            # is safe and is the only useful thing this error can say (§7.3).
+            invalid(
+                f"{path} contains name(s) {undeclared} that the pinned input schema does "
+                "not declare; only reviewed argument names may be sent",
+                ErrorCode.INPUT_INVALID,
+            )
+        for key, item in value.items():
+            _refuse_undeclared(item, _subschema_for(schema, key), path=f"{path}.{key}")
+        return
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        items = schema.get("items") if isinstance(schema, Mapping) else None
+        for index, item in enumerate(value):
+            _refuse_undeclared(item, items, path=f"{path}[{index}]")
 
 
 def manifest_to_json_dict(manifest: ReviewedManifest) -> dict[str, Any]:

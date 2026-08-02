@@ -36,7 +36,7 @@ from typing import Any, Final
 from rh_mcp.canonical import canonical_digest
 from rh_mcp.config import GatewayConfig
 from rh_mcp.credentials import CredentialStore, open_credential_store
-from rh_mcp.errors import ErrorCode
+from rh_mcp.errors import ErrorCode, GatewayError
 from rh_mcp.manifest import (
     ManifestEntry,
     ObservedSurface,
@@ -64,6 +64,24 @@ def _result_digest(data: Mapping[str, Any]) -> str:
     verifies is what a consumer received.
     """
     return canonical_digest(json_safe(data), code=ErrorCode.PROTOCOL_ERROR)
+
+
+def _raise_originating_error(assessment: ReadinessAssessment) -> None:
+    """Surface the code that actually caused a not-ready assessment.
+
+    §5.1 is about *all* read operations: "if login is required they fail with
+    the stable `auth_required` error and direct a human to `rh-mcp login`."
+    Reporting an expired credential as a generic `not_ready` sends a caller —
+    and `ainvest`, which sees this surface rather than the CLI's — hunting
+    manifest drift when the answer is a login. `DriftFinding.error_code` exists
+    to carry that code as structured data rather than prose; honouring it here
+    is what makes the library half of §5.1 true, not just the CLI half.
+    """
+    if assessment.ready:
+        return
+    originating = next((f.error_code for f in assessment.findings if f.error_code), None)
+    if originating is not None:
+        raise GatewayError(originating, "provider discovery failed")
 
 
 @dataclass(frozen=True)
@@ -176,6 +194,7 @@ class RobinhoodReadGateway:
         input schema.
         """
         assessment = await self.readiness()
+        _raise_originating_error(assessment)
         entry: ManifestEntry = preflight_read(
             self.__manifest, assessment, capability, arguments or {}
         )

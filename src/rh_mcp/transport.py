@@ -417,6 +417,17 @@ class _EgressPolicy:
     thing sent to a token endpoint is a PKCE code exchange. The port is pinned
     here, in the step that owns the guard, rather than in the step that has a
     credential in flight.
+
+    **An origin here is `(host, port)` and deliberately not `(scheme, host,
+    port)`**, which is worth stating because the two layers cover different
+    halves. In production `require_https` makes scheme moot. In development it
+    means `https://127.0.0.1:9999` would satisfy this allowlist even when
+    `dev_url` is `http://`. That never becomes reachable, because the only
+    provider-controlled URLs are the OAuth endpoints and `auth.py`'s
+    `allowed_endpoint_origins` *is* scheme-bearing and rejects a scheme
+    mismatch before a request is ever built. Restating the scheme check here
+    would duplicate a rule that already has one owner; noting that it has one
+    is what stops a future reader assuming nobody checks.
     """
 
     allowed_origins: frozenset[tuple[str, int]]

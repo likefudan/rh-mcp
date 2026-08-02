@@ -60,7 +60,12 @@ from typing import Any, Final, NoReturn
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from rh_mcp.config import PRODUCTION_RESOURCE_URL, GatewayConfig
-from rh_mcp.credentials import ClientRegistration, CredentialStore, TokenCredential
+from rh_mcp.credentials import (
+    ClientRegistration,
+    CredentialStore,
+    TokenCredential,
+    _Unpicklable,
+)
 from rh_mcp.errors import ErrorCode, GatewayError
 from rh_mcp.transport import (
     PRODUCTION_EGRESS_HOSTS,
@@ -140,6 +145,29 @@ def _fail(code: ErrorCode, message: str, *, retryable: bool = False) -> NoReturn
 def _auth_required(reason: str) -> NoReturn:
     """The one place `auth_required` is raised, so the advice is consistent."""
     _fail(ErrorCode.AUTH_REQUIRED, f"{reason}; run `rh-mcp login`")
+
+
+def _constant_time_equal(observed: str, expected: str) -> bool:
+    """Compare two strings in constant time, returning False for *anything* else.
+
+    `secrets.compare_digest` **raises `TypeError`** rather than returning False
+    when a `str` operand contains a non-ASCII character. That is a documented
+    behaviour and an easy one to walk into: the callback query is decoded from
+    a `latin-1` request line and percent-decoded by `parse_qsl`, so both
+    `?state=%C3%A9` and a raw high byte deliver a non-ASCII `state` here.
+
+    A review found that the resulting `TypeError` escaped the connection
+    handler, left the callback future unresolved, and held the listener bound
+    for the full callback budget — the exact "keep waiting for whoever is
+    interfering" outcome the abort exists to prevent. Comparing UTF-8 bytes
+    makes a non-ASCII state a plain mismatch. The encode cannot fail for a
+    string that came from `latin-1` decoding, but it is guarded anyway: this
+    function's contract is that it decides, never raises.
+    """
+    try:
+        return secrets.compare_digest(observed.encode("utf-8"), expected.encode("utf-8"))
+    except (UnicodeEncodeError, TypeError, AttributeError):
+        return False
 
 
 # --------------------------------------------------------------------------
@@ -420,30 +448,46 @@ def parse_protected_resource_metadata(
 
 
 def protected_resource_metadata_urls(resource: str) -> tuple[str, ...]:
-    """RFC 9728 §3.1: insert the well-known segment before the resource path."""
+    """RFC 9728 §3.1: insert the well-known segment before the resource path.
+
+    One candidate, where `authorization_server_metadata_urls` has two, because
+    RFC 9728 defines only the path-insertion form. There is no second spelling
+    in wide use to fall back to, and inventing one would only widen the set of
+    documents this gateway is willing to believe.
+    """
     return (_well_known(resource, "oauth-protected-resource"),)
 
 
 def authorization_server_metadata_urls(issuer: str) -> tuple[str, ...]:
-    """The two well-known forms an issuer with a path may use.
+    """The well-known forms an issuer with a path may use.
 
-    RFC 8414 §3.1 inserts the well-known segment before the issuer path; the
-    MCP authorization specification also permits appending it to the path.
-    Both are tried, in that order, because a single wrong guess makes login
-    impossible and neither candidate weakens anything: both are checked against
-    the same pinned origins, and whichever document comes back is validated by
-    the same `parse_authorization_server_metadata`.
+    Candidate 1 is RFC 8414 §3.1 path insertion — the form the specification
+    mandates. Candidate 2 appends the segment to the issuer path instead.
 
-    A candidate that returns a document which then *fails* validation is fatal;
-    the next candidate is not tried. Otherwise a provider could serve a
-    tampered document at the first URL and a valid one at the second, and the
-    flow would quietly prefer whichever one it could make work.
+    Be precise about where candidate 2 comes from, because an earlier version
+    of this comment was not: it is a **de-facto convention**, widely deployed
+    but mandated by neither RFC 8414 nor the MCP authorization specification.
+    The MCP spec's own path-*appended* form is OpenID Connect Discovery's
+    `{issuer}/.well-known/openid-configuration`, which this gateway does not
+    try — fetching it would pull OIDC discovery semantics into a flow that does
+    not otherwise have them, and that is a bigger decision than a fallback URL.
+    If a first real login fails to find the document, the OIDC variants are the
+    next place to look (§13 open item 1).
+
+    Trying two costs nothing in safety: both are checked against the same
+    pinned origins, and whichever document comes back is validated by the same
+    `parse_authorization_server_metadata`. A candidate that returns a document
+    which then *fails* validation is fatal and the next candidate is not tried,
+    so a provider cannot serve a tampered document at the first URL and a valid
+    one at the second and have the flow prefer whichever it could make work.
     """
     split = urlsplit(issuer)
     appended = f"{split.scheme}://{split.netloc}{split.path.rstrip('/')}" + (
         "/.well-known/oauth-authorization-server"
     )
-    return (_well_known(issuer, "oauth-authorization-server"), appended)
+    # De-duplicated: for a path-less issuer the two forms collapse into the
+    # same URL, and retrying an identical failed GET is pure noise.
+    return tuple(dict.fromkeys((_well_known(issuer, "oauth-authorization-server"), appended)))
 
 
 def _well_known(url: str, segment: str) -> str:
@@ -522,14 +566,17 @@ def _default_client_factory(config: GatewayConfig) -> ClientFactory:
 # --------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class AuthorizationTransaction:
+@dataclass(frozen=True, slots=True)
+class AuthorizationTransaction(_Unpicklable):
     """The expected transaction a callback is validated against (§5.1).
 
     Held only in memory, for the lifetime of one `login()`. `state` and
     `code_verifier` are secrets — a leaked verifier turns an intercepted code
-    into a token — so `__repr__` redacts both, the same way `TokenCredential`
-    does.
+    into a token — so this inherits the same redaction `TokenCredential` gets:
+    a `__repr__` that omits them, no instance `__dict__`, and a refusal to
+    pickle. The residual `dataclasses.asdict`/`astuple` exposure documented in
+    `credentials.py` applies here too, and matters most on this type, since
+    `asdict` hands back the verifier and the state together.
     """
 
     state: str
@@ -649,6 +696,30 @@ class _CallbackListener:
         except GatewayError as error:
             self._abort(error)
             await _close(writer)
+        except Exception as exc:  # noqa: BLE001 - see below; this must not escape
+            # A handler whose failure mode is "hold the listener open for the
+            # rest of the callback budget" must not be one unanticipated
+            # exception type away from doing so. The `TypeError` that
+            # `secrets.compare_digest` raises on a non-ASCII string is fixed at
+            # source in `_constant_time_equal`, but the shape of that bug — a
+            # parser raising something the tuple above does not name, escaping
+            # into the event loop, and leaving the future unresolved — is
+            # general, so it is closed generally too.
+            #
+            # `Exception`, not `BaseException`: a cancellation must still
+            # propagate so a caller's `CancelScope` keeps working.
+            #
+            # The type name is logged; the exception's message is not, because
+            # a parser failure can quote the input it choked on and that input
+            # is the callback query (§5.1, §7.3).
+            logger.debug("the login callback handler raised %s", type(exc).__name__)
+            self._abort(
+                GatewayError(
+                    ErrorCode.PROTOCOL_ERROR,
+                    "the login callback could not be processed and the login was stopped",
+                )
+            )
+            await _close(writer)
 
     async def _handle(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -659,7 +730,6 @@ class _CallbackListener:
         if len(request_line) > _MAX_REQUEST_LINE_BYTES:
             await self._respond(writer, 431, b"")
             return
-        headers = await self._read_headers(reader)
 
         parts = request_line.decode("latin-1").strip().split(" ")
         if len(parts) != 3:
@@ -671,6 +741,12 @@ class _CallbackListener:
         if path != self._path:
             # Stray traffic. Bounded, because the listener is open for as long
             # as a human takes to log in.
+            #
+            # The headers are deliberately *not* read first. When they were, an
+            # over-long header block on a stray path aborted the whole login
+            # through `_read_headers`, contradicting the stray-traffic policy
+            # two lines below. Nothing here needs a header, and the response
+            # closes the connection, so the request line alone is enough.
             self._strays += 1
             if self._strays > _MAX_STRAY_REQUESTS:
                 await self._respond(writer, 404, b"")
@@ -688,6 +764,10 @@ class _CallbackListener:
                 "the login callback received a non-GET request on the callback path",
             )
 
+        # Only now, on the exact callback path, is a header block worth reading
+        # — and the bound on it is a real refusal, because a request that
+        # reaches here claims to be the browser redirect.
+        headers = await self._read_headers(reader)
         self._check_host(headers)
         code = self._validate_query(query)
 
@@ -745,7 +825,7 @@ class _CallbackListener:
             _auth_required("the authorization server refused the login request")
 
         state = seen.get("state")
-        if not isinstance(state, str) or not secrets.compare_digest(
+        if not isinstance(state, str) or not _constant_time_equal(
             state, self._transaction.state
         ):
             _fail(
@@ -989,6 +1069,16 @@ async def refresh_access_token(
     the old one is dropped. Getting that backwards either discards a still-valid
     refresh token or keeps using a rotated-out one, and both end in a login
     prompt at the worst moment.
+
+    **One window is not covered, and cannot be.** Between the authorization
+    server rotating the refresh token and `StoredTokenProvider` persisting it,
+    a crash or a store failure loses the new token while the old one is already
+    dead — the credential is then unusable until someone runs `rh-mcp login`.
+    This is inherent to any OAuth client that is not transactional with its
+    authorization server; the store write is already the last statement of the
+    sequence, which is as narrow as the window gets. The consequence is one
+    interactive login, not a security failure, so it is stated here rather than
+    engineered around.
     """
     if token.refresh_token is None:
         _auth_required("the stored credential has expired and carries no refresh token")

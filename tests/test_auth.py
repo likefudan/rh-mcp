@@ -135,6 +135,14 @@ def test_the_authorization_server_urls_cover_both_documented_forms() -> None:
     )
 
 
+def test_a_path_less_issuer_yields_one_candidate_not_a_duplicate() -> None:
+    """Both forms collapse when the issuer has no path; retrying an identical
+    failed GET is noise."""
+    urls = authorization_server_metadata_urls("https://robinhood.com")
+    assert urls == ("https://robinhood.com/.well-known/oauth-authorization-server",)
+    assert len(set(urls)) == len(urls)
+
+
 def test_a_404_on_the_first_candidate_falls_through_to_the_second() -> None:
     server = FakeAuthorizationServer(
         routes={"/.well-known/oauth-authorization-server/mcp": status_only(404)}
@@ -550,6 +558,124 @@ def test_a_mismatched_state_aborts_the_login() -> None:
     assert PLANTED_CODE.encode() not in bytes(writer.written)
 
 
+NON_ASCII_STATES = [
+    ("percent-encoded utf-8", "%C3%A9"),
+    ("raw high byte", "é"),
+    ("multibyte cjk", "%E6%BC%A2%E5%AD%97"),
+    ("non-ascii sharing an ascii prefix", "state-token-abcdef%C3%A9"),
+    ("emoji", "%F0%9F%92%A9"),
+]
+
+
+@pytest.mark.parametrize("label,state", NON_ASCII_STATES, ids=[m[0] for m in NON_ASCII_STATES])
+def test_a_non_ascii_state_is_a_mismatch_not_an_exception(label: str, state: str) -> None:
+    """`secrets.compare_digest` *raises* `TypeError` on a non-ASCII `str`.
+
+    It does not return False. A review found the resulting exception escaped
+    the connection handler, left the future unresolved, and held the listener
+    bound for the full callback budget — the exact "keep waiting for whoever is
+    interfering" outcome the abort exists to prevent. Reachable by any local
+    process, and by a page the user has open: a no-cors GET to loopback carries
+    a `Host` that passes `_check_host`.
+
+    This is an input-space test, not a guard-presence test. Deleting the state
+    check entirely would be caught by the mismatch tests; only feeding it this
+    input catches the hole.
+    """
+    instance, _writer = drive(f"/callback?code={PLANTED_CODE}&state={state}")
+    assert instance.future.done(), "the login was left hanging instead of aborting"
+    with pytest.raises(GatewayError) as caught:
+        instance.future.result()
+    assert caught.value.code is ErrorCode.PROTOCOL_ERROR
+    # Specifically the *state* refusal, not the handler's catch-all. Both stop
+    # the hang — that is the point of having both — but only the comparison
+    # fix makes this a decided mismatch rather than a caught crash, and a test
+    # that accepted either would stop holding the primary fix.
+    assert "state" in caught.value.message
+
+
+def test_a_non_ascii_state_aborts_over_a_real_socket() -> None:
+    """The same input against a bound listener, since the escape happened in
+    the event loop's connection handler rather than in the parser."""
+    port = free_port()
+    config = development_config(callback_port=port)
+    object.__setattr__(config.limits, "oauth_callback_timeout_s", 3.0)
+    active = transaction(redirect_uri=f"http://127.0.0.1:{port}/callback")
+
+    async def scenario() -> Any:
+        async with auth._callback_listener(config, active) as future:
+            await deliver_callback(
+                f"127.0.0.1:{port}", "/callback", f"code={PLANTED_CODE}&state=%C3%A9"
+            )
+            return await auth.await_authorization_code(config, future)
+
+    error = refused(scenario())
+    # The point is that it is not a TIMEOUT: a timeout would mean the listener
+    # sat for the whole budget with the future unresolved.
+    assert error.code is ErrorCode.PROTOCOL_ERROR
+    assert "state" in error.message
+
+
+def test_the_constant_time_comparison_decides_and_never_raises() -> None:
+    for observed, expected, result in [
+        ("abc", "abc", True),
+        ("abc", "abd", False),
+        ("abc", "é", False),
+        ("é", "abc", False),
+        ("é", "é", True),
+        ("\ud800", "abc", False),  # a lone surrogate is not encodable at all
+        ("", "", True),
+    ]:
+        assert auth._constant_time_equal(observed, expected) is result
+
+
+def test_an_unanticipated_handler_exception_stops_the_login() -> None:
+    """Defence in depth for the *shape* of the blocking bug, not its instance.
+
+    Any parser failure that the benign-exception tuple does not name must abort
+    rather than leave the future unresolved and the listener bound.
+    """
+
+    async def scenario() -> auth._CallbackListener:
+        instance = listener()
+
+        def explode(query: str) -> str:
+            raise RuntimeError("an exception type nobody anticipated")
+
+        instance._validate_query = explode  # type: ignore[method-assign]
+        await _drive(instance, request_bytes(f"/callback?code={PLANTED_CODE}&state=x"))
+        return instance
+
+    instance = run(scenario())
+    assert instance.future.done(), "an unanticipated exception left the login hanging"
+    with pytest.raises(GatewayError) as caught:
+        instance.future.result()
+    assert caught.value.code is ErrorCode.PROTOCOL_ERROR
+
+
+def test_an_unanticipated_handler_exception_leaks_nothing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+
+    async def scenario() -> auth._CallbackListener:
+        instance = listener()
+
+        def explode(query: str) -> str:
+            raise RuntimeError(f"parser choked on {PLANTED_CODE}")
+
+        instance._validate_query = explode  # type: ignore[method-assign]
+        await _drive(instance, request_bytes(f"/callback?code={PLANTED_CODE}&state=x"))
+        return instance
+
+    instance = run(scenario())
+    with pytest.raises(GatewayError) as caught:
+        instance.future.result()
+    assert PLANTED_CODE not in caught.value.message
+    assert PLANTED_CODE not in caplog.text
+    assert "RuntimeError" in caplog.text
+
+
 def test_a_missing_state_aborts_the_login() -> None:
     instance, _writer = drive(f"/callback?code={PLANTED_CODE}")
     with pytest.raises(GatewayError):
@@ -669,6 +795,27 @@ def test_a_malformed_request_line_is_answered_400_without_ending_the_login() -> 
 
     instance, written = run(scenario())
     assert b"400" in written
+    assert not instance.future.done()
+
+
+def test_over_long_headers_on_a_stray_path_do_not_abort_the_login() -> None:
+    """The stray-traffic policy says a wrong path gets a bounded 404.
+
+    Reading the header block before comparing the path made an over-long header
+    set on `/favicon.ico` abort the whole login instead.
+    """
+
+    async def scenario() -> tuple[auth._CallbackListener, bytes]:
+        instance = listener()
+        headers = b"".join(
+            b"X-Filler-%d: 1\r\n" % index for index in range(auth._MAX_HEADER_LINES + 5)
+        )
+        payload = b"GET /favicon.ico HTTP/1.1\r\nHost: 127.0.0.1:8765\r\n" + headers + b"\r\n"
+        writer = await _drive(instance, payload)
+        return instance, bytes(writer.written)
+
+    instance, written = run(scenario())
+    assert b"404" in written
     assert not instance.future.done()
 
 

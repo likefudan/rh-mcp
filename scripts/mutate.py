@@ -273,7 +273,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         "the callback state is compared",
         "auth.py",
-        "        if not isinstance(state, str) or not secrets.compare_digest(\n            state, self._transaction.state\n        ):",
+        "        if not isinstance(state, str) or not _constant_time_equal(\n            state, self._transaction.state\n        ):",
         "        if False:",
         "tests/test_auth.py::test_a_mismatched_state_aborts_the_login",
     ),
@@ -432,6 +432,109 @@ MUTATIONS: list[Mutation] = [
         "        if _exceeds_text_depth(text, self._response_budget.max_depth):\n            # Refused whatever the status",
         "        if False:\n            # Refused whatever the status",
         "tests/test_auth.py::test_a_deeply_nested_oauth_response_is_refused_before_decoding",
+    ),
+    # -- review round 1 fixes ----------------------------------------------
+    #
+    # Both blocking findings lived where this harness structurally cannot look:
+    # one was an exception type escaping a handler, the other the behaviour of
+    # a real external binary. Mutation testing answers "does deleting this
+    # guard break a test"; it cannot answer "does this guard have a hole for an
+    # input nobody wrote a test for". The mutations below are still worth
+    # having — they keep the *fixes* held — but the tests they point at are
+    # input-space tests, which is the part that actually found the bugs.
+    Mutation(
+        "a non-ASCII state is a mismatch, not a TypeError that escapes",
+        "auth.py",
+        "        if not isinstance(state, str) or not _constant_time_equal(\n            state, self._transaction.state\n        ):",
+        "        if not isinstance(state, str) or not secrets.compare_digest(\n            state, self._transaction.state\n        ):",
+        "tests/test_auth.py::test_a_non_ascii_state_is_a_mismatch_not_an_exception",
+    ),
+    Mutation(
+        "a non-ASCII state aborts over a real socket",
+        "auth.py",
+        "    try:\n        return secrets.compare_digest(observed.encode(\"utf-8\"), expected.encode(\"utf-8\"))\n    except (UnicodeEncodeError, TypeError, AttributeError):\n        return False",
+        "    return secrets.compare_digest(observed, expected)",
+        "tests/test_auth.py::test_a_non_ascii_state_aborts_over_a_real_socket",
+    ),
+    Mutation(
+        "an unanticipated handler exception still stops the login",
+        "auth.py",
+        "        except Exception as exc:  # noqa: BLE001 - see below; this must not escape",
+        "        except ZeroDivisionError as exc:  # noqa: BLE001",
+        "tests/test_auth.py::test_an_unanticipated_handler_exception_stops_the_login",
+    ),
+    Mutation(
+        "over-long headers on a stray path do not abort the login",
+        "auth.py",
+        # Reproduces the *shape* of the bug — headers read before the stray
+        # path is answered — rather than merely inlining the call, which an
+        # earlier version of this mutation did and which changed nothing.
+        "            self._strays += 1",
+        "            await self._read_headers(reader)\n            self._strays += 1",
+        "tests/test_auth.py::test_over_long_headers_on_a_stray_path_do_not_abort_the_login",
+    ),
+    Mutation(
+        "the well-known candidates are de-duplicated",
+        "auth.py",
+        '    return tuple(dict.fromkeys((_well_known(issuer, "oauth-authorization-server"), appended)))',
+        '    return (_well_known(issuer, "oauth-authorization-server"), appended)',
+        "tests/test_auth.py::test_a_path_less_issuer_yields_one_candidate_not_a_duplicate",
+    ),
+    Mutation(
+        "the keychain write refuses a record past the measured line budget",
+        "credentials.py",
+        "        if len(command.encode(\"ascii\")) > SECURITY_MAX_COMMAND_LINE_BYTES:",
+        "        if False:",
+        "tests/test_credentials.py::test_an_oversized_record_is_refused_before_security_is_invoked",
+    ),
+    Mutation(
+        "the reported keychain ceiling reflects the real line budget",
+        "credentials.py",
+        "        return available // 4 * 3",
+        "        return available",
+        "tests/test_credentials.py::test_a_record_at_the_reported_ceiling_really_fits_the_measured_limit",
+    ),
+    Mutation(
+        "CommandResult redacts stdout, which is the credential on a read",
+        "credentials.py",
+        '        return f"CommandResult(returncode={self.returncode!r}, stdout=<redacted>)"',
+        '        return f"CommandResult(returncode={self.returncode!r}, stdout={self.stdout!r})"',
+        "tests/test_credentials.py::test_a_command_result_never_reveals_stdout",
+    ),
+    Mutation(
+        "the directory check runs on the read path too",
+        "credentials.py",
+        '        _check_directory_security(info, "the development credential directory")\n        try:',
+        "        try:",
+        "tests/test_credentials.py::test_a_widened_directory_is_refused_on_read_not_only_on_write",
+    ),
+    Mutation(
+        "a missing directory still reads as absent",
+        "credentials.py",
+        "        try:\n            info = os.stat(self._directory)\n        except FileNotFoundError:\n            return None",
+        "        info = os.stat(self._directory)",
+        "tests/test_credentials.py::test_a_missing_directory_reads_as_absent_rather_than_failing",
+    ),
+    Mutation(
+        "the records have no instance __dict__",
+        "credentials.py",
+        "@dataclass(frozen=True, slots=True)\nclass TokenCredential(_Unpicklable):",
+        "@dataclass(frozen=True)\nclass TokenCredential(_Unpicklable):",
+        "tests/test_credentials.py::test_a_record_has_no_instance_dict",
+    ),
+    Mutation(
+        "the records refuse to be pickled",
+        "credentials.py",
+        "    def __reduce__(self) -> tuple[Any, ...]:\n        raise GatewayError(",
+        "    def __reduce_unused__(self) -> tuple[Any, ...]:\n        raise GatewayError(",
+        "tests/test_credentials.py::test_a_record_refuses_to_be_pickled",
+    ),
+    Mutation(
+        "refusing pickle does not break copying",
+        "credentials.py",
+        "    def __deepcopy__(self, memo: dict[int, Any]) -> _Unpicklable:\n        return self",
+        "    pass",
+        "tests/test_credentials.py::test_a_record_can_still_be_copied",
     ),
     # -- the positive direction --------------------------------------------
     #

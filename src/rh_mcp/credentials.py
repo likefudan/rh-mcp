@@ -7,15 +7,29 @@ of this credential. Everything below is written on that assumption.
 
 Four decisions are load-bearing enough to state up front.
 
-**Records never serialize themselves in public.** `models.py` gives its types a
-`to_json_dict()` because a `ResultEnvelope` is meant to be printed. These types
-deliberately have no such method, no `asdict()`-friendly shape, and a `__repr__`
-that omits every secret field. §5.2 requires read, atomic update, and delete
-"without exposing serialized secrets to callers", and the way to get that is to
-make the serialized form unreachable from outside this module rather than to
-ask callers not to use it. `_encode`/`_decode` are module-private for that
-reason, and a test plants a known secret and asserts it appears in no repr, no
-str, no format, no exception, and no log record.
+**Records never serialize themselves in public — with two named exceptions.**
+`models.py` gives its types a `to_json_dict()` because a `ResultEnvelope` is
+meant to be printed. These types deliberately have no such method. §5.2
+requires read, atomic update, and delete "without exposing serialized secrets
+to callers", and the way to get that is to make the serialized form unreachable
+from outside this module rather than to ask callers not to use it.
+`_encode`/`_decode` are module-private for that reason.
+
+Closed channels, each with a test that plants a known secret and greps for it:
+`__repr__`, `__str__`, f-strings, `%s`/`%r`, `str.format`, exception text,
+`traceback.format_exc()`, log records, `__dict__`/`vars()` (the records use
+`slots=True`, so there is no instance dict), and `pickle` (`__reduce__`
+refuses). `copy`/`deepcopy` still work and return the same immutable object.
+
+**Open channels, stated rather than implied:** `dataclasses.asdict` and
+`dataclasses.astuple` walk `fields()` and call `getattr`, and there is no hook
+that intercepts them short of not being a dataclass. Anything else that walks
+`__dataclass_fields__` — `rich`'s pretty printer, some structured-logging
+encoders — sees the same. An earlier version of this docstring claimed these
+types had "no `asdict()`-friendly shape", which was simply false; the review
+that caught it was right that a docstring promising a property the code does
+not have is how a real defect stays invisible. `test_credentials.py` pins the
+gap explicitly so closing it later is a deliberate act rather than a surprise.
 
 **Individual operations are atomic; multi-step sequences must ask.** A write is
 a single `os.replace` or a single `security` invocation, so no reader ever sees
@@ -42,7 +56,14 @@ stdin, and its exit status reflects **only the last command**, so this sends
 exactly one command per invocation and checks the status. The payload is
 base64, which has no character `security`'s tokenizer treats specially, and the
 encoder is checked against that alphabet before the line is built so a newline
-can never inject a second command.
+can never inject a second command — an independent review confirmed that
+without that check, a newline plus `delete-keychain` on the second line
+executes.
+
+That same channel has a size limit, and the limit is on the whole line rather
+than the payload. See `SECURITY_MAX_COMMAND_LINE_BYTES` — it is enforced before
+the command is built, because the alternative is an opaque `status 1` at the
+first real login.
 """
 
 from __future__ import annotations
@@ -113,6 +134,24 @@ _KEYCHAIN_ATTRIBUTE_PATTERN: Final[re.Pattern[str]] = re.compile(r"\A[A-Za-z0-9.
 # rather than assumed (`find-generic-password` and `delete-generic-password`
 # both return it).
 _SECURITY_ITEM_NOT_FOUND: Final[int] = 44
+
+# `security -i` refuses an input line past a fixed size, and the bound is on
+# the **whole line**, not the payload. Bisected on Darwin 25.5.0 against an
+# isolated temporary keychain, using this adapter's exact command shape:
+#
+#     whole line 4096 bytes -> exit 0, stored intact
+#     whole line 4097 bytes -> exit 1, nothing stored
+#
+# and lengthening the service name by 50 characters shrank the usable payload
+# by the same 50, which is what identifies the bound as line-wide. Over-limit
+# writes fail closed with nothing stored — there is no silent truncation — but
+# the raw failure is an opaque `status 1`, which is a terrible thing to meet
+# during a first owner-assisted login. `_write` therefore measures the line it
+# is about to send and refuses with an error that names the cause.
+#
+# The budget is set below the measured 4096 so a macOS release with a smaller
+# limit degrades into this clear error rather than the opaque one.
+SECURITY_MAX_COMMAND_LINE_BYTES: Final[int] = 4_000
 
 
 def _fail(code: ErrorCode, message: str, *, retryable: bool = False) -> NoReturn:
@@ -200,8 +239,46 @@ def _optional_seconds(name: str, value: object) -> float | None:
     return number
 
 
-@dataclass(frozen=True)
-class TokenCredential:
+class _Unpicklable:
+    """Refuses to be pickled; copies to itself.
+
+    Overriding `__repr__` stops a human printing a secret. It does nothing
+    about machinery that walks an object structurally, and `pickle` is the
+    channel in that family that actually moves bytes off the box — into a
+    cache, a queue, a crash report. So it is refused outright.
+
+    `copy` and `deepcopy` are kept working and return `self`, which is sound
+    because every record here is frozen and holds only immutable values. If
+    they were left to fall back on `__reduce_ex__` they would raise too, and
+    breaking `deepcopy` on a record a consumer holds is a cost with no security
+    benefit.
+    """
+
+    __slots__ = ()
+
+    def __reduce__(self) -> tuple[Any, ...]:
+        raise GatewayError(
+            ErrorCode.CONFIGURATION_ERROR,
+            f"{type(self).__name__} holds credential material and refuses to be serialized",
+        )
+
+    def __getstate__(self) -> object:
+        # `dataclass(slots=True)` generates one of these for pickling; it has
+        # to be refused as well or it becomes the way around `__reduce__`.
+        raise GatewayError(
+            ErrorCode.CONFIGURATION_ERROR,
+            f"{type(self).__name__} holds credential material and refuses to be serialized",
+        )
+
+    def __copy__(self) -> _Unpicklable:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> _Unpicklable:
+        return self
+
+
+@dataclass(frozen=True, slots=True)
+class TokenCredential(_Unpicklable):
     """A stored OAuth token. Write-capable — treat every field as a secret.
 
     `granted_scope` is recorded rather than assumed. §5.1 leaves open whether
@@ -268,8 +345,8 @@ class TokenCredential:
     __str__ = __repr__
 
 
-@dataclass(frozen=True)
-class ClientRegistration:
+@dataclass(frozen=True, slots=True)
+class ClientRegistration(_Unpicklable):
     """The result of dynamic client registration (§5.1).
 
     Credential-shaped even though this is a public client: a `client_id` bound
@@ -639,6 +716,19 @@ class FileCredentialStore(_BytesBackedStore):
         return await asyncio.to_thread(_unlink_sync, self._path(kind))
 
     def _read_sync(self, path: Path) -> bytes | None:
+        # The directory is checked here as well as on write. The class
+        # docstring has always claimed "the permission checks run on read as
+        # well as write", and for the *file* that was true — but the directory
+        # check only ever ran from `_ensure_directory`, which the read path
+        # never calls. So a credential directory widened by a stray `chmod -R`
+        # was refused at the next write and served happily on every read, which
+        # is the high-frequency path. A missing directory is not a fault: it
+        # just means nothing is stored yet.
+        try:
+            info = os.stat(self._directory)
+        except FileNotFoundError:
+            return None
+        _check_directory_security(info, "the development credential directory")
         try:
             # `O_NOFOLLOW` so a symlink dropped in place of the credential file
             # cannot redirect this read — or, on a later write, cause a write
@@ -804,19 +894,39 @@ def _release_flock(handle: Any) -> None:
 # --------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class CommandResult:
+@dataclass(frozen=True, slots=True)
+class CommandResult(_Unpicklable):
     """What a `security` invocation returned.
 
-    `stderr` is deliberately absent. `security` echoes fragments of the command
-    it failed on, and the command that writes a credential contains the
-    credential. Carrying stderr would put a token one `str(exc)` away from a
-    log; the exit status is the only thing this adapter needs and the only
-    thing it is given.
+    **`stdout` is the credential on the read path.** `find-generic-password -w`
+    writes the base64 record — access token, refresh token and all — to stdout,
+    so this type holds strictly more secret material than any other value in
+    this module apart from the records themselves. It therefore gets the same
+    redacted `__repr__` they do. It was missed in the first version of this
+    module: `stderr` had been reasoned about carefully and `stdout` was left in
+    the default dataclass repr, which is exactly the shape of oversight the
+    §5.2 redaction rule exists to catch. Nothing printed it, but a single
+    `logger.debug("%s", result)`, a `pytest --showlocals`, or an error reporter
+    that serializes frame locals would have.
+
+    `stderr` is deliberately absent as defence in depth: this adapter needs
+    only the exit status, so it is the only thing it is given. An earlier
+    version of this docstring justified that by claiming `security` echoes
+    fragments of the failing command, which would put the write command's
+    payload in stderr. An independent review could not reproduce that — a
+    failed `add-generic-password` produces a generic usage block with no trace
+    of the payload — so the claim is withdrawn. Dropping `stderr` is still
+    right, on the narrower ground that a field which cannot be read cannot
+    leak; it just is not defending against the thing that was written here.
     """
 
     returncode: int
     stdout: str
+
+    def __repr__(self) -> str:
+        return f"CommandResult(returncode={self.returncode!r}, stdout=<redacted>)"
+
+    __str__ = __repr__
 
 
 SecurityRunner = Callable[[list[str], str | None], CommandResult]
@@ -916,6 +1026,22 @@ class KeychainCredentialStore(_BytesBackedStore):
             os.stat(self._lock_path_directory), "the credential lock directory"
         )
 
+    @property
+    def max_record_bytes(self) -> int:
+        """The largest serialized record this store can actually hold.
+
+        Derived from the real `security -i` line budget minus this store's own
+        command overhead, so a longer namespace correctly reports a smaller
+        ceiling. Public because "how big a credential fits" is a property of
+        the adapter that a caller may reasonably want before trying.
+        """
+        overhead = len(
+            f"add-generic-password -U -a {self._account('token')} -s {self._service} -w \n"
+        )
+        available = max(0, SECURITY_MAX_COMMAND_LINE_BYTES - overhead)
+        # Undo base64's 4-chars-per-3-bytes expansion to get the raw budget.
+        return available // 4 * 3
+
     # -- byte operations ---------------------------------------------------
 
     async def _read(self, kind: CredentialKind) -> bytes | None:
@@ -960,9 +1086,19 @@ class KeychainCredentialStore(_BytesBackedStore):
         # Exactly one command. `security -i` reports the status of the last
         # command only, so a second line here would make a failed write look
         # like a success.
-        command = (
-            f"add-generic-password -U -a {account} -s {self._service} -w {encoded}\n"
-        )
+        command = f"add-generic-password -U -a {account} -s {self._service} -w {encoded}\n"
+        if len(command.encode("ascii")) > SECURITY_MAX_COMMAND_LINE_BYTES:
+            # Measured, not guessed — see SECURITY_MAX_COMMAND_LINE_BYTES. The
+            # record's own size is not named: the limit and the remedy are the
+            # actionable half, and a token's length is not this module's to
+            # publish (§7.3).
+            _fail(
+                ErrorCode.CONFIGURATION_ERROR,
+                "this credential is too large for the macOS keychain adapter: `security -i` "
+                f"refuses an input line beyond {SECURITY_MAX_COMMAND_LINE_BYTES} bytes, which "
+                f"caps a stored record at about {self.max_record_bytes} bytes. Use an injected "
+                "secret-manager adapter for a credential this size",
+            )
         result = await asyncio.to_thread(self._runner, ["security", "-i"], command)
         if result.returncode != 0:
             _fail(

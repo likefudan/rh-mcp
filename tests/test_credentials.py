@@ -146,6 +146,97 @@ def test_the_records_expose_no_public_serialization() -> None:
             assert not hasattr(record, name), name
 
 
+# -- dataclass-aware channels (review finding 5) ----------------------------
+#
+# Overriding `__repr__` stops a human printing a secret. It does nothing about
+# machinery that walks an object structurally, which is the machinery that
+# actually ships secrets off-box: structured-logging encoders, `rich`'s pretty
+# printer, error reporters that serialize frame locals.
+
+SECRET_BEARING_RECORDS = [
+    ("TokenCredential", lambda: token(), SECRET),
+    ("ClientRegistration", lambda: registration(), CLIENT_ID),
+]
+
+
+@pytest.mark.parametrize(
+    "label,build,secret", SECRET_BEARING_RECORDS, ids=[r[0] for r in SECRET_BEARING_RECORDS]
+)
+def test_a_record_has_no_instance_dict(label: str, build: Any, secret: str) -> None:
+    """`slots=True`: `vars()`/`__dict__` is a channel that no longer exists."""
+    record = build()
+    assert not hasattr(record, "__dict__")
+    with pytest.raises(TypeError):
+        vars(record)
+
+
+@pytest.mark.parametrize(
+    "label,build,secret", SECRET_BEARING_RECORDS, ids=[r[0] for r in SECRET_BEARING_RECORDS]
+)
+def test_a_record_refuses_to_be_pickled(label: str, build: Any, secret: str) -> None:
+    """Pickle is the structural channel that actually moves bytes off the box."""
+    import pickle
+
+    with pytest.raises(GatewayError) as caught:
+        pickle.dumps(build())
+    assert caught.value.code is ErrorCode.CONFIGURATION_ERROR
+    assert secret not in caught.value.message
+
+
+@pytest.mark.parametrize(
+    "label,build,secret", SECRET_BEARING_RECORDS, ids=[r[0] for r in SECRET_BEARING_RECORDS]
+)
+def test_a_record_can_still_be_copied(label: str, build: Any, secret: str) -> None:
+    """Refusing pickle must not break `copy`/`deepcopy` on an immutable record."""
+    import copy
+
+    record = build()
+    assert copy.copy(record) is record
+    assert copy.deepcopy(record) is record
+
+
+def test_the_authorization_transaction_gets_the_same_treatment() -> None:
+    """The sharpest case: `asdict` there hands back the PKCE verifier."""
+    import pickle
+
+    from rh_mcp.auth import AuthorizationTransaction, code_challenge_for
+
+    verifier = "verifier-" + "v" * 40
+    active = AuthorizationTransaction(
+        state="state-abc",
+        code_verifier=verifier,
+        code_challenge=code_challenge_for(verifier),
+        redirect_uri="http://127.0.0.1:8765/callback",
+        issuer="https://agent.robinhood.com/mcp/trading",
+        client_id=CLIENT_ID,
+        created_at=0.0,
+    )
+    assert not hasattr(active, "__dict__")
+    with pytest.raises(GatewayError):
+        pickle.dumps(active)
+
+
+@pytest.mark.parametrize(
+    "label,build,secret", SECRET_BEARING_RECORDS, ids=[r[0] for r in SECRET_BEARING_RECORDS]
+)
+def test_the_documented_open_channels_are_exactly_asdict_and_astuple(
+    label: str, build: Any, secret: str
+) -> None:
+    """Pins a *known gap* so closing it later is deliberate, not accidental.
+
+    `dataclasses.asdict`/`astuple` walk `fields()` and call `getattr`; short of
+    not being a dataclass there is no hook that intercepts them. The module
+    docstring says so explicitly. If someone closes this, the assertion below
+    fails and they are reminded to update that docstring — which is the point,
+    because the previous docstring claimed a property the code did not have.
+    """
+    import dataclasses
+
+    record = build()
+    assert secret in repr(dataclasses.asdict(record))
+    assert secret in repr(dataclasses.astuple(record))
+
+
 def test_the_serialized_form_is_module_private() -> None:
     for name in ("_encode_token", "_decode_token", "_encode_registration", "_decode_registration"):
         assert hasattr(credentials, name)
@@ -426,6 +517,25 @@ def test_a_credential_file_that_is_not_a_regular_file_is_refused(tmp_path: Path)
     assert "regular file" in caught.value.message
 
 
+def test_a_widened_directory_is_refused_on_read_not_only_on_write(tmp_path: Path) -> None:
+    """Review finding 4: the check ran on write and was skipped on read.
+
+    Read is the high-frequency path, so a dev box caught by a stray `chmod -R`
+    kept serving tokens indefinitely and only noticed at the next login.
+    """
+    store = file_store(tmp_path)
+    run(store.store_token(token()))
+    os.chmod(store.directory, 0o750)
+    error = refused(store.load_token())
+    assert error.code is ErrorCode.CONFIGURATION_ERROR
+    assert "group or other" in error.message
+
+
+def test_a_missing_directory_reads_as_absent_rather_than_failing(tmp_path: Path) -> None:
+    """Nothing stored yet is not a permission fault."""
+    assert run(file_store(tmp_path).load_token()) is None
+
+
 def test_a_missing_credential_file_reads_as_absent(tmp_path: Path) -> None:
     assert run(file_store(tmp_path).load_token()) is None
 
@@ -674,6 +784,117 @@ def test_an_oversized_keychain_record_is_refused(tmp_path: Path) -> None:
     oversized = base64.b64encode(b"x" * (credentials.MAX_SECRET_BYTES + 1)).decode()
     runner.items[("rh-mcp:rh-mcp", "rh-mcp-token")] = oversized
     assert "too large" in refused(keychain(tmp_path, runner).load_token()).message
+
+
+# -- the measured `security -i` line ceiling (review finding 2) -------------
+
+# Bisected on Darwin 25.5.0 against an isolated temporary keychain: a whole
+# input line of 4096 bytes stores intact, 4097 is refused with nothing stored.
+# The suite cannot re-measure this (it must not touch a real Keychain), so the
+# number is transcribed and the tests below keep the module's own budget
+# honest against it.
+MEASURED_SECURITY_LINE_LIMIT = 4096
+
+
+def test_the_configured_line_budget_stays_under_the_measured_limit() -> None:
+    assert credentials.SECURITY_MAX_COMMAND_LINE_BYTES <= MEASURED_SECURITY_LINE_LIMIT
+
+
+def test_a_record_at_the_reported_ceiling_really_fits_the_measured_limit(tmp_path: Path) -> None:
+    """Ties `max_record_bytes` to the measurement rather than to arithmetic.
+
+    If the derivation drifts — a longer command shape, a wrong base64 factor —
+    a record the adapter says it can hold would exceed what `security` accepts,
+    and the failure would reappear as the opaque `status 1` this fix exists to
+    remove.
+    """
+    runner = FakeSecurity()
+    store = keychain(tmp_path, runner)
+    payload = b"x" * store.max_record_bytes
+    encoded = __import__("base64").b64encode(payload).decode("ascii")
+    line = f"add-generic-password -U -a rh-mcp-token -s rh-mcp:rh-mcp -w {encoded}\n"
+    assert len(line.encode("ascii")) <= MEASURED_SECURITY_LINE_LIMIT
+
+
+def test_an_oversized_record_is_refused_before_security_is_invoked(tmp_path: Path) -> None:
+    """§5.2: fail with a message that names the cause, not `status 1`."""
+    runner = FakeSecurity()
+    store = keychain(tmp_path, runner)
+    huge = TokenCredential(access_token="t" * (store.max_record_bytes + 500))
+    error = refused(store.store_token(huge))
+    assert error.code is ErrorCode.CONFIGURATION_ERROR
+    assert "security -i" in error.message
+    assert "too large" in error.message
+    assert runner.calls == [], "the oversized record still reached the security binary"
+
+
+def test_the_oversized_error_never_echoes_the_credential(tmp_path: Path) -> None:
+    store = keychain(tmp_path, FakeSecurity())
+    huge = TokenCredential(access_token=SECRET + "t" * (store.max_record_bytes + 500))
+    assert SECRET not in refused(store.store_token(huge)).message
+
+
+def test_a_record_just_under_the_ceiling_is_accepted(tmp_path: Path) -> None:
+    """The positive direction: the cap must not make a normal token unstorable."""
+    runner = FakeSecurity()
+    store = keychain(tmp_path, runner)
+    # A serialized record leaves room for the JSON envelope around the token.
+    token = TokenCredential(access_token="t" * (store.max_record_bytes - 400))
+    run(store.store_token(token))
+    assert run(store.load_token()) == token
+
+
+def test_a_realistic_token_pair_is_comfortably_under_the_ceiling(tmp_path: Path) -> None:
+    """A 1 KB access token plus a 1 KB refresh token must still fit."""
+    store = keychain(tmp_path, FakeSecurity())
+    run(store.store_token(TokenCredential(access_token="a" * 1024, refresh_token="r" * 1024)))
+    assert run(store.load_token()) is not None
+
+
+def test_a_longer_namespace_reports_a_smaller_ceiling(tmp_path: Path) -> None:
+    """The bound is on the whole line, so the service name spends the budget."""
+    short = KeychainCredentialStore("rh", runner=FakeSecurity(), lock_directory=tmp_path)
+    long = KeychainCredentialStore(
+        "rh-" + "n" * 50, runner=FakeSecurity(), lock_directory=tmp_path
+    )
+    assert long.max_record_bytes < short.max_record_bytes
+
+
+# -- CommandResult redaction (review finding 3) -----------------------------
+
+
+def test_a_command_result_never_reveals_stdout() -> None:
+    """On a read, `stdout` IS the credential: `find-generic-password -w`
+    writes the base64 record, which decodes to the access and refresh tokens."""
+    import base64
+
+    encoded = base64.b64encode(f'{{"access_token":"{SECRET}"}}'.encode()).decode()
+    result = CommandResult(0, encoded)
+    for rendered in (repr(result), str(result), f"{result}", via_format(result)):
+        assert encoded not in rendered
+        assert SECRET not in rendered
+        assert "<redacted>" in rendered
+
+
+def test_a_command_result_inside_a_container_repr_is_redacted() -> None:
+    """The channel that actually fires: `--showlocals`, a frame serializer."""
+    import base64
+
+    encoded = base64.b64encode(f'{{"access_token":"{SECRET}"}}'.encode()).decode()
+    assert encoded not in repr([CommandResult(0, encoded)])
+    assert encoded not in repr({"result": CommandResult(0, encoded)})
+
+
+def test_a_real_keychain_read_result_is_redacted(tmp_path: Path) -> None:
+    """End to end: whatever the runner hands back must not render."""
+    runner = FakeSecurity()
+    store = keychain(tmp_path, runner)
+    run(store.store_token(token()))
+    run(store.load_token())
+    for argv, stdin in runner.calls:
+        del argv, stdin
+    stored = runner.items[("rh-mcp:rh-mcp", "rh-mcp-token")]
+    assert SECRET not in repr(CommandResult(0, stored))
 
 
 def test_the_command_result_type_carries_no_stderr() -> None:

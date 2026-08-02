@@ -57,7 +57,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final, Literal, NoReturn, Protocol, cast
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 # Every SDK symbol is bound to a private name. `__all__` already excludes
 # them, but `__all__` only governs `from ... import *` — `from
@@ -145,6 +145,42 @@ class ToolPayload:
         if not isinstance(self.data, Mapping):
             _fail(ErrorCode.PROTOCOL_ERROR, "tool payload data must be a JSON object")
         object.__setattr__(self, "warnings", tuple(self.warnings))
+
+
+@dataclass(frozen=True)
+class HttpJsonResponse:
+    """One bounded JSON response from a guarded non-MCP request (§5.0, §8).
+
+    `payload` is `None` only when the body could not be read as a bounded JSON
+    object *and* the status was not 2xx — a non-2xx status is itself the
+    information the caller needs, and an error page is not worth failing on. A
+    2xx body that will not decode raises instead, because a successful OAuth
+    response that is not JSON is a protocol fault, not a hint.
+
+    Nothing here carries the raw body. `auth.py` reads named fields out of
+    `payload` and never echoes it (§5.2, §7.3).
+    """
+
+    status_code: int
+    payload: Mapping[str, Any] | None
+
+
+class GuardedJsonClient(Protocol):
+    """The OAuth-shaped HTTP the auth layer is allowed to perform (§3, §5.1).
+
+    §4 keeps `httpx2` inside this module, so `auth.py` cannot open its own
+    client — and §3 says all egress goes through the one guard. This protocol
+    is the whole seam between them: three verbs, plain strings in, an
+    SDK-neutral bounded response out. There is deliberately no way to set a
+    header, follow a redirect, stream, or reach a URL the egress policy has not
+    pinned.
+    """
+
+    async def get_json(self, url: str) -> HttpJsonResponse: ...
+
+    async def post_json(self, url: str, body: Mapping[str, Any]) -> HttpJsonResponse: ...
+
+    async def post_form(self, url: str, fields: Mapping[str, str]) -> HttpJsonResponse: ...
 
 
 class AccessTokenProvider(Protocol):
@@ -381,6 +417,17 @@ class _EgressPolicy:
     thing sent to a token endpoint is a PKCE code exchange. The port is pinned
     here, in the step that owns the guard, rather than in the step that has a
     credential in flight.
+
+    **An origin here is `(host, port)` and deliberately not `(scheme, host,
+    port)`**, which is worth stating because the two layers cover different
+    halves. In production `require_https` makes scheme moot. In development it
+    means `https://127.0.0.1:9999` would satisfy this allowlist even when
+    `dev_url` is `http://`. That never becomes reachable, because the only
+    provider-controlled URLs are the OAuth endpoints and `auth.py`'s
+    `allowed_endpoint_origins` *is* scheme-bearing and rejects a scheme
+    mismatch before a request is ever built. Restating the scheme check here
+    would duplicate a rule that already has one owner; noting that it has one
+    is what stops a future reader assuming nobody checks.
     """
 
     allowed_origins: frozenset[tuple[str, int]]
@@ -508,17 +555,31 @@ class _GuardedAsyncTransport(_httpx2.AsyncBaseTransport):
         policy: _EgressPolicy,
         fault: _Fault,
         token_provider: AccessTokenProvider | None,
+        *,
+        refuse_get: bool = True,
     ) -> None:
         self._inner = inner
         self._policy = policy
         self._fault = fault
         self._token_provider = token_provider
+        self._refuse_get = refuse_get
 
     async def handle_async_request(self, request: _httpx2.Request) -> _httpx2.Response:
-        if request.method == "GET":
+        if request.method == "GET" and self._refuse_get:
             # See the module docstring: this gateway never consumes a
             # server-initiated notification stream, and refusing it locally
             # both removes an unbounded read and performs no egress at all.
+            #
+            # `refuse_get` is False for exactly one client: the OAuth JSON
+            # client, whose §5.0 discovery documents are plain GETs. The flag
+            # defaults to True so the MCP path keeps the refusal by omission
+            # rather than by remembering to ask for it, and the reason the
+            # blanket refusal is safe to lift there is that an OAuth GET is an
+            # ordinary bounded request/response — there is no notification
+            # channel on a `.well-known` document, the streaming byte cap and
+            # the read timeout both still apply, and every other guard in this
+            # class (origin pinning, redirect rejection, request size) runs
+            # unchanged.
             return _httpx2.Response(405, request=request, content=b"")
 
         self._check_egress(request)
@@ -653,6 +714,7 @@ def _build_http_client(
     token_provider: AccessTokenProvider | None,
     *,
     inner: _httpx2.AsyncBaseTransport | None = None,
+    refuse_get: bool = True,
 ) -> _httpx2.AsyncClient:
     """The only `httpx2.AsyncClient` this package ever creates (§3).
 
@@ -676,11 +738,8 @@ def _build_http_client(
     )
     policy = _EgressPolicy.for_config(config)
     base = _new_base_transport() if inner is None else inner
-    return _httpx2.AsyncClient(
-        transport=_GuardedAsyncTransport(base, policy, fault, token_provider),
-        follow_redirects=False,
-        timeout=timeout,
-    )
+    guarded = _GuardedAsyncTransport(base, policy, fault, token_provider, refuse_get=refuse_get)
+    return _httpx2.AsyncClient(transport=guarded, follow_redirects=False, timeout=timeout)
 
 
 def _new_base_transport() -> _httpx2.AsyncBaseTransport:
@@ -776,6 +835,182 @@ def _as_mcp_error(exc: BaseException) -> int | None:
     error = getattr(exc, "error", None)
     code = getattr(error, "code", None)
     return code if isinstance(code, int) else None
+
+
+# --------------------------------------------------------------------------
+# The guarded OAuth JSON client (§3, §5.0, §5.1, §8)
+# --------------------------------------------------------------------------
+
+
+class _GuardedJsonClient:
+    """`GuardedJsonClient` over the same guard the MCP session uses.
+
+    It exists here, rather than in `auth.py`, because §4 confines `httpx2` to
+    this module and §3 requires a single egress path. The alternative — a
+    second HTTP client in the auth layer — would put the *token exchange*, the
+    one request in this system that carries a PKCE verifier and returns a
+    write-capable credential, outside the origin pinning that everything else
+    goes through. So the OAuth requests ride the guard, and this class is the
+    narrow, SDK-neutral thing the auth layer holds.
+
+    Every method returns a status and a bounded decoded object. Nothing here
+    returns bytes, a header, or a response object, so there is no way for a
+    caller to accidentally log a token-bearing body.
+    """
+
+    def __init__(self, client: _httpx2.AsyncClient, fault: _Fault, limits: ResourceLimits) -> None:
+        self._client = client
+        self._fault = fault
+        self._limits = limits
+        self._response_budget = _budget_for_response(limits)
+        self._request_budget = _budget_for_request(limits)
+
+    async def get_json(self, url: str) -> HttpJsonResponse:
+        return await self._send("GET", url, content=None, content_type=None)
+
+    async def post_json(self, url: str, body: Mapping[str, Any]) -> HttpJsonResponse:
+        bounded = bound_json(
+            body, self._request_budget, ErrorCode.INPUT_INVALID, label="an OAuth request body"
+        )
+        _ensure_within_bytes(
+            bounded,
+            self._request_budget,
+            ErrorCode.INPUT_INVALID,
+            over_code=ErrorCode.INPUT_INVALID,
+            label="an OAuth request body",
+        )
+        encoded = json.dumps(_plain(bounded), separators=(",", ":")).encode("utf-8")
+        return await self._send("POST", url, content=encoded, content_type="application/json")
+
+    async def post_form(self, url: str, fields: Mapping[str, str]) -> HttpJsonResponse:
+        # Built here rather than handed to `httpx2`'s `data=` so the exact
+        # bytes are the ones the §8 request bound is measured against, and so a
+        # non-string field cannot become `str(value)` on the wire.
+        for key, value in fields.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                _fail(ErrorCode.INPUT_INVALID, "OAuth form fields must be strings")
+        encoded = urlencode(fields, quote_via=quote).encode("utf-8")
+        if len(encoded) > self._request_budget.max_bytes:
+            _fail(
+                ErrorCode.INPUT_INVALID,
+                f"an OAuth form body exceeds {self._request_budget.max_bytes} bytes",
+            )
+        return await self._send(
+            "POST", url, content=encoded, content_type="application/x-www-form-urlencoded"
+        )
+
+    async def _send(
+        self, method: str, url: str, *, content: bytes | None, content_type: str | None
+    ) -> HttpJsonResponse:
+        headers = {"accept": "application/json"}
+        if content_type is not None:
+            headers["content-type"] = content_type
+        try:
+            with _anyio.fail_after(self._limits.total_timeout_s):
+                response = await self._client.request(
+                    method, url, content=content, headers=headers
+                )
+        except GatewayError:
+            # Clear the recorded fault so it cannot be attributed to the *next*
+            # request on this client.
+            self._fault.take()
+            raise
+        except BaseException as exc:  # noqa: BLE001 - re-raised as a stable code
+            raise _stable_error(exc, self._fault) from None
+
+        # A >=400 status is *recorded* by the guard rather than raised, and this
+        # client reports the status to its caller instead. Take the fault so a
+        # later request on the same client does not inherit it. `auth.py` maps
+        # an OAuth status itself: a 400 `invalid_grant` from a token endpoint is
+        # an expected, meaningful outcome, not a transport failure.
+        self._fault.take()
+        return HttpJsonResponse(response.status_code, self._decode(response))
+
+    def _decode(self, response: _httpx2.Response) -> Mapping[str, Any] | None:
+        """Read a bounded JSON object out of a response, or refuse it.
+
+        The body has already been capped while streaming, so this only has to
+        reject what a capped body can still be: not UTF-8, too deep to decode
+        without `RecursionError`, duplicate keys, a `NaN` literal, or something
+        that is not an object.
+
+        No branch of this puts any part of the body into an error message. A
+        token endpoint's 200 body *is* the credential (§5.2).
+        """
+        ok = 200 <= response.status_code < 300
+        body = response.content
+        if not body:
+            if ok:
+                _fail(ErrorCode.PROTOCOL_ERROR, "an OAuth endpoint returned an empty body")
+            return None
+        try:
+            text = body.decode("utf-8")
+        except UnicodeDecodeError:
+            if ok:
+                _fail(ErrorCode.PROTOCOL_ERROR, "an OAuth endpoint returned a non-UTF-8 body")
+            return None
+        if _exceeds_text_depth(text, self._response_budget.max_depth):
+            # Refused whatever the status: this one is a decode bomb, and the
+            # only safe answer to "too deep to decode" is not to decode it.
+            _fail(
+                ErrorCode.PROTOCOL_ERROR,
+                f"an OAuth response nests deeper than {self._response_budget.max_depth} levels",
+            )
+        try:
+            decoded = json.loads(
+                text, object_pairs_hook=_reject_duplicate_keys, parse_constant=_reject_json_constant
+            )
+        except GatewayError:
+            raise
+        except ValueError:
+            if ok:
+                _fail(ErrorCode.PROTOCOL_ERROR, "an OAuth endpoint returned a non-JSON body")
+            return None
+        if not isinstance(decoded, Mapping):
+            if ok:
+                _fail(
+                    ErrorCode.PROTOCOL_ERROR,
+                    "an OAuth endpoint returned JSON that is not an object",
+                )
+            return None
+        bounded = bound_json(
+            decoded, self._response_budget, ErrorCode.PROTOCOL_ERROR, label="an OAuth response"
+        )
+        _ensure_within_bytes(
+            bounded,
+            self._response_budget,
+            ErrorCode.PROTOCOL_ERROR,
+            over_code=ErrorCode.RESPONSE_TOO_LARGE,
+            label="an OAuth response",
+        )
+        return cast(Mapping[str, Any], bounded)
+
+
+def _new_json_client(
+    config: GatewayConfig, *, inner: _httpx2.AsyncBaseTransport | None = None
+) -> tuple[_httpx2.AsyncClient, _GuardedJsonClient]:
+    """Build the guarded OAuth client. Private: its types are `httpx2` types.
+
+    `inner` is the same offline-suite seam `_build_http_client` has, so the
+    OAuth tests drive the real guard with a fake authorization server under it.
+    """
+    fault = _Fault()
+    # No token provider: an OAuth request must never carry the credential it is
+    # trying to obtain or renew, and registration/discovery are unauthenticated.
+    client = _build_http_client(config, fault, None, inner=inner, refuse_get=False)
+    return client, _GuardedJsonClient(client, fault, config.limits)
+
+
+@asynccontextmanager
+async def open_json_client(config: GatewayConfig) -> AsyncIterator[GuardedJsonClient]:
+    """The auth layer's only route to the network (§3, §4).
+
+    Returns the SDK-neutral protocol, never the `httpx2` client underneath, so
+    no `httpx2` type reaches `auth.py` even by inference.
+    """
+    client, json_client = _new_json_client(config)
+    async with client:
+        yield json_client
 
 
 # --------------------------------------------------------------------------
@@ -1353,8 +1588,11 @@ async def _close_quietly(stack: AsyncExitStack) -> None:
 __all__ = [
     "PRODUCTION_EGRESS_HOSTS",
     "AccessTokenProvider",
+    "GuardedJsonClient",
+    "HttpJsonResponse",
     "PayloadSource",
     "ProviderTransport",
     "ToolPayload",
+    "open_json_client",
     "open_provider_session",
 ]

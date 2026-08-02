@@ -19,7 +19,10 @@ Closed channels, each with a test that plants a known secret and greps for it:
 `__repr__`, `__str__`, f-strings, `%s`/`%r`, `str.format`, exception text,
 `traceback.format_exc()`, log records, `__dict__`/`vars()` (the records use
 `slots=True`, so there is no instance dict), and `pickle` (`__reduce__`
-refuses). `copy`/`deepcopy` still work and return the same immutable object.
+refuses). `copy`/`deepcopy` still work and return the same immutable object,
+and so does `weakref.ref` — `slots=True` silently drops weak-reference support,
+so every record pairs it with `weakref_slot=True` rather than regressing an
+unrelated part of the API as a side effect of a redaction fix.
 
 **Open channels, stated rather than implied:** `dataclasses.asdict` and
 `dataclasses.astuple` walk `fields()` and call `getattr`, and there is no hook
@@ -239,19 +242,40 @@ def _optional_seconds(name: str, value: object) -> float | None:
     return number
 
 
-class _Unpicklable:
-    """Refuses to be pickled; copies to itself.
+class CredentialMaterial:
+    """Base class for a type that holds a secret and refuses to be serialized.
 
-    Overriding `__repr__` stops a human printing a secret. It does nothing
+    Public, and imported by `auth.py` for `AuthorizationTransaction`. It was
+    private at first, which meant the auth layer reached across a module
+    boundary for a private name — a small thing, but "this type holds
+    credential material" is a property worth being able to state in the API
+    rather than borrow.
+
+    Overriding `__repr__` stops a *human* printing a secret. It does nothing
     about machinery that walks an object structurally, and `pickle` is the
-    channel in that family that actually moves bytes off the box — into a
-    cache, a queue, a crash report. So it is refused outright.
+    member of that family that actually moves bytes off the box — into a cache,
+    a queue, a crash report. So pickling is refused outright.
+
+    **`__reduce__` alone does that, at every protocol.** An earlier version also
+    defined `__getstate__`, on the theory that `dataclass(slots=True)`
+    generates one and it would otherwise be "the way around `__reduce__`". That
+    reasoning was wrong twice over: the generated `__getstate__` on the
+    subclass *shadows* any defined here, so this one never ran, and it is not a
+    way around anything, because `pickle` consults `__reduce_ex__` — which
+    reaches `__reduce__` — before it ever asks for state. The dead method is
+    gone. This paragraph exists because a stale rationale is what gets
+    "corrected" away later, and this file has already produced one bug that way.
 
     `copy` and `deepcopy` are kept working and return `self`, which is sound
-    because every record here is frozen and holds only immutable values. If
-    they were left to fall back on `__reduce_ex__` they would raise too, and
-    breaking `deepcopy` on a record a consumer holds is a cost with no security
-    benefit.
+    because every subclass is frozen and holds only immutable values. Left to
+    fall back on `__reduce_ex__` they would raise too, and breaking `deepcopy`
+    on a record a consumer holds is a cost with no security benefit.
+
+    Subclasses use `slots=True` to remove the instance `__dict__`, and must
+    pair it with `weakref_slot=True`: `slots=True` silently drops
+    weak-reference support, so `weakref.ref(token)` starts raising `TypeError`.
+    Nothing here needs a weakref, but a consumer caching by identity does, and
+    losing that is an unrelated API regression smuggled in by a redaction fix.
     """
 
     __slots__ = ()
@@ -262,23 +286,15 @@ class _Unpicklable:
             f"{type(self).__name__} holds credential material and refuses to be serialized",
         )
 
-    def __getstate__(self) -> object:
-        # `dataclass(slots=True)` generates one of these for pickling; it has
-        # to be refused as well or it becomes the way around `__reduce__`.
-        raise GatewayError(
-            ErrorCode.CONFIGURATION_ERROR,
-            f"{type(self).__name__} holds credential material and refuses to be serialized",
-        )
-
-    def __copy__(self) -> _Unpicklable:
+    def __copy__(self) -> CredentialMaterial:
         return self
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> _Unpicklable:
+    def __deepcopy__(self, memo: dict[int, Any]) -> CredentialMaterial:
         return self
 
 
-@dataclass(frozen=True, slots=True)
-class TokenCredential(_Unpicklable):
+@dataclass(frozen=True, slots=True, weakref_slot=True)
+class TokenCredential(CredentialMaterial):
     """A stored OAuth token. Write-capable — treat every field as a secret.
 
     `granted_scope` is recorded rather than assumed. §5.1 leaves open whether
@@ -345,8 +361,8 @@ class TokenCredential(_Unpicklable):
     __str__ = __repr__
 
 
-@dataclass(frozen=True, slots=True)
-class ClientRegistration(_Unpicklable):
+@dataclass(frozen=True, slots=True, weakref_slot=True)
+class ClientRegistration(CredentialMaterial):
     """The result of dynamic client registration (§5.1).
 
     Credential-shaped even though this is a public client: a `client_id` bound
@@ -894,8 +910,8 @@ def _release_flock(handle: Any) -> None:
 # --------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class CommandResult(_Unpicklable):
+@dataclass(frozen=True, slots=True, weakref_slot=True)
+class CommandResult(CredentialMaterial):
     """What a `security` invocation returned.
 
     **`stdout` is the credential on the read path.** `find-generic-password -w`
@@ -1205,6 +1221,7 @@ __all__ = [
     "ClientRegistration",
     "CommandResult",
     "CredentialKind",
+    "CredentialMaterial",
     "CredentialStore",
     "FileCredentialStore",
     "InMemoryCredentialStore",

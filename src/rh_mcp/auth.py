@@ -62,9 +62,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 from rh_mcp.config import PRODUCTION_RESOURCE_URL, GatewayConfig
 from rh_mcp.credentials import (
     ClientRegistration,
+    CredentialMaterial,
     CredentialStore,
     TokenCredential,
-    _Unpicklable,
 )
 from rh_mcp.errors import ErrorCode, GatewayError
 from rh_mcp.transport import (
@@ -566,8 +566,8 @@ def _default_client_factory(config: GatewayConfig) -> ClientFactory:
 # --------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class AuthorizationTransaction(_Unpicklable):
+@dataclass(frozen=True, slots=True, weakref_slot=True)
+class AuthorizationTransaction(CredentialMaterial):
     """The expected transaction a callback is validated against (§5.1).
 
     Held only in memory, for the lifetime of one `login()`. `state` and

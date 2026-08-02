@@ -173,14 +173,76 @@ def test_a_record_has_no_instance_dict(label: str, build: Any, secret: str) -> N
 @pytest.mark.parametrize(
     "label,build,secret", SECRET_BEARING_RECORDS, ids=[r[0] for r in SECRET_BEARING_RECORDS]
 )
-def test_a_record_refuses_to_be_pickled(label: str, build: Any, secret: str) -> None:
-    """Pickle is the structural channel that actually moves bytes off the box."""
+def test_a_record_refuses_to_be_pickled_at_every_protocol(
+    label: str, build: Any, secret: str
+) -> None:
+    """Pickle is the structural channel that actually moves bytes off the box.
+
+    Every protocol, not just the default: `__reduce__` is now the *only* thing
+    refusing — the `__getstate__` that used to sit beside it was dead code,
+    shadowed by the dataclass-generated one — so this sweep is what proves the
+    single remaining hook covers the whole range.
+    """
     import pickle
 
-    with pytest.raises(GatewayError) as caught:
-        pickle.dumps(build())
-    assert caught.value.code is ErrorCode.CONFIGURATION_ERROR
-    assert secret not in caught.value.message
+    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+        with pytest.raises(GatewayError) as caught:
+            pickle.dumps(build(), protocol=protocol)
+        assert caught.value.code is ErrorCode.CONFIGURATION_ERROR
+        assert secret not in caught.value.message
+
+
+@pytest.mark.parametrize(
+    "label,build,secret", SECRET_BEARING_RECORDS, ids=[r[0] for r in SECRET_BEARING_RECORDS]
+)
+def test_a_record_can_still_be_weak_referenced(label: str, build: Any, secret: str) -> None:
+    """`slots=True` silently removes weak-reference support.
+
+    Nothing in this package holds a weakref, but a consumer caching by identity
+    does, and `weakref.ref(token)` raising `TypeError` would be an unrelated
+    API regression smuggled in by a redaction fix. `weakref_slot=True` restores
+    it at no cost on the supported Python floor.
+    """
+    import weakref
+
+    record = build()
+    assert weakref.ref(record)() is record
+
+
+def test_every_credential_material_type_supports_weak_references() -> None:
+    """Sweeps the whole family, so a type added later cannot quietly drop it."""
+    import weakref
+
+    from rh_mcp.auth import AuthorizationTransaction, code_challenge_for
+
+    verifier = "verifier-" + "v" * 40
+    records: list[Any] = [
+        token(),
+        registration(),
+        CommandResult(0, "stdout"),
+        AuthorizationTransaction(
+            state="state-abc",
+            code_verifier=verifier,
+            code_challenge=code_challenge_for(verifier),
+            redirect_uri="http://127.0.0.1:8765/callback",
+            issuer="https://agent.robinhood.com/mcp/trading",
+            client_id=CLIENT_ID,
+            created_at=0.0,
+        ),
+    ]
+    for record in records:
+        assert weakref.ref(record)() is record, type(record).__name__
+
+
+def test_the_credential_material_base_is_public() -> None:
+    """`auth.py` builds on it, and reaching across a module boundary for a
+    private name is not how a shared property should be expressed."""
+    assert "CredentialMaterial" in credentials.__all__
+    assert not hasattr(credentials, "_Unpicklable")
+
+    import rh_mcp.auth as auth_module
+
+    assert issubclass(auth_module.AuthorizationTransaction, credentials.CredentialMaterial)
 
 
 @pytest.mark.parametrize(

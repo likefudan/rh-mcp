@@ -218,3 +218,68 @@ class TestUsageErrors:
         exit_code, out, _ = invoke(["admin"])
         assert exit_code == EXIT_CODE_USAGE_ERROR
         assert out == ""
+
+
+class TestStatusHonoursTheOriginatingErrorCode:
+    """§7.3: an expired credential must reach exit 4, not a generic not-ready.
+
+    `DriftFinding.error_code` was added in step 2 for exactly this mapping.
+    Reporting an auth failure as not-ready sends an operator hunting manifest
+    drift when the answer is `rh-mcp login`.
+
+    These drive the real `_cmd_status` with `open_gateway` replaced, rather
+    than re-implementing its body — a test that restates the code it checks
+    would pass even if that code were deleted.
+    """
+
+    def _run_status(
+        self, monkeypatch: pytest.MonkeyPatch, code: ErrorCode | None
+    ) -> tuple[int, str, str]:
+        import contextlib
+
+        from rh_mcp.manifest import DriftFinding, DriftReason, ReadinessAssessment
+        from rh_mcp.models import Readiness
+
+        findings = (
+            (DriftFinding(DriftReason.DISCOVERY_FAILED, "provider discovery failed", code),)
+            if code is not None
+            else (DriftFinding(DriftReason.UNKNOWN_PROVIDER_TOOL, "an unreviewed tool"),)
+        )
+        assessment = ReadinessAssessment(
+            readiness=Readiness(
+                ready=False,
+                manifest_version="v1",
+                manifest_digest="sha256:" + "d" * 64,
+                expected_manifest_digest=DIGEST,
+            ),
+            findings=findings,
+        )
+
+        class FakeGateway:
+            async def readiness(self) -> ReadinessAssessment:
+                return assessment
+
+        @contextlib.asynccontextmanager
+        async def fake_open(*_: Any, **__: Any) -> Any:
+            yield FakeGateway()
+
+        monkeypatch.setattr(cli, "open_gateway", fake_open)
+        return invoke(["status", "--skip-metadata-check"])
+
+    def test_auth_required_during_discovery_exits_four(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        code, out, err = self._run_status(monkeypatch, ErrorCode.AUTH_REQUIRED)
+        assert code == EXIT_CODE_AUTH_REQUIRED
+        assert "rh-mcp login" in err
+        assert json.loads(out)["ready"] is False
+
+    def test_a_provider_failure_exits_one(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        code, _, _ = self._run_status(monkeypatch, ErrorCode.PROVIDER_ERROR)
+        assert code == EXIT_CODE_PROVIDER_FAILURE
+
+    def test_plain_drift_still_exits_three(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        code, out, err = self._run_status(monkeypatch, None)
+        assert code == EXIT_CODE_CONFIGURATION_ERROR
+        assert "rh-mcp login" not in err
+        assert json.loads(out)["ready"] is False

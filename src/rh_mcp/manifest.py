@@ -811,15 +811,6 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
             _LOCAL,
         )
 
-    # Refuse a schema this package cannot enforce, at *load* time. Deferring
-    # it to the first call that happens to exercise the unsupported keyword
-    # would mean a gateway that became ready while holding a pinned constraint
-    # nothing checks — a reviewed capability whose input is in practice
-    # unvalidated, which is the failure §6.2 exists to prevent. `not_ready` is
-    # the right code: the manifest decoded fine, it just fails the contract.
-    ensure_schema_supported(input_schema, _LOCAL, path=f"entries[{index}].input_schema")
-    if output_schema is not None:
-        ensure_schema_supported(output_schema, _LOCAL, path=f"entries[{index}].output_schema")
     annotations = _require_json_object(f"entries[{index}].annotations", entry["annotations"],
                                        _LOCAL)
 
@@ -830,6 +821,26 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
             f"got {disposition!r}",
             _LOCAL,
         )
+
+    # Refuse a schema this package cannot enforce, at *load* time. Deferring it
+    # to the first call that happens to exercise the unsupported keyword would
+    # mean a gateway that became ready while holding a pinned constraint nothing
+    # checks — a reviewed capability whose input is in practice unvalidated,
+    # which is the failure §6.2 exists to prevent. `not_ready` is the right
+    # code: the manifest decoded fine, it just fails the contract.
+    #
+    # Only for an entry a read may actually use. A *denied* entry's schema is
+    # never validated against and never sent, so refusing the whole manifest
+    # because an unreviewed tool advertises `$ref` would make one unenforceable
+    # keyword anywhere in the provider surface permanently un-loadable — the
+    # likely outcome of the first real `admin discover`, and a fail-closed
+    # check with no remediation short of the provider changing its schema.
+    if disposition == "read_allowed":
+        ensure_schema_supported(input_schema, _LOCAL, path=f"entries[{index}].input_schema")
+        if output_schema is not None:
+            ensure_schema_supported(
+                output_schema, _LOCAL, path=f"entries[{index}].output_schema"
+            )
 
     rationale = entry["rationale"]
     require_nonempty(f"entries[{index}].rationale", rationale, _LOCAL)
@@ -1198,14 +1209,50 @@ def preflight_read(
 
     if not isinstance(arguments, Mapping):
         invalid("arguments must be a JSON object", ErrorCode.INPUT_INVALID)
+    safe_arguments = json_safe(arguments)
     validate_instance(
-        json_safe(arguments),
+        safe_arguments,
         entry.input_schema,
         code=ErrorCode.INPUT_INVALID,
         schema_code=_LOCAL,
         label="arguments",
     )
+    _refuse_undeclared_arguments(entry, safe_arguments)
     return entry
+
+
+def _refuse_undeclared_arguments(entry: ManifestEntry, arguments: Mapping[str, Any]) -> None:
+    """Allow only argument names the pinned schema actually declares.
+
+    Schema validation alone is not enough here, and the gap is not theoretical.
+    JSON Schema is permissive by default: unless a schema says
+    `additionalProperties: false`, any extra property validates. So a reviewed
+    capability whose provider schema omits that keyword would forward
+    caller-chosen keys verbatim to a **write-capable** tool — `side`,
+    `quantity`, `account_id` — and every check above would pass.
+
+    The manifest reviewer cannot close this. Adding `additionalProperties:
+    false` to the entry changes its `schema_digest`, which then disagrees with
+    the schema the provider actually advertises, and the gateway never becomes
+    ready. Whatever Robinhood ships is the ceiling on what the pinned schema
+    can say, so the tightening has to happen here.
+
+    Hence default-deny on argument *names*, independent of what the schema says
+    about additional properties: a name that is not a declared property is
+    refused. A schema declaring no properties therefore accepts no arguments,
+    which is the fail-closed reading of "this tool takes nothing".
+    """
+    declared = entry.input_schema.get("properties")
+    allowed = frozenset(declared) if isinstance(declared, Mapping) else frozenset()
+    undeclared = sorted(set(arguments) - allowed)
+    if undeclared:
+        # The names came from the caller, not the provider, so echoing them is
+        # safe and is the only useful thing this error can say (§7.3).
+        invalid(
+            f"arguments contain name(s) {undeclared} that the pinned input schema does "
+            "not declare; only reviewed argument names may be sent",
+            ErrorCode.INPUT_INVALID,
+        )
 
 
 def manifest_to_json_dict(manifest: ReviewedManifest) -> dict[str, Any]:

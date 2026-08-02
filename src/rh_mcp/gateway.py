@@ -25,6 +25,7 @@ cannot become ready, and has no `read` at all.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -112,6 +113,7 @@ class RobinhoodReadGateway:
         self.__manifest = manifest
         self.__transport = transport
         self.__assessment: ReadinessAssessment | None = None
+        self.__readiness_lock = asyncio.Lock()
 
     # -- readiness ---------------------------------------------------------
 
@@ -124,9 +126,15 @@ class RobinhoodReadGateway:
         open rather than silently absorbed.
         """
         if self.__assessment is None:
-            self.__assessment = await establish_readiness(
-                self.__config, self.__manifest, self.__transport
-            )
+            async with self.__readiness_lock:
+                # Re-check inside the lock: several concurrent reads await the
+                # same first `readiness()`, and without this each would run its
+                # own discovery. §8 bounds discovery per session, not per
+                # caller, so N concurrent reads must not mean N surface fetches.
+                if self.__assessment is None:
+                    self.__assessment = await establish_readiness(
+                        self.__config, self.__manifest, self.__transport
+                    )
         return self.__assessment
 
     @property

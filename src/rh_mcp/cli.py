@@ -147,6 +147,19 @@ async def _cmd_status(args: argparse.Namespace, out: TextIO, err: TextIO) -> int
     _emit(assessment.to_json_dict(), out)
     if assessment.ready:
         return 0
+
+    # A finding that stands in for a raised error carries its originating code
+    # as a structured field, put there in step 2 precisely so this mapping does
+    # not have to parse prose. Honouring it matters most for `auth_required`:
+    # reporting an expired credential as a generic not-ready sends an operator
+    # looking for manifest drift when the answer is `rh-mcp login`.
+    originating = next((f.error_code for f in assessment.findings if f.error_code), None)
+    if originating is not None:
+        err.write(f"{PROGRAM}: {originating}: provider discovery failed\n")
+        if originating is ErrorCode.AUTH_REQUIRED:
+            err.write(f"{PROGRAM}: run `{PROGRAM} login` and try again\n")
+        return exit_code_for(GatewayError(originating, "provider discovery failed"))
+
     err.write(f"{PROGRAM}: not_ready: the gateway is not ready; see the findings above\n")
     return EXIT_CODE_CONFIGURATION_ERROR
 

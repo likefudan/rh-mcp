@@ -1309,3 +1309,39 @@ class TestPreflight:
         parameters = inspect.signature(preflight_read).parameters
         assert "arguments" in parameters
         assert parameters["arguments"].default is inspect.Parameter.empty
+
+
+class TestDeniedEntriesDoNotBlockLoading:
+    """An unenforceable schema on a *denied* tool must not brick the manifest.
+
+    A denied entry's schema is never validated against and never sent. Refusing
+    the whole manifest because an unreviewed tool advertises `$ref` would make
+    one keyword anywhere in the provider surface permanently un-loadable — the
+    likely outcome of the first real `admin discover`.
+    """
+
+    def test_a_denied_entry_may_carry_an_unsupported_keyword(self) -> None:
+        entries = default_entries()
+        denied = next(e for e in entries if e["disposition"] == "denied")
+        index = entries.index(denied)
+        entries[index] = build_entry(
+            provider_tool_name=denied["provider_tool_name"],
+            capability=denied["capability"],
+            description=denied["description"],
+            input_schema={"type": "object", "properties": {}, "$ref": "#/definitions/x"},
+            disposition="denied",
+            rationale=denied["rationale"],
+        )
+        manifest = load_manifest_text(dumps(reseal(build_manifest(entries))))
+        assert manifest.read_capabilities
+
+    def test_an_allowed_entry_still_may_not(self) -> None:
+        entries = default_entries()
+        entries[0] = build_entry(
+            provider_tool_name="synthetic_alpha_read",
+            capability="alpha_reading",
+            description=entries[0]["description"],
+            input_schema={"type": "object", "properties": {}, "$ref": "#/definitions/x"},
+            rationale=entries[0]["rationale"],
+        )
+        expect_local_failure(reseal(build_manifest(entries)), "does not implement")

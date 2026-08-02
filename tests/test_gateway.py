@@ -297,3 +297,92 @@ class TestAdminDiscovery:
 
     def test_open_admin_discovery_takes_no_manifest(self) -> None:
         assert "manifest" not in inspect.signature(open_admin_discovery).parameters
+
+
+class TestUndeclaredArgumentsAreRefused:
+    """The blocking finding from review: JSON Schema is permissive by default.
+
+    A reviewed schema that omits `additionalProperties: false` would otherwise
+    forward caller-chosen keys verbatim to a write-capable tool. The manifest
+    reviewer cannot close it — adding the keyword changes `schema_digest` and
+    the gateway never becomes ready — so the gateway refuses argument names the
+    pinned schema does not declare.
+    """
+
+    @staticmethod
+    def _loose_gateway() -> tuple[RobinhoodReadGateway, SpyTransport]:
+        from tests.support import build_entry, default_entries, reseal
+
+        entries = default_entries()
+        loose = {
+            "type": "object",
+            "properties": {"synthetic_symbol": {"type": "string"}},
+            "required": ["synthetic_symbol"],
+        }
+        entries[0] = build_entry(
+            provider_tool_name="synthetic_alpha_read",
+            capability="alpha_reading",
+            description=entries[0]["description"],
+            input_schema=loose,
+            rationale=entries[0]["rationale"],
+        )
+        document = reseal(build_manifest(entries))
+        manifest = load_manifest_text(dumps(document))
+        transport = SpyTransport(document)
+        gateway = RobinhoodReadGateway(
+            GatewayConfig(expected_manifest_digest=manifest.digest), manifest, transport
+        )
+        return gateway, transport
+
+    def test_a_trade_shaped_argument_never_reaches_the_provider(self) -> None:
+        gateway, transport = self._loose_gateway()
+        hostile = {
+            "synthetic_symbol": "AAPL",
+            "side": "sell",
+            "quantity": 100,
+            "account_id": "RH-9999",
+        }
+        with pytest.raises(GatewayError) as excinfo:
+            run(gateway.read("alpha_reading", hostile))
+        assert excinfo.value.code is ErrorCode.INPUT_INVALID
+        assert transport.call_tool_calls == []
+
+    def test_declared_arguments_still_pass(self) -> None:
+        gateway, transport = self._loose_gateway()
+        run(gateway.read("alpha_reading", {"synthetic_symbol": "AAPL"}))
+        assert transport.call_tool_calls == [("synthetic_alpha_read", {"synthetic_symbol": "AAPL"})]
+
+    def test_the_refusal_names_only_caller_supplied_keys(self) -> None:
+        """§7.3: the names came from the caller, so echoing them is safe."""
+        gateway, _ = self._loose_gateway()
+        with pytest.raises(GatewayError) as excinfo:
+            run(gateway.read("alpha_reading", {"synthetic_symbol": "A", "side": "sell"}))
+        assert "side" in excinfo.value.message
+
+
+class SlowSpyTransport(SpyTransport):
+    """A spy whose `discover` actually yields control.
+
+    Without a real await point the event loop runs each coroutine straight
+    through, so eight concurrent `readiness()` calls serialise on their own and
+    a missing lock is invisible. This is why the first version of the test
+    below passed against the unlocked code.
+    """
+
+    async def discover(self) -> ObservedSurface:
+        self.discover_calls += 1
+        await asyncio.sleep(0)
+        return ObservedSurface(tools=self.tools, complete=self.complete)
+
+
+class TestReadinessIsSingleFlight:
+    def test_concurrent_reads_trigger_one_discovery(self, document: dict[str, Any]) -> None:
+        """§8 bounds discovery per session, not per caller."""
+        transport = SlowSpyTransport(document)
+        gateway = gateway_for(document, transport)
+
+        async def eight() -> None:
+            await asyncio.gather(*(gateway.readiness() for _ in range(8)))
+
+        run(eight())
+        assert transport.discover_calls == 1

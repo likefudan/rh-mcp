@@ -53,6 +53,7 @@ from rh_mcp.canonical import (
 from rh_mcp.config import GatewayConfig
 from rh_mcp.errors import ErrorCode, GatewayError
 from rh_mcp.models import Readiness
+from rh_mcp.schema import ensure_schema_supported, validate_instance
 from rh_mcp.validation import (
     freeze_json,
     invalid,
@@ -111,6 +112,12 @@ FULL_MANIFEST_DIGEST_FIELD: Final = "full_manifest_digest"
 # network budgets and deliberately do not live in `ResourceLimits`.
 MAX_MANIFEST_BYTES: Final = 4_194_304
 MAX_MANIFEST_TEXT_DEPTH: Final = 32
+
+# A structural rail on the argument walk, not the §8 `max_json_depth` payload
+# bound — that one is enforced downstream of this check, which is too late to
+# stop a `RecursionError` escaping the §7.3 error contract. Generous enough
+# that no plausible reviewed schema reaches it.
+_MAX_ARGUMENT_DEPTH: Final = 64
 
 _TOP_LEVEL_FIELDS: Final[frozenset[str]] = frozenset(
     {
@@ -809,6 +816,7 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
             "that the tool supplies no output schema",
             _LOCAL,
         )
+
     annotations = _require_json_object(f"entries[{index}].annotations", entry["annotations"],
                                        _LOCAL)
 
@@ -819,6 +827,26 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
             f"got {disposition!r}",
             _LOCAL,
         )
+
+    # Refuse a schema this package cannot enforce, at *load* time. Deferring it
+    # to the first call that happens to exercise the unsupported keyword would
+    # mean a gateway that became ready while holding a pinned constraint nothing
+    # checks — a reviewed capability whose input is in practice unvalidated,
+    # which is the failure §6.2 exists to prevent. `not_ready` is the right
+    # code: the manifest decoded fine, it just fails the contract.
+    #
+    # Only for an entry a read may actually use. A *denied* entry's schema is
+    # never validated against and never sent, so refusing the whole manifest
+    # because an unreviewed tool advertises `$ref` would make one unenforceable
+    # keyword anywhere in the provider surface permanently un-loadable — the
+    # likely outcome of the first real `admin discover`, and a fail-closed
+    # check with no remediation short of the provider changing its schema.
+    if disposition == "read_allowed":
+        ensure_schema_supported(input_schema, _LOCAL, path=f"entries[{index}].input_schema")
+        if output_schema is not None:
+            ensure_schema_supported(
+                output_schema, _LOCAL, path=f"entries[{index}].output_schema"
+            )
 
     rationale = entry["rationale"]
     require_nonempty(f"entries[{index}].rationale", rationale, _LOCAL)
@@ -1137,33 +1165,32 @@ def preflight_read(
     manifest: ReviewedManifest,
     assessment: ReadinessAssessment,
     capability: object,
+    arguments: Mapping[str, Any],
 ) -> ManifestEntry:
-    """Resolve a capability to the reviewed entry a read may use (§6.2).
+    """Resolve a capability and validate its arguments, as one event (§6.2).
 
     Returns the pinned entry only when the gateway is ready, the assessment
     describes *this* manifest, the capability is declared, its review
-    disposition is `read_allowed`, and its stored digests still match its own
-    stored schemas and metadata.
+    disposition is `read_allowed`, its stored digests still match its own
+    stored schemas and metadata, **and `arguments` validates against the
+    pinned input schema**.
 
     An unknown capability and a denied one produce the identical error, so the
     failure never discloses whether a name exists in the manifest.
 
-    Validating `arguments` against `entry.input_schema` is the remaining
-    preflight step and belongs to step 5. Until then a caller must not treat a
-    returned entry as permission to send unvalidated input.
+    `arguments` is required rather than optional, and validation happens here
+    rather than in a separate function, because "resolved an entry" and
+    "validated the input" have to be the same event: a second call is one a
+    caller can forget, and a returned entry would then read as permission to
+    send whatever they liked. §6.2 orders it this way — validate against the
+    pinned schema, *and only then* call the transport.
 
-    **Guidance for whoever implements it, settled in review of this step:**
-
-    - Write a **strict-subset validator**; do not reach for `jsonschema`. That
-      library *ignores* keywords it does not recognize, which is default-allow
-      on precisely the axis this package is default-deny — an unreviewed or
-      mistyped constraint would silently pass rather than refuse.
-    - Reject unsupported keywords at **load** time, not call time, so an
-      unenforceable manifest fails closed before any gateway becomes ready
-      instead of at the first call that happens to exercise the keyword.
-    - Fold the validation into this function rather than adding a second one a
-      caller must remember to invoke, so "resolved an entry" and "validated the
-      input" are one event.
+    The validator is this package's strict subset, not `jsonschema`, which
+    ignores keywords it does not recognise — default-allow on precisely the
+    axis this package is default-deny. Unsupported keywords are refused at
+    manifest *load* time (see `_validate_entry_schemas`), so an unenforceable
+    schema fails closed before readiness rather than at the first call that
+    happens to exercise the keyword.
     """
     if not assessment.ready:
         invalid("the gateway is not ready, so no read may be sent", _LOCAL)
@@ -1185,7 +1212,139 @@ def preflight_read(
         invalid("the pinned schema digest no longer matches the pinned schema", _LOCAL)
     if entry.metadata_digest != entry.recomputed_metadata_digest():
         invalid("the pinned metadata digest no longer matches the pinned metadata", _LOCAL)
+
+    if not isinstance(arguments, Mapping):
+        invalid("arguments must be a JSON object", ErrorCode.INPUT_INVALID)
+    safe_arguments = json_safe(arguments)
+    validate_instance(
+        safe_arguments,
+        entry.input_schema,
+        code=ErrorCode.INPUT_INVALID,
+        schema_code=_LOCAL,
+        label="arguments",
+    )
+    _refuse_undeclared_arguments(entry, safe_arguments)
     return entry
+
+
+def _refuse_undeclared_arguments(entry: ManifestEntry, arguments: Mapping[str, Any]) -> None:
+    """Allow only argument names the pinned schema actually declares.
+
+    Schema validation alone is not enough here, and the gap is not theoretical.
+    JSON Schema is permissive by default: unless a schema says
+    `additionalProperties: false`, any extra property validates. So a reviewed
+    capability whose provider schema omits that keyword would forward
+    caller-chosen keys verbatim to a **write-capable** tool — `side`,
+    `quantity`, `account_id` — and every check above would pass.
+
+    The manifest reviewer cannot close this. Adding `additionalProperties:
+    false` to the entry changes its `schema_digest`, which then disagrees with
+    the schema the provider actually advertises, and the gateway never becomes
+    ready. Whatever Robinhood ships is the ceiling on what the pinned schema
+    can say, so the tightening has to happen here.
+
+    Hence default-deny on argument *names*, independent of what the schema says
+    about additional properties: a name that is not a declared property is
+    refused. A schema declaring no properties therefore accepts no arguments,
+    which is the fail-closed reading of "this tool takes nothing".
+    """
+    _refuse_undeclared(arguments, entry.input_schema, path="arguments")
+
+
+def _declared_names(schema: Any) -> frozenset[str]:
+    """Property names a schema declares, including through combinators.
+
+    `allOf`/`anyOf`/`oneOf` are how a schema most naturally says "an object
+    shaped like one of these", and their branches declare properties just as
+    the root can. Ignoring them would load, become ready, and then refuse every
+    argument set including the legal one — the same defect class as refusing a
+    denied entry's schema, surfaced at first call instead of at load.
+    """
+    if not isinstance(schema, Mapping):
+        return frozenset()
+    names: set[str] = set()
+    properties = schema.get("properties")
+    if isinstance(properties, Mapping):
+        names.update(k for k in properties if isinstance(k, str))
+    for combinator in ("allOf", "anyOf", "oneOf"):
+        branches = schema.get(combinator)
+        if isinstance(branches, Sequence) and not isinstance(branches, (str, bytes)):
+            for branch in branches:
+                names |= _declared_names(branch)
+    return frozenset(names)
+
+
+def _subschema_for(schema: Any, name: str) -> Any:
+    """The schema governing property `name`, searched through combinators."""
+    if not isinstance(schema, Mapping):
+        return None
+    properties = schema.get("properties")
+    if isinstance(properties, Mapping) and name in properties:
+        return properties[name]
+    for combinator in ("allOf", "anyOf", "oneOf"):
+        branches = schema.get(combinator)
+        if isinstance(branches, Sequence) and not isinstance(branches, (str, bytes)):
+            for branch in branches:
+                found = _subschema_for(branch, name)
+                if found is not None:
+                    return found
+    return None
+
+
+def _refuse_undeclared(value: Any, schema: Any, *, path: str, depth: int = 0) -> None:
+    """Walk the payload, refusing any object key the schema does not declare.
+
+    Enforced at **every** depth, not just the root. The first version of this
+    check looked only at the top level, and a hostile payload simply moved one
+    level down: a declared object with no properties of its own accepted
+    `{"side": "sell", "quantity": 100}` wholesale. Objects inside an array are
+    the same hole and the more likely one, since a batch or filter argument is
+    exactly where they appear.
+
+    Descent follows `properties`, `items`, and the `allOf`/`anyOf`/`oneOf`
+    branches — and **deliberately not `additionalProperties`**. Do not "fix"
+    that: a key governed only by `additionalProperties` never enters
+    `_declared_names`, so it is refused at its parent before any descent could
+    happen. Adding the descent would turn that refusal into a permit and
+    reopen exactly the hole this function exists to close.
+
+    `_subschema_for` returning `None` is likewise safe by construction: a child
+    walked against no schema declares no names, so every key in it is refused.
+
+    The depth rail is a structural guard, not the §8 `max_json_depth` bound —
+    that one is enforced downstream, which is too late here. Without this,
+    caller-supplied `--input` nesting a few thousand levels raises an uncaught
+    `RecursionError` instead of the stable `input_invalid` contract.
+    """
+    if depth > _MAX_ARGUMENT_DEPTH:
+        invalid(
+            f"{path} nests deeper than {_MAX_ARGUMENT_DEPTH} levels",
+            ErrorCode.INPUT_INVALID,
+        )
+    if isinstance(value, Mapping):
+        allowed = _declared_names(schema)
+        # Keys are compared and reported as text: a non-string key cannot be
+        # a declared property, and sorting a mixed-type set raises TypeError.
+        present = {key if isinstance(key, str) else repr(key) for key in value}
+        undeclared = sorted(present - allowed)
+        if undeclared:
+            # The names came from the caller, not the provider, so echoing them
+            # is safe and is the only useful thing this error can say (§7.3).
+            invalid(
+                f"{path} contains name(s) {undeclared} that the pinned input schema does "
+                "not declare; only reviewed argument names may be sent",
+                ErrorCode.INPUT_INVALID,
+            )
+        for key, item in value.items():
+            _refuse_undeclared(
+                item, _subschema_for(schema, key), path=f"{path}.{key}", depth=depth + 1
+            )
+        return
+
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        items = schema.get("items") if isinstance(schema, Mapping) else None
+        for index, item in enumerate(value):
+            _refuse_undeclared(item, items, path=f"{path}[{index}]", depth=depth + 1)
 
 
 def manifest_to_json_dict(manifest: ReviewedManifest) -> dict[str, Any]:

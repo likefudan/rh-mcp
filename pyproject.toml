@@ -22,6 +22,9 @@ dependencies = [
     "mcp>=2.0.0,<3.0.0",
 ]
 
+[project.scripts]
+rh-mcp = "rh_mcp.cli:main"
+
 [dependency-groups]
 dev = [
     "mypy>=1.11",

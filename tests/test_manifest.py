@@ -58,6 +58,9 @@ from tests.support import (
 # hand: if a change to canonicalization, the manifest format, or the fixture
 # moves it, that is exactly the explicit migration DESIGN.md §6 requires.
 BASE_DIGEST = "sha256:463295e635f21ed81c3792da15f3474c6096d8821cd815d9cbddc6867dc8b705"
+# Arguments that satisfy ALPHA_INPUT_SCHEMA, so a preflight test fails for the
+# reason it is named after rather than on input validation.
+VALID_ARGS: dict[str, Any] = {"synthetic_symbol": "AAPL"}
 OTHER_DIGEST = "sha256:" + "b" * 64
 
 
@@ -543,6 +546,27 @@ class TestDocumentValidation:
         )
         document = reseal(build_manifest(entries))
         assert load_manifest_text(dumps(document)).capabilities["alpha_reading"].input_schema
+
+    @pytest.mark.parametrize("field", ["input_schema", "output_schema"])
+    def test_rejects_a_schema_this_package_cannot_enforce(self, field: str) -> None:
+        """§6.2: an unenforceable pinned schema must fail before readiness.
+
+        Deferring the check to the first call that exercises the unsupported
+        keyword would let a gateway become ready holding a pinned constraint
+        nothing checks — a reviewed capability whose input is in practice
+        unvalidated.
+        """
+        entries = default_entries()
+        unsupported = {"type": "object", "properties": {}, "$ref": "#/definitions/x"}
+        entries[0] = build_entry(
+            provider_tool_name="synthetic_alpha_read",
+            capability="alpha_reading",
+            description=entries[0]["description"],
+            input_schema=unsupported if field == "input_schema" else ALPHA_INPUT_SCHEMA,
+            output_schema=unsupported if field == "output_schema" else ALPHA_OUTPUT_SCHEMA,
+            rationale=entries[0]["rationale"],
+        )
+        expect_local_failure(reseal(build_manifest(entries)), "does not implement")
 
     def test_rejects_an_empty_output_schema(self) -> None:
         """§7.1 checks output "when one exists"; `{}` would check nothing."""
@@ -1152,7 +1176,7 @@ class TestPreflight:
     def test_resolves_a_reviewed_read_capability(
         self, manifest: ReviewedManifest, ready: ReadinessAssessment
     ) -> None:
-        entry = preflight_read(manifest, ready, "alpha_reading")
+        entry = preflight_read(manifest, ready, "alpha_reading", VALID_ARGS)
         assert entry.provider_tool_name == "synthetic_alpha_read"
         assert entry.read_allowed
         assert entry.input_schema["required"] == ("synthetic_symbol",)
@@ -1161,14 +1185,14 @@ class TestPreflight:
         self, manifest: ReviewedManifest, ready: ReadinessAssessment
     ) -> None:
         with pytest.raises(GatewayError) as excinfo:
-            preflight_read(manifest, ready, "gamma_reading")
+            preflight_read(manifest, ready, "gamma_reading", VALID_ARGS)
         assert excinfo.value.code is ErrorCode.CAPABILITY_DENIED
 
     def test_denies_an_unknown_capability(
         self, manifest: ReviewedManifest, ready: ReadinessAssessment
     ) -> None:
         with pytest.raises(GatewayError) as excinfo:
-            preflight_read(manifest, ready, "not_a_capability")
+            preflight_read(manifest, ready, "not_a_capability", VALID_ARGS)
         assert excinfo.value.code is ErrorCode.CAPABILITY_DENIED
 
     def test_denied_and_unknown_are_indistinguishable(
@@ -1178,7 +1202,7 @@ class TestPreflight:
         messages = []
         for capability in ("gamma_reading", "not_a_capability"):
             with pytest.raises(GatewayError) as excinfo:
-                preflight_read(manifest, ready, capability)
+                preflight_read(manifest, ready, capability, VALID_ARGS)
             messages.append(excinfo.value.message)
         assert messages[0] == messages[1]
 
@@ -1187,7 +1211,7 @@ class TestPreflight:
         self, manifest: ReviewedManifest, ready: ReadinessAssessment, capability: Any
     ) -> None:
         with pytest.raises(GatewayError) as excinfo:
-            preflight_read(manifest, ready, capability)
+            preflight_read(manifest, ready, capability, VALID_ARGS)
         assert excinfo.value.code is ErrorCode.CAPABILITY_DENIED
 
     def test_denies_a_provider_tool_name_used_as_a_capability(
@@ -1195,7 +1219,7 @@ class TestPreflight:
     ) -> None:
         """§6.2: callers cannot supply an arbitrary provider tool name."""
         with pytest.raises(GatewayError) as excinfo:
-            preflight_read(manifest, ready, "synthetic_alpha_read")
+            preflight_read(manifest, ready, "synthetic_alpha_read", VALID_ARGS)
         assert excinfo.value.code is ErrorCode.CAPABILITY_DENIED
 
     def test_refuses_when_the_gateway_is_not_ready(
@@ -1207,7 +1231,7 @@ class TestPreflight:
             )
         )
         with pytest.raises(GatewayError) as excinfo:
-            preflight_read(manifest, not_ready, "alpha_reading")
+            preflight_read(manifest, not_ready, "alpha_reading", VALID_ARGS)
         assert excinfo.value.code is ErrorCode.NOT_READY
 
     def test_refuses_an_assessment_for_a_different_manifest(
@@ -1216,7 +1240,7 @@ class TestPreflight:
         """A readiness result from one manifest cannot authorise another."""
         other = load_manifest_text(dumps(_added_entry()))
         with pytest.raises(GatewayError, match="different manifest") as excinfo:
-            preflight_read(other, ready, "alpha_reading")
+            preflight_read(other, ready, "alpha_reading", VALID_ARGS)
         assert excinfo.value.code is ErrorCode.NOT_READY
 
     @pytest.mark.parametrize("field", ["schema_digest", "metadata_digest"])
@@ -1245,5 +1269,79 @@ class TestPreflight:
         tampered = replace(consistent, **{field: OTHER_DIGEST})
         object.__setattr__(loaded, "entries", (tampered,))
         with pytest.raises(GatewayError, match="no longer matches") as excinfo:
-            preflight_read(loaded, ready, "alpha_reading")
+            preflight_read(loaded, ready, "alpha_reading", VALID_ARGS)
         assert excinfo.value.code is ErrorCode.NOT_READY
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            {},
+            {"synthetic_symbol": 7},
+            {"synthetic_symbol": "TOOOOLONG"},
+            {"synthetic_symbol": "AAPL", "injected": True},
+        ],
+        ids=["missing-required", "wrong-type", "too-long", "additional-property"],
+    )
+    def test_refuses_arguments_that_violate_the_pinned_schema(
+        self, manifest: ReviewedManifest, ready: ReadinessAssessment, arguments: dict[str, Any]
+    ) -> None:
+        """§6.2 validates input against the pinned schema *before* the call."""
+        with pytest.raises(GatewayError) as excinfo:
+            preflight_read(manifest, ready, "alpha_reading", arguments)
+        assert excinfo.value.code is ErrorCode.INPUT_INVALID
+
+    def test_refuses_non_mapping_arguments(
+        self, manifest: ReviewedManifest, ready: ReadinessAssessment
+    ) -> None:
+        with pytest.raises(GatewayError) as excinfo:
+            preflight_read(manifest, ready, "alpha_reading", ["not", "a", "mapping"])  # type: ignore[arg-type]
+        assert excinfo.value.code is ErrorCode.INPUT_INVALID
+
+    def test_argument_validation_is_not_a_separate_call(self) -> None:
+        """"Resolved an entry" and "validated the input" are one event.
+
+        A caller cannot obtain a pinned entry without having had its arguments
+        checked, so a returned entry can never read as permission to send
+        whatever the caller likes.
+        """
+        import inspect
+
+        parameters = inspect.signature(preflight_read).parameters
+        assert "arguments" in parameters
+        assert parameters["arguments"].default is inspect.Parameter.empty
+
+
+class TestDeniedEntriesDoNotBlockLoading:
+    """An unenforceable schema on a *denied* tool must not brick the manifest.
+
+    A denied entry's schema is never validated against and never sent. Refusing
+    the whole manifest because an unreviewed tool advertises `$ref` would make
+    one keyword anywhere in the provider surface permanently un-loadable — the
+    likely outcome of the first real `admin discover`.
+    """
+
+    def test_a_denied_entry_may_carry_an_unsupported_keyword(self) -> None:
+        entries = default_entries()
+        denied = next(e for e in entries if e["disposition"] == "denied")
+        index = entries.index(denied)
+        entries[index] = build_entry(
+            provider_tool_name=denied["provider_tool_name"],
+            capability=denied["capability"],
+            description=denied["description"],
+            input_schema={"type": "object", "properties": {}, "$ref": "#/definitions/x"},
+            disposition="denied",
+            rationale=denied["rationale"],
+        )
+        manifest = load_manifest_text(dumps(reseal(build_manifest(entries))))
+        assert manifest.read_capabilities
+
+    def test_an_allowed_entry_still_may_not(self) -> None:
+        entries = default_entries()
+        entries[0] = build_entry(
+            provider_tool_name="synthetic_alpha_read",
+            capability="alpha_reading",
+            description=entries[0]["description"],
+            input_schema={"type": "object", "properties": {}, "$ref": "#/definitions/x"},
+            rationale=entries[0]["rationale"],
+        )
+        expect_local_failure(reseal(build_manifest(entries)), "does not implement")

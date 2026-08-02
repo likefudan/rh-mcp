@@ -53,6 +53,7 @@ from rh_mcp.canonical import (
 from rh_mcp.config import GatewayConfig
 from rh_mcp.errors import ErrorCode, GatewayError
 from rh_mcp.models import Readiness
+from rh_mcp.schema import ensure_schema_supported, validate_instance
 from rh_mcp.validation import (
     freeze_json,
     invalid,
@@ -809,6 +810,16 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
             "that the tool supplies no output schema",
             _LOCAL,
         )
+
+    # Refuse a schema this package cannot enforce, at *load* time. Deferring
+    # it to the first call that happens to exercise the unsupported keyword
+    # would mean a gateway that became ready while holding a pinned constraint
+    # nothing checks — a reviewed capability whose input is in practice
+    # unvalidated, which is the failure §6.2 exists to prevent. `not_ready` is
+    # the right code: the manifest decoded fine, it just fails the contract.
+    ensure_schema_supported(input_schema, _LOCAL, path=f"entries[{index}].input_schema")
+    if output_schema is not None:
+        ensure_schema_supported(output_schema, _LOCAL, path=f"entries[{index}].output_schema")
     annotations = _require_json_object(f"entries[{index}].annotations", entry["annotations"],
                                        _LOCAL)
 
@@ -1137,33 +1148,32 @@ def preflight_read(
     manifest: ReviewedManifest,
     assessment: ReadinessAssessment,
     capability: object,
+    arguments: Mapping[str, Any],
 ) -> ManifestEntry:
-    """Resolve a capability to the reviewed entry a read may use (§6.2).
+    """Resolve a capability and validate its arguments, as one event (§6.2).
 
     Returns the pinned entry only when the gateway is ready, the assessment
     describes *this* manifest, the capability is declared, its review
-    disposition is `read_allowed`, and its stored digests still match its own
-    stored schemas and metadata.
+    disposition is `read_allowed`, its stored digests still match its own
+    stored schemas and metadata, **and `arguments` validates against the
+    pinned input schema**.
 
     An unknown capability and a denied one produce the identical error, so the
     failure never discloses whether a name exists in the manifest.
 
-    Validating `arguments` against `entry.input_schema` is the remaining
-    preflight step and belongs to step 5. Until then a caller must not treat a
-    returned entry as permission to send unvalidated input.
+    `arguments` is required rather than optional, and validation happens here
+    rather than in a separate function, because "resolved an entry" and
+    "validated the input" have to be the same event: a second call is one a
+    caller can forget, and a returned entry would then read as permission to
+    send whatever they liked. §6.2 orders it this way — validate against the
+    pinned schema, *and only then* call the transport.
 
-    **Guidance for whoever implements it, settled in review of this step:**
-
-    - Write a **strict-subset validator**; do not reach for `jsonschema`. That
-      library *ignores* keywords it does not recognize, which is default-allow
-      on precisely the axis this package is default-deny — an unreviewed or
-      mistyped constraint would silently pass rather than refuse.
-    - Reject unsupported keywords at **load** time, not call time, so an
-      unenforceable manifest fails closed before any gateway becomes ready
-      instead of at the first call that happens to exercise the keyword.
-    - Fold the validation into this function rather than adding a second one a
-      caller must remember to invoke, so "resolved an entry" and "validated the
-      input" are one event.
+    The validator is this package's strict subset, not `jsonschema`, which
+    ignores keywords it does not recognise — default-allow on precisely the
+    axis this package is default-deny. Unsupported keywords are refused at
+    manifest *load* time (see `_validate_entry_schemas`), so an unenforceable
+    schema fails closed before readiness rather than at the first call that
+    happens to exercise the keyword.
     """
     if not assessment.ready:
         invalid("the gateway is not ready, so no read may be sent", _LOCAL)
@@ -1185,6 +1195,16 @@ def preflight_read(
         invalid("the pinned schema digest no longer matches the pinned schema", _LOCAL)
     if entry.metadata_digest != entry.recomputed_metadata_digest():
         invalid("the pinned metadata digest no longer matches the pinned metadata", _LOCAL)
+
+    if not isinstance(arguments, Mapping):
+        invalid("arguments must be a JSON object", ErrorCode.INPUT_INVALID)
+    validate_instance(
+        json_safe(arguments),
+        entry.input_schema,
+        code=ErrorCode.INPUT_INVALID,
+        schema_code=_LOCAL,
+        label="arguments",
+    )
     return entry
 
 

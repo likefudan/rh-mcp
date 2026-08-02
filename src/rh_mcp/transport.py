@@ -9,7 +9,7 @@ session object and its transport are never reachable from a public property.
 Four decisions in here are load-bearing enough to state up front.
 
 **Discovery and tool results are read as raw JSON, not as SDK models.** The
-obvious implementation calls `ClientSession.list_tools()` and maps
+obvious implementation calls `_ClientSession.list_tools()` and maps
 `types.Tool` into `ObservedTool`. It is wrong, and quietly so. `mcp_types`
 models default to Pydantic's `extra="ignore"`, so a `tools/list` response
 carrying `{"annotations": {"readOnlyHint": true, "vendorFoo": 1}}` validates
@@ -18,7 +18,7 @@ digest in §6 is computed over the annotations we observed, so a provider could
 add, change, or remove any field the installed SDK does not model and the
 metadata digest would never move. §2 requires an annotation change to surface
 as review evidence; reading the raw payload is what makes that true. Both
-methods therefore go through `send_request(..., RootModel[dict[str, Any]])`,
+methods therefore go through `send_request(..., _RootModel[dict[str, Any]])`,
 which still runs the SDK's protocol-conformance check on the response and then
 returns the untouched decoded JSON.
 
@@ -32,7 +32,7 @@ same thing a server that does not support the channel would return, so the SDK
 handles it on a documented path.
 
 **Nothing is retried.** §8 is explicit that a tool call is never automatically
-retried regardless of `idempotentHint`, so the session uses `ClientSession`
+retried regardless of `idempotentHint`, so the session uses `_ClientSession`
 rather than `Client`: `Client.call_tool` drives an input-required retry loop
 and `Client.list_tools` serves cached listings, and a cached tool surface would
 make the §6.2 drift comparison compare the manifest against a memory of the
@@ -59,12 +59,21 @@ from types import MappingProxyType
 from typing import Any, Final, Literal, NoReturn, Protocol, cast
 from urllib.parse import urlsplit
 
-import anyio
-import httpx2
-import mcp_types
-from mcp import ClientSession, StdioServerParameters, stdio_client
-from mcp.client.streamable_http import streamable_http_client
-from pydantic import RootModel, ValidationError
+# Every SDK symbol is bound to a private name. `__all__` already excludes
+# them, but `__all__` only governs `from ... import *` — `from
+# rh_mcp.transport import _stdio_client` would still work, and that name's
+# annotations are `mcp.*` types, which is the literal thing §4 forbids on a
+# public surface. Aliasing makes the boundary hold by construction rather than
+# by discipline, the same move `ObservedTool` makes with its defaults.
+import anyio as _anyio
+import httpx2 as _httpx2
+import mcp_types as _mcp_types
+from mcp import ClientSession as _ClientSession
+from mcp import StdioServerParameters as _StdioServerParameters
+from mcp import stdio_client as _stdio_client
+from mcp.client.streamable_http import streamable_http_client as _streamable_http_client
+from pydantic import RootModel as _RootModel
+from pydantic import ValidationError as _ValidationError
 
 from rh_mcp.canonical import canonicalize
 from rh_mcp.config import PRODUCTION_RESOURCE_URL, GatewayConfig, ResourceLimits
@@ -82,21 +91,26 @@ PRODUCTION_EGRESS_HOSTS: Final[frozenset[str]] = frozenset(
     {"agent.robinhood.com", "robinhood.com", "api.robinhood.com"}
 )
 
-# The result type both MCP calls are decoded into. A `RootModel` over a plain
+# The port a URL means when it does not say one. `httpx2` reports `URL.port` as
+# None in exactly that case, so this is what turns a URL into a comparable
+# origin. Only these two schemes are ever allowed out.
+_DEFAULT_PORTS: Final[dict[str, int]] = {"http": 80, "https": 443}
+
+# The result type both MCP calls are decoded into. A `_RootModel` over a plain
 # dict is what keeps the raw JSON raw: `send_request` still runs the SDK's
 # protocol-conformance check on the response, and then this hands back exactly
 # the decoded object, with every field the installed SDK's typed models would
 # have silently dropped still present. See the module docstring.
-_RawResult = RootModel[dict[str, Any]]
+_RawResult = _RootModel[dict[str, Any]]
 
 # JSON-RPC error codes worth distinguishing. Everything else from a provider
 # collapses into `provider_error`; the provider's own message is never used.
 _JSONRPC_CODE_MAP: Final[dict[int, ErrorCode]] = {
-    mcp_types.PARSE_ERROR: ErrorCode.PROTOCOL_ERROR,
-    mcp_types.INVALID_REQUEST: ErrorCode.PROTOCOL_ERROR,
-    mcp_types.METHOD_NOT_FOUND: ErrorCode.PROTOCOL_ERROR,
-    mcp_types.INVALID_PARAMS: ErrorCode.INPUT_INVALID,
-    mcp_types.REQUEST_TIMEOUT: ErrorCode.TIMEOUT,
+    _mcp_types.PARSE_ERROR: ErrorCode.PROTOCOL_ERROR,
+    _mcp_types.INVALID_REQUEST: ErrorCode.PROTOCOL_ERROR,
+    _mcp_types.METHOD_NOT_FOUND: ErrorCode.PROTOCOL_ERROR,
+    _mcp_types.INVALID_PARAMS: ErrorCode.INPUT_INVALID,
+    _mcp_types.REQUEST_TIMEOUT: ErrorCode.TIMEOUT,
 }
 
 
@@ -350,13 +364,26 @@ def _reject_json_constant(name: str) -> Any:
 class _EgressPolicy:
     """What the guarded HTTP transport will let out (§3).
 
-    Built once when a session opens. `require_https` and `allowed_hosts` are
+    Built once when a session opens. `require_https` and `allowed_origins` are
     not runtime overrides: production values come from module constants, and
     the development values can only describe a loopback target because
     `GatewayConfig` already refused anything else.
+
+    The unit of pinning is an **origin** — a `(host, port)` pair — not a host.
+    A host-only allowlist lets `https://api.robinhood.com:9999/oauth2/token/`
+    through on the host check alone, and §3 pins "the resource URL... and the
+    three hostnames", which a free port only partly satisfies. Nothing in this
+    step can reach that: the resource URL is pinned configuration and redirects
+    are rejected. Step 4 is what makes it matter. §5.0 takes
+    `authorization_endpoint`, `token_endpoint` and `registration_endpoint` from
+    the provider's own authorization-server metadata document, so those URLs
+    are provider-controlled values that will arrive at this guard — and the
+    thing sent to a token endpoint is a PKCE code exchange. The port is pinned
+    here, in the step that owns the guard, rather than in the step that has a
+    credential in flight.
     """
 
-    allowed_hosts: frozenset[str]
+    allowed_origins: frozenset[tuple[str, int]]
     require_https: bool
     max_response_bytes: int
     max_request_bytes: int
@@ -366,7 +393,12 @@ class _EgressPolicy:
         limits = config.limits
         if config.mode == "production":
             return cls(
-                allowed_hosts=PRODUCTION_EGRESS_HOSTS,
+                # §3's three hosts, each on the HTTPS default port and no
+                # other. Production is HTTPS-only, so there is no second port
+                # any documented endpoint could legitimately use.
+                allowed_origins=frozenset(
+                    (host, _DEFAULT_PORTS["https"]) for host in PRODUCTION_EGRESS_HOSTS
+                ),
                 require_https=True,
                 max_response_bytes=limits.max_response_bytes,
                 max_request_bytes=limits.max_request_bytes,
@@ -374,15 +406,33 @@ class _EgressPolicy:
         url = config.dev_url
         if url is None:
             _fail(ErrorCode.CONFIGURATION_ERROR, "an HTTP egress policy needs a development URL")
-        host = urlsplit(url).hostname
+        parsed = urlsplit(url)
+        host = parsed.hostname
         if host is None:
             _fail(ErrorCode.CONFIGURATION_ERROR, "the development URL names no host")
+        scheme = parsed.scheme.lower()
+        if scheme not in _DEFAULT_PORTS:
+            _fail(ErrorCode.CONFIGURATION_ERROR, f"unsupported development scheme {scheme!r}")
+        # A development target is pinned to the single origin its URL names —
+        # its own port included, so a loopback dev server on 9000 cannot be
+        # silently talked to on 9001 by a redirect or a metadata document.
+        port = parsed.port or _DEFAULT_PORTS[scheme]
         return cls(
-            allowed_hosts=frozenset({host.lower()}),
+            allowed_origins=frozenset({(host.lower(), port)}),
             require_https=False,
             max_response_bytes=limits.max_response_bytes,
             max_request_bytes=limits.max_request_bytes,
         )
+
+    @property
+    def allowed_hosts(self) -> frozenset[str]:
+        """The hostnames in `allowed_origins`, for diagnostics only.
+
+        Never use this to decide anything: a host that appears here may only be
+        reachable on one port, and that distinction is the whole point of
+        pinning origins rather than hosts.
+        """
+        return frozenset(host for host, _ in self.allowed_origins)
 
 
 class _Fault:
@@ -411,7 +461,7 @@ class _Fault:
         return error
 
 
-class _CappedStream(httpx2.AsyncByteStream):
+class _CappedStream(_httpx2.AsyncByteStream):
     """Aborts a response body as soon as it exceeds the §8 byte cap.
 
     The cap is applied *while* the body streams, which is the difference §8
@@ -419,7 +469,7 @@ class _CappedStream(httpx2.AsyncByteStream):
     cannot exhaust memory before a limit gets a chance to fire.
     """
 
-    def __init__(self, inner: httpx2.AsyncByteStream, cap: int, fault: _Fault) -> None:
+    def __init__(self, inner: _httpx2.AsyncByteStream, cap: int, fault: _Fault) -> None:
         self._inner = inner
         self._cap = cap
         self._fault = fault
@@ -444,7 +494,7 @@ class _CappedStream(httpx2.AsyncByteStream):
             await aclose()
 
 
-class _GuardedAsyncTransport(httpx2.AsyncBaseTransport):
+class _GuardedAsyncTransport(_httpx2.AsyncBaseTransport):
     """Enforces §3 pinning and §8 request/response bounds on every request.
 
     Placed under the `httpx2.AsyncClient` the SDK writes through, so there is
@@ -454,7 +504,7 @@ class _GuardedAsyncTransport(httpx2.AsyncBaseTransport):
 
     def __init__(
         self,
-        inner: httpx2.AsyncBaseTransport,
+        inner: _httpx2.AsyncBaseTransport,
         policy: _EgressPolicy,
         fault: _Fault,
         token_provider: AccessTokenProvider | None,
@@ -464,12 +514,12 @@ class _GuardedAsyncTransport(httpx2.AsyncBaseTransport):
         self._fault = fault
         self._token_provider = token_provider
 
-    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
+    async def handle_async_request(self, request: _httpx2.Request) -> _httpx2.Response:
         if request.method == "GET":
             # See the module docstring: this gateway never consumes a
             # server-initiated notification stream, and refusing it locally
             # both removes an unbounded read and performs no egress at all.
-            return httpx2.Response(405, request=request, content=b"")
+            return _httpx2.Response(405, request=request, content=b"")
 
         self._check_egress(request)
         self._check_request_size(request)
@@ -503,11 +553,11 @@ class _GuardedAsyncTransport(httpx2.AsyncBaseTransport):
                 )
             )
 
-        return httpx2.Response(
+        return _httpx2.Response(
             status_code=response.status_code,
             headers=response.headers,
             stream=_CappedStream(
-                cast(httpx2.AsyncByteStream, response.stream),
+                cast(_httpx2.AsyncByteStream, response.stream),
                 self._policy.max_response_bytes,
                 self._fault,
             ),
@@ -515,7 +565,12 @@ class _GuardedAsyncTransport(httpx2.AsyncBaseTransport):
             request=request,
         )
 
-    def _check_egress(self, request: httpx2.Request) -> None:
+    def _check_egress(self, request: _httpx2.Request) -> None:
+        """Refuse anything outside the pinned origins (§3).
+
+        Checked in this order because each step depends on the last: the
+        scheme decides the default port, and the port is half the origin.
+        """
         scheme = (request.url.scheme or "").lower()
         host = (request.url.host or "").lower()
         if self._policy.require_https and scheme != "https":
@@ -525,21 +580,39 @@ class _GuardedAsyncTransport(httpx2.AsyncBaseTransport):
                     f"production egress must use https, got {scheme!r}",
                 )
             )
-        if scheme not in ("http", "https"):
+        if scheme not in _DEFAULT_PORTS:
             raise self._fault.record(
                 GatewayError(ErrorCode.CONFIGURATION_ERROR, f"unsupported scheme {scheme!r}")
             )
-        if host not in self._policy.allowed_hosts:
-            # The host is configuration, not provider data, so naming it is
-            # safe and is the only useful thing this error can say.
+        if request.url.userinfo:
+            # Userinfo does not steer the connection — the destination really
+            # is `host` — so this is not a bypass. It is refused because
+            # `httpx2` turns userinfo into an `Authorization: Basic` header,
+            # which would then race the bearer token `_apply_authorization`
+            # sets, and because a URL that carries a credential is one that can
+            # leak one. The value is never echoed (§7.3).
             raise self._fault.record(
                 GatewayError(
                     ErrorCode.CONFIGURATION_ERROR,
-                    f"egress to {host!r} is outside this deployment's allowed hosts",
+                    "an egress URL may not carry userinfo; it would become a second, "
+                    "competing Authorization header",
+                )
+            )
+        # `httpx2` reports `port` as None when the URL uses the scheme's
+        # default, so `https://h/x` and `https://h:443/x` compare equal here
+        # rather than one of them missing the allowlist.
+        port = request.url.port or _DEFAULT_PORTS[scheme]
+        if (host, port) not in self._policy.allowed_origins:
+            # Host and port are configuration, not provider data, so naming
+            # them is safe and is the only useful thing this error can say.
+            raise self._fault.record(
+                GatewayError(
+                    ErrorCode.CONFIGURATION_ERROR,
+                    f"egress to {host}:{port} is outside this deployment's allowed origins",
                 )
             )
 
-    def _check_request_size(self, request: httpx2.Request) -> None:
+    def _check_request_size(self, request: _httpx2.Request) -> None:
         body = request.content
         if len(body) > self._policy.max_request_bytes:
             raise self._fault.record(
@@ -549,7 +622,7 @@ class _GuardedAsyncTransport(httpx2.AsyncBaseTransport):
                 )
             )
 
-    async def _apply_authorization(self, request: httpx2.Request) -> None:
+    async def _apply_authorization(self, request: _httpx2.Request) -> None:
         if self._token_provider is None:
             return
         token = await self._token_provider.access_token()
@@ -579,8 +652,8 @@ def _build_http_client(
     fault: _Fault,
     token_provider: AccessTokenProvider | None,
     *,
-    inner: httpx2.AsyncBaseTransport | None = None,
-) -> httpx2.AsyncClient:
+    inner: _httpx2.AsyncBaseTransport | None = None,
+) -> _httpx2.AsyncClient:
     """The only `httpx2.AsyncClient` this package ever creates (§3).
 
     Two properties are structural rather than configurable. `follow_redirects`
@@ -595,7 +668,7 @@ def _build_http_client(
     under the guard so the guard itself is exercised on every test request.
     """
     limits = config.limits
-    timeout = httpx2.Timeout(
+    timeout = _httpx2.Timeout(
         connect=limits.connect_timeout_s,
         read=limits.read_timeout_s,
         write=limits.connect_timeout_s,
@@ -603,14 +676,14 @@ def _build_http_client(
     )
     policy = _EgressPolicy.for_config(config)
     base = _new_base_transport() if inner is None else inner
-    return httpx2.AsyncClient(
+    return _httpx2.AsyncClient(
         transport=_GuardedAsyncTransport(base, policy, fault, token_provider),
         follow_redirects=False,
         timeout=timeout,
     )
 
 
-def _new_base_transport() -> httpx2.AsyncBaseTransport:
+def _new_base_transport() -> _httpx2.AsyncBaseTransport:
     """The real network transport, isolated so the suite can replace it.
 
     A separate function purely so `open_provider_session` needs no injection
@@ -620,7 +693,7 @@ def _new_base_transport() -> httpx2.AsyncBaseTransport:
     it exercises the production code path — guard, policy, redirect rejection
     and all — rather than a parallel one written for tests.
     """
-    return httpx2.AsyncHTTPTransport()
+    return _httpx2.AsyncHTTPTransport()
 
 
 # --------------------------------------------------------------------------
@@ -675,13 +748,13 @@ def _translate(exc: BaseException, fault: _Fault) -> GatewayError:
         return GatewayError(ErrorCode.PROTOCOL_ERROR, "the provider session failed")
     if isinstance(exc, TimeoutError):
         return GatewayError(ErrorCode.TIMEOUT, "the provider did not answer in time")
-    if isinstance(exc, httpx2.TimeoutException):
+    if isinstance(exc, _httpx2.TimeoutException):
         return GatewayError(ErrorCode.TIMEOUT, "the provider did not answer in time")
-    if isinstance(exc, httpx2.TransportError):
+    if isinstance(exc, _httpx2.TransportError):
         return GatewayError(
             ErrorCode.PROVIDER_ERROR, "the connection to the provider failed", retryable=True
         )
-    if isinstance(exc, ValidationError):
+    if isinstance(exc, _ValidationError):
         return GatewayError(
             ErrorCode.PROTOCOL_ERROR, "the provider sent a response that is not valid MCP"
         )
@@ -711,7 +784,7 @@ def _as_mcp_error(exc: BaseException) -> int | None:
 
 
 class _PrivateSession:
-    """Wraps an MCP `ClientSession`. Never handed to a caller.
+    """Wraps an MCP `_ClientSession`. Never handed to a caller.
 
     The SDK session is a private attribute with no accessor, so §4's "the MCP
     session and transport are never available through a public property" is a
@@ -719,12 +792,12 @@ class _PrivateSession:
     """
 
     def __init__(
-        self, session: ClientSession, limits: ResourceLimits, fault: _Fault
+        self, session: _ClientSession, limits: ResourceLimits, fault: _Fault
     ) -> None:
         self.__session = session
         self._limits = limits
         self._fault = fault
-        self._semaphore = anyio.Semaphore(limits.max_concurrent_calls)
+        self._semaphore = _anyio.Semaphore(limits.max_concurrent_calls)
         self._response_budget = _budget_for_response(limits)
         self._request_budget = _budget_for_request(limits)
 
@@ -750,7 +823,7 @@ class _PrivateSession:
         complete = True
 
         try:
-            with anyio.fail_after(limits.pagination_timeout_s):
+            with _anyio.fail_after(limits.pagination_timeout_s):
                 while True:
                     if pages >= limits.max_discovery_pages:
                         complete = False
@@ -807,8 +880,8 @@ class _PrivateSession:
         return ObservedSurface(tuple(tools), complete=complete)
 
     async def _list_tools_page(self, cursor: str | None) -> Mapping[str, Any]:
-        request = mcp_types.ListToolsRequest(
-            params=mcp_types.PaginatedRequestParams(cursor=cursor)
+        request = _mcp_types.ListToolsRequest(
+            params=_mcp_types.PaginatedRequestParams(cursor=cursor)
         )
         raw = await self.__session.send_request(
             request,
@@ -857,10 +930,10 @@ class _PrivateSession:
         # total-operation timeout inside covers a queue that never drains.
         async with self._semaphore:
             try:
-                with anyio.fail_after(self._limits.total_timeout_s):
+                with _anyio.fail_after(self._limits.total_timeout_s):
                     raw = await self.__session.send_request(
-                        mcp_types.CallToolRequest(
-                            params=mcp_types.CallToolRequestParams(
+                        _mcp_types.CallToolRequest(
+                            params=_mcp_types.CallToolRequestParams(
                                 name=provider_tool_name, arguments=payload
                             )
                         ),
@@ -1041,7 +1114,7 @@ def _reraise_if_cancelled(exc: BaseException) -> None:
     what cancellation looks like on the running backend, so the class is asked
     for rather than assumed to be `asyncio.CancelledError`.
     """
-    if isinstance(exc, anyio.get_cancelled_exc_class()):
+    if isinstance(exc, _anyio.get_cancelled_exc_class()):
         raise exc
 
 
@@ -1176,7 +1249,7 @@ async def open_provider_session(
         client = _build_http_client(config, fault, token_provider)
 
         def connect() -> Any:
-            return streamable_http_client(url, http_client=client)
+            return _streamable_http_client(url, http_client=client)
 
         async with client:
             async with _open_over_connector(connect, config, fault) as session:
@@ -1194,7 +1267,7 @@ async def open_provider_session(
             "a development stdio target must not be given an access token",
         )
 
-    parameters = StdioServerParameters(
+    parameters = _StdioServerParameters(
         command=command,
         args=list(config.dev_stdio_args),
         env=dict(config.dev_stdio_env) or None,
@@ -1202,7 +1275,7 @@ async def open_provider_session(
     )
 
     def connect_stdio() -> Any:
-        return stdio_client(parameters)
+        return _stdio_client(parameters)
 
     async with _open_over_connector(connect_stdio, config, fault) as session:
         yield session
@@ -1227,12 +1300,12 @@ async def _open_over_connector(
     a bug in step 5 into a report that Robinhood misbehaved.
 
     Second, the handshake carries no `anyio.fail_after` scope. It is tempting
-    to add one, and it does not work: `streamable_http_client` enters a task
+    to add one, and it does not work: `_streamable_http_client` enters a task
     group that outlives the handshake, so a cancel scope opened around connect
     would have to be exited before a scope opened inside it, and anyio refuses
     the non-LIFO exit at runtime. The bound is applied where it actually
     belongs instead — `httpx2.Timeout(connect=...)` on the client, and
-    `ClientSession(read_timeout_seconds=...)` on `initialize`.
+    `_ClientSession(read_timeout_seconds=...)` on `initialize`.
     """
     limits = config.limits
     stack = AsyncExitStack()
@@ -1240,7 +1313,7 @@ async def _open_over_connector(
         streams = await stack.enter_async_context(connector())
         read_stream, write_stream = streams
         session = await stack.enter_async_context(
-            ClientSession(read_stream, write_stream, read_timeout_seconds=limits.read_timeout_s)
+            _ClientSession(read_stream, write_stream, read_timeout_seconds=limits.read_timeout_s)
         )
         await session.initialize()
     except BaseException as exc:  # noqa: BLE001 - re-raised as a stable code

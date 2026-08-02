@@ -212,6 +212,60 @@ def test_the_annotation_sweep_can_actually_detect_a_leak() -> None:
     assert leaked == {"httpx2"}
 
 
+@pytest.mark.parametrize("path", MODULE_PATHS, ids=MODULE_IDS)
+def test_no_sdk_symbol_is_reachable_as_a_public_module_attribute(path: Path) -> None:
+    """`__all__` is not the boundary; the names bound in the module are.
+
+    `__all__` governs `from ... import *` and nothing else, so
+    `from rh_mcp.transport import stdio_client` would still have worked while
+    every §4 test passed — and that name's annotations are `mcp.*` types,
+    which is the literal thing §4 forbids. Binding every SDK import to a
+    private name closes it by construction. This sweep is what keeps it
+    closed: it looks at what the module actually holds, not at what it says it
+    exports.
+    """
+    module = _module_for(path)
+    for name, value in vars(module).items():
+        if name.startswith("_"):
+            continue
+        origin = getattr(value, "__module__", None)
+        if not isinstance(origin, str):
+            # A module object rather than a class or function, e.g. a stray
+            # `import httpx2`. Its own name is what identifies it.
+            origin = getattr(value, "__name__", "")
+        assert origin.split(".")[0] not in FORBIDDEN_TOP_LEVEL_IMPORTS, (
+            f"{module.__name__}.{name} exposes an SDK symbol as a public attribute"
+        )
+
+
+def test_that_sweep_would_have_caught_the_unaliased_imports() -> None:
+    """A mutation guard: prove the check above is not vacuous.
+
+    Re-binds the SDK names the way the module had them before aliasing and
+    confirms the same predicate rejects them. Without this, the sweep passing
+    would be indistinguishable from the sweep finding nothing to look at.
+    """
+    import types
+
+    import mcp
+
+    pretend = types.ModuleType("pretend")
+    pretend.stdio_client = mcp.stdio_client  # type: ignore[attr-defined]
+    pretend.httpx2 = httpx2  # type: ignore[attr-defined]
+
+    leaked = set()
+    for name, value in vars(pretend).items():
+        if name.startswith("_"):
+            continue
+        origin = getattr(value, "__module__", None)
+        if not isinstance(origin, str):
+            origin = getattr(value, "__name__", "")
+        package = origin.split(".")[0]
+        if package in FORBIDDEN_TOP_LEVEL_IMPORTS:
+            leaked.add(name)
+    assert leaked == {"stdio_client", "httpx2"}
+
+
 def test_the_transport_keeps_its_sdk_typed_helpers_private() -> None:
     """Named explicitly, because these are the ones that would leak first."""
     import rh_mcp.transport as transport

@@ -87,6 +87,20 @@ SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_
 # reason: it names the canonical form itself — how bytes are produced from a
 # JSON value — and is published for non-Python implementers. Changing what gets
 # fed into that form is a format change, not a canonicalization change.
+#
+# Known limitation of format 1.0, to revisit on the next bump. An entry stores
+# `description` as a string and `annotations` as an object, so the format
+# cannot represent the difference between a provider that *omitted* either
+# field and one that sent `""` or `{}`. MCP makes both optional, so step 3's
+# transport maps the absent form onto the empty one and a provider switching
+# between those two spellings produces no digest change and no drift finding.
+# The exposure is narrow — it is the fail-open direction, but only for a
+# change that carries no meaning — and closing it means adding a
+# null-vs-empty distinction to the entry schema, which is exactly the kind of
+# change this bump rule exists to govern. **Step 6's manifest review must not
+# assume a fidelity the format does not have**: if a reviewed tool's
+# description or annotations matter, record them explicitly rather than
+# relying on the digest to notice their disappearance.
 
 # The self-referential field that is excluded from its own digest (§6).
 FULL_MANIFEST_DIGEST_FIELD: Final = "full_manifest_digest"

@@ -656,6 +656,23 @@ def test_the_egress_allowlist_is_exactly_the_three_documented_hosts() -> None:
     }
 
 
+def _guard(config: GatewayConfig | None = None) -> Any:
+    return transport._GuardedAsyncTransport(
+        httpx2.MockTransport(lambda request: httpx2.Response(200)),
+        transport._EgressPolicy.for_config(production_config() if config is None else config),
+        transport._Fault(),
+        None,
+    )
+
+
+def _egress(url: str, config: GatewayConfig | None = None) -> GatewayError:
+    guard = _guard(config)
+    request = httpx2.Request("POST", url, content=b"{}")
+    with pytest.raises(GatewayError) as caught:
+        run(guard.handle_async_request(request))
+    return caught.value
+
+
 @pytest.mark.parametrize(
     "url",
     [
@@ -665,18 +682,83 @@ def test_the_egress_allowlist_is_exactly_the_three_documented_hosts() -> None:
     ],
 )
 def test_production_egress_outside_the_allowlist_is_refused(url: str) -> None:
-    policy = transport._EgressPolicy.for_config(production_config())
-    guard = transport._GuardedAsyncTransport(
-        httpx2.MockTransport(lambda request: httpx2.Response(200)),
-        policy,
-        transport._Fault(),
-        None,
-    )
+    error = _egress(url)
+    assert error.code is ErrorCode.CONFIGURATION_ERROR
+    assert "outside this deployment's allowed origins" in error.message
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://agent.robinhood.com:8443/mcp/trading",
+        "https://api.robinhood.com:9999/oauth2/token/",
+        "https://robinhood.com:1/oauth",
+        "https://agent.robinhood.com:80/mcp/trading",
+    ],
+)
+def test_a_pinned_host_on_an_unpinned_port_is_refused(url: str) -> None:
+    """§3 pins an origin, not a hostname.
+
+    Nothing in this step can reach a URL like these — the resource URL is
+    pinned configuration and redirects are rejected. Step 4 can: §5.0 takes
+    `authorization_endpoint`, `token_endpoint` and `registration_endpoint`
+    from the provider's own metadata document, so a document naming
+    `https://api.robinhood.com:9999/oauth2/token/` would arrive here, and what
+    gets sent to a token endpoint is a PKCE code exchange. A host-only
+    allowlist passes every one of these.
+    """
+    error = _egress(url)
+    assert error.code is ErrorCode.CONFIGURATION_ERROR
+    assert "outside this deployment's allowed origins" in error.message
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://agent.robinhood.com/mcp/trading",
+        "https://agent.robinhood.com:443/mcp/trading",
+    ],
+)
+def test_the_https_default_port_is_allowed_however_it_is_spelled(url: str) -> None:
+    """`https://h/x` and `https://h:443/x` are the same origin.
+
+    `httpx2` reports `URL.port` as None for a scheme default, so without the
+    normalisation one spelling would miss the allowlist and the pinned
+    endpoint would be unreachable when written the other way.
+    """
+    guard = _guard()
     request = httpx2.Request("POST", url, content=b"{}")
-    with pytest.raises(GatewayError) as caught:
-        run(guard.handle_async_request(request))
-    assert caught.value.code is ErrorCode.CONFIGURATION_ERROR
-    assert "outside this deployment's allowed hosts" in caught.value.message
+    response = run(guard.handle_async_request(request))
+    assert response.status_code == 200
+
+
+def test_a_development_target_is_pinned_to_its_own_port() -> None:
+    """A dev server on 9100 must not be reachable on 9101."""
+    config = development_config("http://127.0.0.1:9100/mcp")
+    assert transport._EgressPolicy.for_config(config).allowed_origins == {("127.0.0.1", 9100)}
+    error = _egress("http://127.0.0.1:9101/mcp", config)
+    assert "outside this deployment's allowed origins" in error.message
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil.example.com@agent.robinhood.com/mcp/trading",
+        "https://user:s3cret@agent.robinhood.com/mcp/trading",
+    ],
+)
+def test_an_egress_url_carrying_userinfo_is_refused_and_never_echoed(url: str) -> None:
+    """Not a bypass — the destination really is `agent.robinhood.com`.
+
+    It is refused because `httpx2` turns userinfo into an `Authorization:
+    Basic` header, which would then race the bearer token the guard sets, and
+    because a URL carrying a credential is a URL that can leak one.
+    """
+    error = _egress(url)
+    assert error.code is ErrorCode.CONFIGURATION_ERROR
+    assert "may not carry userinfo" in error.message
+    assert "s3cret" not in error.message
+    assert "evil.example.com" not in error.message
 
 
 def test_production_egress_must_use_https() -> None:
@@ -698,6 +780,11 @@ def test_a_development_policy_allows_only_its_own_loopback_host() -> None:
     assert policy.allowed_hosts == {"127.0.0.1"}
     assert policy.require_https is False
     assert "agent.robinhood.com" not in policy.allowed_hosts
+
+
+def test_the_production_policy_pins_every_documented_host_to_the_https_port() -> None:
+    policy = transport._EgressPolicy.for_config(production_config())
+    assert policy.allowed_origins == {(host, 443) for host in PRODUCTION_EGRESS_HOSTS}
 
 
 def test_a_programmatic_redirect_is_rejected() -> None:

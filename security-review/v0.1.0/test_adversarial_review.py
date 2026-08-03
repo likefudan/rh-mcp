@@ -38,7 +38,10 @@ from rh_mcp.manifest import (
     load_manifest_text,
     preflight_read,
 )
-from rh_mcp.transport import ProviderTransport, ToolPayload, open_provider_session
+# `open_provider_session` was imported here in the reviewer's original. See
+# the note at the foot of this file: that import is unsatisfiable once the
+# finding it reports is fixed, and it backs no assertion.
+from rh_mcp.transport import ProviderTransport, ToolPayload
 from tests.support import build_manifest, dumps
 
 # ---------------------------------------------------------------------------
@@ -445,6 +448,32 @@ class TestFailClosedPropertiesThatShouldPass:
         }
 
 
-# Silence unused import of open_provider_session at module level for the
-# finding tests (imported for isinstance/name checks above).
-_ = open_provider_session
+# ---------------------------------------------------------------------------
+# Implementer's note on the only edit made to this file
+# ---------------------------------------------------------------------------
+#
+# This file is the reviewer's, and it is kept as they wrote it apart from two
+# lines, both concerning `open_provider_session`:
+#
+#   * the module-level `from rh_mcp.transport import ... open_provider_session`
+#   * a trailing `_ = open_provider_session`
+#
+# They are removed because they are self-contradictory with the file's own
+# assertion, not because that assertion is inconvenient.
+# `test_open_provider_session_is_importable_from_installed_package` requires
+# `hasattr(rh_mcp.transport, "open_provider_session")` to be False. In CPython
+# `from M import n` and `hasattr(M, n)` resolve through the same lookup, so no
+# implementation can satisfy the import and the assertion at once: while the
+# finding stands the import works and the test fails, and the moment the
+# finding is fixed the import raises `ImportError` and all 31 tests error out
+# during collection.
+#
+# The trailing `_ = open_provider_session` and its comment ("imported for
+# isinstance/name checks above") describe a use that does not exist — grep the
+# file: the name appears nowhere else. So the two removed lines back no
+# assertion, and removing them weakens nothing. Every assertion in this file,
+# including all four that encode findings P0 and P1, is untouched.
+#
+# `ProviderTransport` and `ToolPayload` are still imported, because
+# `test_call_tool_protocol_accepts_arbitrary_provider_name_without_manifest`
+# genuinely inspects the former.

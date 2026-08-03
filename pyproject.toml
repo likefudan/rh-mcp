@@ -44,6 +44,12 @@ packages = ["src/rh_mcp"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+# `security-review/` holds an outside reviewer's deliverables, kept as they
+# wrote them so the repository records what was actually submitted. Two of
+# their imports are unused and their import block is unsorted; reformatting
+# someone else's evidence to satisfy our linter would make the artifact ours.
+# The file is still executed as an acceptance gate — see CI and CHANGELOG.
+exclude = ["security-review"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

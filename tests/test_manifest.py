@@ -1283,7 +1283,7 @@ class TestPreflight:
     def test_resolves_a_reviewed_read_capability(
         self, manifest: ReviewedManifest, ready: ReadinessAssessment
     ) -> None:
-        entry = preflight_read(manifest, ready, "alpha_reading", VALID_ARGS)
+        entry = preflight_read(manifest, ready, "alpha_reading", VALID_ARGS).entry
         assert entry.provider_tool_name == "synthetic_alpha_read"
         assert entry.read_allowed
         assert entry.input_schema["required"] == ("synthetic_symbol",)

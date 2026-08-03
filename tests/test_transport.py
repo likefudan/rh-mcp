@@ -24,7 +24,7 @@ from rh_mcp.errors import ErrorCode, GatewayError
 from rh_mcp.transport import (
     PRODUCTION_EGRESS_HOSTS,
     ToolPayload,
-    open_provider_session,
+    _open_provider_session,
 )
 from tests.synthetic import (
     DIGEST,
@@ -861,7 +861,7 @@ def test_a_production_session_may_only_target_the_pinned_url(
     )
 
     async def attempt() -> None:
-        async with open_provider_session(config):
+        async with _open_provider_session(config):
             pass  # pragma: no cover - the guard fires first
 
     error = refused(attempt())
@@ -872,12 +872,12 @@ def test_a_production_session_may_only_target_the_pinned_url(
 def test_the_public_entry_point_reaches_the_pinned_url_over_the_guard(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`open_provider_session` itself, with only the socket replaced."""
+    """`_open_provider_session` itself, with only the socket replaced."""
     server = SyntheticServer()
     monkeypatch.setattr(transport, "_new_base_transport", lambda: httpx2.MockTransport(server))
 
     async def go() -> Any:
-        async with open_provider_session(production_config()) as session:
+        async with _open_provider_session(production_config()) as session:
             return await session.discover()
 
     surface = run(go())
@@ -1112,7 +1112,7 @@ def test_a_stdio_development_target_refuses_an_access_token() -> None:
     )
 
     async def go() -> None:
-        async with open_provider_session(config, token_provider=_Token("x")):
+        async with _open_provider_session(config, token_provider=_Token("x")):
             pass  # pragma: no cover - the guard fires first
 
     error = refused(go())

@@ -824,7 +824,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:e5aa454419b7936af78a160ad4eeea8f89e81840520d42369c98abdaa0900e1c"
+    SHIPPED_DIGEST = "sha256:1790c9a915571c40b48de7a59f1a6deed6e9b97228f0e0d63e2122ee08abc375"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -861,6 +861,20 @@ class TestTheShippedManifest:
         """§6: a disposition without a stated reason is not a review."""
         for entry in load_active_manifest().entries:
             assert entry.rationale.strip()
+
+    def test_the_order_simulators_are_flagged_as_mutating(self) -> None:
+        """Their denial rests on distrusting the provider's "does not place" claim.
+
+        Asserting `mutates: false` would put this project's signature on the
+        very evidence the denial rejects, and a future reviewer would read it
+        as "safe". Inert today — they are denied and nothing gates on the flag
+        — which is exactly why it is cheap to get right.
+        """
+        manifest = load_active_manifest()
+        for name in self.SIMULATION_TOOLS:
+            entry = manifest.capabilities[name]
+            assert entry.mutates is True
+            assert not entry.read_allowed
 
     def test_every_allowed_mutation_is_flagged(self) -> None:
         """§2.1: a consumer gating writes must not have to infer which ones.

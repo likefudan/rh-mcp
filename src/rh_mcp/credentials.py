@@ -2,7 +2,8 @@
 
 This module holds the highest-consequence object in the project. Robinhood
 advertises one scope, `internal`, so the token stored here **can trade** (§2).
-Read-only is a local convention enforced by the manifest; it is not a property
+What this credential may be used for is a local convention enforced by the
+manifest — "no trading", not "no writes" (§2.1) — and it is not a property
 of this credential. Everything below is written on that assumption.
 
 Four decisions are load-bearing enough to state up front.

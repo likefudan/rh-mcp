@@ -297,10 +297,15 @@ class AdminDiscoveryContext:
     async def candidate_document(self) -> dict[str, Any]:
         """A sanitized candidate for human review — never an active manifest.
 
-        `disposition` is `denied` and `capability` is null for every entry, and
-        the digest fields a real manifest carries are absent. §6.1 is explicit
-        that discovery grants no permission: a reviewer has to write each
-        allowance by hand, so the safe default is the one that costs them work.
+        `disposition` is `denied` and `capability` is null for every entry;
+        `mutates` is null because only a human can answer it; and the digest
+        fields a real manifest carries are absent. §6.1 is explicit that
+        discovery grants no permission: a reviewer has to write each allowance
+        by hand, so the safe default is the one that costs them work.
+
+        Every field a real manifest requires and this document withholds is a
+        field the loader will refuse the document for — which is what stops a
+        candidate being renamed into place.
         """
         surface = await self.observe()
         return {
@@ -317,8 +322,13 @@ class AdminDiscoveryContext:
                     "annotations": json_safe(tool.annotations),
                     "capability": None,
                     "disposition": "denied",
-                    "rationale": "UNREVIEWED — a human must review this tool and write a "
-                    "rationale before it can be allowed",
+                    # Null, not false. The provider ships no annotation to
+                    # derive this from, so a candidate that guessed would be
+                    # putting a reviewer's signature on a machine's guess.
+                    "mutates": None,
+                    "rationale": "UNREVIEWED — a human must review this tool, decide whether "
+                    "it mutates provider state, and write a rationale before it can be "
+                    "allowed",
                 }
                 for tool in sorted(surface.tools, key=lambda t: t.name)
             ],

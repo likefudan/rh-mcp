@@ -261,6 +261,13 @@ tool in the observed provider surface:
   annotations;
 - deterministic canonical schema and metadata digests;
 - review disposition (`read_allowed` or `denied`) and review rationale;
+- a required `mutates` boolean stating whether invoking the capability changes
+  provider state. It is a reviewer's assertion, not a derived value — the live
+  surface carries no annotations to derive it from — and it has no default: a
+  manifest that omits it has not answered the question, which is not the same
+  as answering "no". Format 1.0 predates it and is refused rather than
+  migrated, because every value a migration could supply would be a guess
+  about precisely the field that exists to record a human judgement.
 - manifest format version, provider-surface digest, observation timestamp,
   reviewer metadata, and a canonical full-manifest digest.
 
@@ -397,7 +404,8 @@ Supported command groups are:
 
 - `login`, `logout`, and `auth status`;
 - `status` and `capabilities` for safe readiness/manifest diagnostics;
-- `read <capability> --input <json>` for reviewed reads only;
+- `read <capability> --input <json>` for reviewed capabilities only —
+  34 reads and 11 non-trading mutations, never a trading tool (§2.1);
 - `admin discover` for the owner-assisted candidate-manifest workflow.
 
 There is no `call` command and no flag that disables manifest enforcement.

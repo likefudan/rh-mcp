@@ -31,22 +31,25 @@ gateway.
 
 ## Status
 
-**Usable, not yet released.** The security architecture is documented in
-[`DESIGN.md`](DESIGN.md). Build-order steps 1 and 2 have landed:
+**Usable, not yet released.** All six build-order steps have landed and the
+first reviewed manifest is committed. `DESIGN.md` is the authoritative spec.
 
-- **Step 1** — package scaffold, SDK-neutral models, validated configuration,
-  and the stable error contract.
-- **Step 2** — the `rh-canon-1` canonicalization algorithm and SHA-256 digests,
-  the versioned reviewed-manifest format and its fail-closed loader, and
-  readiness/preflight enforcement against a discovered provider surface.
+Owner-assisted discovery ran against the live Robinhood server on 2026-08-03.
+A human reviewed all 53 discovered tools: **45 allowed, 8 denied**. The denied
+set is exactly the trading surface — the six order tools plus both order
+simulators. The allowed set is 34 reads plus 11 non-trading mutations
+(watchlist and saved-scan management), each carrying a reviewed `mutates` flag
+so a consumer gating writes never has to infer which is which.
 
-Nothing that talks to Robinhood exists yet — no MCP transport, no credential or
-OAuth handling, and no gateway or CLI. **No reviewed manifest ships with this
-release**: `load_active_manifest()` deliberately fails rather than falling back
-to a permissive default, because a production manifest requires owner-assisted
-authenticated discovery and independent human review of the live Robinhood tool
-schemas (DESIGN.md §6.1, §13). Every manifest and schema in the test suite is
-synthetic.
+The full-manifest digest a consumer pins:
+
+```
+sha256:1790c9a915571c40b48de7a59f1a6deed6e9b97228f0e0d63e2122ee08abc375
+```
+
+Not released yet: the DESIGN.md §12 acceptance list remains — license,
+changelog, tagged artifact with checksums, published compatibility policy, and
+independent security review.
 
 ### Canonicalization and digests
 

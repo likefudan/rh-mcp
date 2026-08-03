@@ -85,6 +85,14 @@ SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_
 # to the digest's input construction. Do *not* bump it for a change confined to
 # loader behaviour that leaves the hashed bytes identical.
 #
+# Whether the old version is *migrated* or *refused* is a separate question,
+# and the answer turns on what the new field records. A field a loader can
+# derive from what a 1.x manifest already holds may be migrated. A field that
+# records a **human judgement** may not: every value a migration could supply
+# would be a guess about exactly the thing a reviewer was supposed to state.
+# `mutates` is the second kind, which is why 1.0 is refused rather than
+# defaulted. Do not read that refusal as a general rule about bumps.
+#
 # The reason is a diagnostic one, and it matters more than it looks. A manifest
 # sealed under an older derivation does not announce itself as stale — it fails
 # with "full_manifest_digest does not match the manifest contents", which is

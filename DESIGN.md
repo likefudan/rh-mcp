@@ -1,17 +1,27 @@
 # rh-mcp — Design
 
-Status: **security architecture agreed; implementation and authenticated tool
-discovery are not complete.** This document defines the contract that must be
-implemented before the project can be called a Robinhood Read Gateway. The
-first production manifest still requires an owner-assisted login and review of
-the live tool schemas (§6 and §13).
+Status: **implemented, and the first manifest is reviewed and committed.**
+Owner-assisted discovery ran against the live server on 2026-08-03; a human
+reviewed all 53 tools and committed 45 allowed / 8 denied (§2.1). What remains
+before a release is the §12 acceptance list — license, changelog, tagged
+artifact, published digest, compatibility policy, and independent security
+review.
 
 ## 1. Purpose
 
 `rh-mcp` is a default-deny Python gateway to Robinhood's official MCP server.
-It gives a consuming application a narrow, reviewable read surface while
+It gives a consuming application a narrow, reviewable capability surface while
 keeping OAuth credentials, the MCP SDK, transport objects, and unreviewed MCP
 tools behind the gateway boundary.
+
+**The boundary this gateway enforces is "no trading", not "no writes".** The
+first reviewed manifest allows a set of non-trading mutations — watchlist and
+saved-scan management — alongside its reads. That was a deliberate reviewer
+decision, and §2 states the resulting rule precisely. Say it plainly here
+because the type is still named `RobinhoodReadGateway` and its method is still
+`read()`: those names are narrower than what the manifest now permits, and a
+name that overstates a guarantee is how a reader ends up trusting one that
+does not exist.
 
 It has two supported public surfaces:
 
@@ -28,31 +38,83 @@ The CLI is a thin shell over the same gateway. Neither surface exposes an MCP
 
 Robinhood currently advertises one OAuth scope, `internal`, rather than
 separate read and write scopes. A token must therefore be treated as capable
-of trading even when this gateway uses it only for reads. Read-only behavior
-is enforced locally with a committed allowlist and exact schema validation;
-it is not inferred from the token, a tool name, or an MCP annotation.
+of trading whatever this gateway chooses to do with it. The boundary is
+enforced locally with a committed allowlist and exact schema validation; it is
+not inferred from the token, a tool name, or an MCP annotation.
+
+Authenticated discovery (§13) settled two facts that this section previously
+had to speculate about, and both matter more than they look:
+
+- The provider surface is 53 tools, and **six of them place, cancel, or
+  exercise real orders**. They arrive over the same session, under the same
+  token, as every quote and position read. This manifest is the only thing
+  between a consumer and a trade.
+- **Not one of the 53 tools carries `readOnlyHint`, or any annotation at
+  all.** Rule 4 below said annotations are evidence and never authority; the
+  live surface supplies no evidence whatsoever. Every disposition in the
+  manifest is a human judgement from a name, a description, and a schema.
 
 The governing rules are:
 
 1. Every discovered tool is denied unless a reviewed manifest entry marks its
-   exact schema digest as read-allowed.
+   exact schema digest as allowed.
 2. An unknown, missing, duplicate, malformed, or changed tool makes the
    gateway not ready. Discovery never grants permission automatically.
 3. A denied request is rejected before any MCP tool call is sent.
 4. MCP annotations such as `readOnlyHint` are review evidence only and never
    authority.
-5. Future write support must use a separate client surface, credential
-   namespace, runtime identity, and deployment role. It must not be added by
-   widening this gateway.
+5. **Trading support** — order submission, cancellation, replacement, and
+   option exercise — must use a separate client surface, credential namespace,
+   runtime identity, and deployment role. It must not be added by widening
+   this gateway. The six trading tools and both order-simulation tools are
+   denied in the committed manifest, and a reviewer moving any of them to
+   allowed is making that change, not a configuration tweak.
 
-The gateway owns transport security and the read boundary. It does **not** own
-investment risk limits, order approval, strategy policy, portfolio semantics,
-or application audit workflows. Those remain responsibilities of the
-consumer (§10).
+The gateway owns transport security and the capability boundary. It does
+**not** own investment risk limits, order approval, strategy policy, portfolio
+semantics, or application audit workflows. Those remain responsibilities of
+the consumer (§10).
+
+### 2.1 What the first manifest actually allows
+
+45 of 53 tools are allowed; 8 are denied. The denied set is exactly the
+trading surface:
+
+| denied | why |
+|---|---|
+| `place_equity_order`, `place_option_order` | Robinhood's own description: "Place a real equity order with **real money**" |
+| `cancel_equity_order`, `cancel_option_order`, `cancel_option_exercise` | change the state of a live order |
+| `exercise_option` | exercises a position |
+| `review_equity_order`, `review_option_order` | "simulate an order without placing it" — denied anyway. Simulation is not a read of account state, it takes a complete order as its argument, and the meaning of "simulate" is defined entirely on Robinhood's side. If that meaning ever shifts, what we handed over was an order. |
+
+The allowed set is 34 reads plus **11 non-trading mutations**: watchlist
+create/update/add/remove/follow/unfollow, and saved-scan create/update. These
+write to Robinhood, and calling them through a method named `read()` is a wart
+the reviewer accepted knowingly. They move no money and touch no order.
+
+Two consequences a consumer must not discover by surprise:
+
+- `RobinhoodReadGateway.read()` can mutate. Renaming the type and method to
+  match is deferred, not rejected — nothing has shipped, so the cost is low
+  and the reason to wait is that a rename should follow the §12 release gate
+  rather than ride along with a manifest change.
+- §10 tells `ainvest` this surface is safe to call unattended. That remains
+  true for the trading boundary, which is what its approval and paper/live
+  gates exist for — but an unattended call can now create a watchlist. If
+  `ainvest` gates mutations separately, it must gate these too.
+
+  It does not have to infer which ones. Every manifest entry carries a
+  reviewed `mutates` boolean, reported alongside `read_allowed` in
+  `capabilities` output. That field is why the manifest format is **1.1** and
+  not 1.0: a 1.0 manifest cannot say whether a capability writes, and a loader
+  that guessed would be guessing about precisely the thing the field exists to
+  state, so 1.0 is refused rather than migrated in place. Adding it after a
+  consumer had pinned a digest would have cost a coordinated migration; adding
+  it now costs one regenerated file.
 
 Also out of scope for v0:
 
-- order submission, cancellation, replacement, or any other mutation;
+- order submission, cancellation, replacement, and option exercise;
 - Robinhood domain models such as `Quote`, `Position`, or `Order`;
 - response caching, a general community-server client, or a public raw MCP
   debugging interface;
@@ -199,6 +261,13 @@ tool in the observed provider surface:
   annotations;
 - deterministic canonical schema and metadata digests;
 - review disposition (`read_allowed` or `denied`) and review rationale;
+- a required `mutates` boolean stating whether invoking the capability changes
+  provider state. It is a reviewer's assertion, not a derived value — the live
+  surface carries no annotations to derive it from — and it has no default: a
+  manifest that omits it has not answered the question, which is not the same
+  as answering "no". Format 1.0 predates it and is refused rather than
+  migrated, because every value a migration could supply would be a guess
+  about precisely the field that exists to record a human judgement.
 - manifest format version, provider-surface digest, observation timestamp,
   reviewer metadata, and a canonical full-manifest digest.
 
@@ -233,9 +302,13 @@ sanitized candidate manifest. It does not invoke a tool, print account data,
 change the active manifest, or grant permissions. The candidate becomes
 active only after code review and a package release.
 
-No real tool names or schemas are guessed before that run. Documentation and
-tests use synthetic fixtures; any provisional names observed elsewhere must
-not enter the production manifest without authenticated discovery and review.
+No real tool names or schemas are guessed before that run. Until it happened
+the documentation and tests used synthetic fixtures only; that run has now
+occurred (§13), so the committed manifest and `TestTheShippedManifest` hold
+real names and schemas while every other fixture stays synthetic. The rule
+this paragraph exists for is unchanged and still live: a provisional name
+observed anywhere else must not enter the manifest without authenticated
+discovery and review.
 
 ### 6.2 Startup and call preflight
 
@@ -335,7 +408,8 @@ Supported command groups are:
 
 - `login`, `logout`, and `auth status`;
 - `status` and `capabilities` for safe readiness/manifest diagnostics;
-- `read <capability> --input <json>` for reviewed reads only;
+- `read <capability> --input <json>` for reviewed capabilities only —
+  34 reads and 11 non-trading mutations, never a trading tool (§2.1);
 - `admin discover` for the owner-assisted candidate-manifest workflow.
 
 There is no `call` command and no flag that disables manifest enforcement.
@@ -433,7 +507,11 @@ credentials.
 - strategy, sizing, risk limits, approval, paper/live gates, application audit,
   and user-facing CLI or Telegram workflows;
 - system-level tests proving Research and Strategy components cannot obtain a
-  credential, raw MCP session, unreviewed tool, or write capability.
+  credential, raw MCP session, unreviewed tool, or **trading** capability —
+  and, separately, gating the 11 reviewed non-trading mutations §2.1 allows.
+  "No write capability" was the original wording and is no longer true: a
+  test asserting it would either fail or, worse, pass while asserting
+  something false.
 
 The consuming application must not parse MCP content blocks or receive a
 Robinhood token. If deployed out of process, the broker protocol is separately
@@ -442,9 +520,12 @@ reviewed capabilities.
 
 ## 11. Testing requirements
 
-The default test suite is offline and uses synthetic schemas, fake OAuth
+The default test suite is offline. It uses synthetic schemas, fake OAuth
 services, fake transports, temporary or in-memory credential stores, and a
-controllable clock. Required coverage includes:
+controllable clock — with one deliberate exception: `TestTheShippedManifest`
+asserts directly on the committed manifest, pinning its digest and naming
+every trading tool that must stay denied. The manifest is a data file, so
+without it nothing in the suite would notice a disposition changing. Required coverage includes:
 
 - canonicalization and digest golden vectors;
 - full-manifest golden vectors proving that capability mapping, provider tool,
@@ -498,24 +579,33 @@ against the built artifact.
 
 ## 13. Open items
 
-The OAuth discovery endpoints are known, but these owner-assisted observations
-remain before the first production release:
+All six owner-assisted observations are **closed**, on 2026-08-03:
 
-1. Confirm DCR acceptance and redirect-URI constraints during a real login.
-2. Determine whether no explicit scope or `internal` is required, and record
-   the granted scope without logging tokens.
-3. Capture the complete authenticated tool surface and schemas into a
-   sanitized candidate manifest.
-4. Review each observed tool for read behavior and side effects, then commit
-   both allowed and denied dispositions.
-5. Compute, independently review, and publish the resulting full-manifest
-   digest for consumers to pin.
-6. Confirm real response content shapes and pagination using manifest-approved
-   reads without retaining account data.
+1. ~~Confirm DCR acceptance and redirect-URI constraints.~~ Registration was
+   accepted and reused across logins; the loopback redirect URI was not
+   constrained beyond the registration.
+2. ~~Determine whether an explicit scope is required.~~ `internal` was granted.
+   The credential is write-capable and the token lifetime is ~4.7 days.
+3. ~~Capture the authenticated tool surface.~~ 53 tools.
+4. ~~Review each tool and commit dispositions.~~ 45 allowed, 8 denied (§2.1).
+5. ~~Compute and publish the full-manifest digest.~~ Pinned in
+   `tests/test_manifest.py::TestTheShippedManifest` and published in §12's
+   release artifact.
+6. ~~Confirm real response shapes and pagination.~~ Discovery paged and
+   terminated within bounds. One bound was wrong and is fixed: a `tools/list`
+   page is schemas *about* data and outgrew a depth limit sized for data, so
+   discovery now has its own (§8).
 
-These items block a production manifest, not implementation of the offline
-security boundary. Any unexpected OAuth or tool behavior triggers design
-review rather than a permissive fallback.
+Two provider behaviours observed and deliberately not worked around:
+
+- **No tool carries any annotation.** Rule 4's "annotations are evidence, never
+  authority" turned out to be moot — there is no evidence at all.
+- **Session termination returns 400.** The MCP SDK sends a DELETE on close and
+  Robinhood rejects it. Non-fatal; discovery completes. Left unsilenced,
+  because suppressing another library's warning hides a signal that is not
+  ours to hide.
+
+What remains is the §12 release-acceptance list, not further observation.
 
 ## 14. Build order
 

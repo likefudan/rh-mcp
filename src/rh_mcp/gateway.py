@@ -96,16 +96,25 @@ class CapabilityDescription:
 
     capability: str
     read_allowed: bool
+    mutates: bool
     description: str
     schema_digest: str
+    rationale: str
     input_schema: Mapping[str, Any]
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
             "capability": self.capability,
             "read_allowed": self.read_allowed,
+            # Reported next to `read_allowed`, because `read_allowed: true` on
+            # a capability that writes is exactly the confusion §2.1 warns
+            # about. A consumer gating mutations reads this field; asking it to
+            # infer the answer from a tool name would be asking it to re-do
+            # the human review.
+            "mutates": self.mutates,
             "description": self.description,
             "schema_digest": self.schema_digest,
+            "rationale": self.rationale,
             "input_schema": json_safe(self.input_schema),
         }
 
@@ -174,8 +183,10 @@ class RobinhoodReadGateway:
             CapabilityDescription(
                 capability=capability,
                 read_allowed=entry.read_allowed,
+                mutates=entry.mutates,
                 description=entry.description,
                 schema_digest=entry.schema_digest,
+                rationale=entry.rationale,
                 input_schema=entry.input_schema,
             )
             for capability, entry in sorted(self.__manifest.capabilities.items())
@@ -286,10 +297,15 @@ class AdminDiscoveryContext:
     async def candidate_document(self) -> dict[str, Any]:
         """A sanitized candidate for human review — never an active manifest.
 
-        `disposition` is `denied` and `capability` is null for every entry, and
-        the digest fields a real manifest carries are absent. §6.1 is explicit
-        that discovery grants no permission: a reviewer has to write each
-        allowance by hand, so the safe default is the one that costs them work.
+        `disposition` is `denied` and `capability` is null for every entry;
+        `mutates` is null because only a human can answer it; and the digest
+        fields a real manifest carries are absent. §6.1 is explicit that
+        discovery grants no permission: a reviewer has to write each allowance
+        by hand, so the safe default is the one that costs them work.
+
+        Every field a real manifest requires and this document withholds is a
+        field the loader will refuse the document for — which is what stops a
+        candidate being renamed into place.
         """
         surface = await self.observe()
         return {
@@ -306,8 +322,13 @@ class AdminDiscoveryContext:
                     "annotations": json_safe(tool.annotations),
                     "capability": None,
                     "disposition": "denied",
-                    "rationale": "UNREVIEWED — a human must review this tool and write a "
-                    "rationale before it can be allowed",
+                    # Null, not false. The provider ships no annotation to
+                    # derive this from, so a candidate that guessed would be
+                    # putting a reviewer's signature on a machine's guess.
+                    "mutates": None,
+                    "rationale": "UNREVIEWED — a human must review this tool, decide whether "
+                    "it mutates provider state, and write a rationale before it can be "
+                    "allowed",
                 }
                 for tool in sorted(surface.tools, key=lambda t: t.name)
             ],

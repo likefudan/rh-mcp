@@ -57,7 +57,7 @@ from tests.support import (
 # The golden full-manifest digest of the synthetic fixture. Written out by
 # hand: if a change to canonicalization, the manifest format, or the fixture
 # moves it, that is exactly the explicit migration DESIGN.md §6 requires.
-BASE_DIGEST = "sha256:463295e635f21ed81c3792da15f3474c6096d8821cd815d9cbddc6867dc8b705"
+BASE_DIGEST = "sha256:2fb965eac851c00f489dde270c0de19506538adf74e8b88251c1ce8420c29ed9"
 # Arguments that satisfy ALPHA_INPUT_SCHEMA, so a preflight test fails for the
 # reason it is named after rather than on input validation.
 VALID_ARGS: dict[str, Any] = {"synthetic_symbol": "AAPL"}
@@ -812,10 +812,115 @@ class TestManifestSource:
         path.write_bytes(b'{"a": "\xff\xfe"}')
         expect_source_failure(lambda: load_manifest_file(path), "not valid UTF-8")
 
-    def test_no_reviewed_manifest_ships_with_this_release(self) -> None:
-        """§13: a production manifest requires owner-assisted discovery first."""
-        assert not PACKAGED_MANIFEST_PATH.exists()
-        expect_source_failure(load_active_manifest, "ships no reviewed read manifest")
+class TestTheShippedManifest:
+    """Regression tests on the committed manifest itself (§6, §13).
+
+    Produced by owner-assisted discovery on 2026-08-03 and reviewed by hand.
+    These are the tests that matter most in the repository: the manifest is
+    the only thing standing between a consumer and Robinhood's trading tools,
+    and it is a data file, so nothing else would notice it changing.
+    """
+
+    # Pin the digest. Any edit to the manifest moves it, which is the point:
+    # a permission change must show up as a deliberate diff in this constant,
+    # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
+    SHIPPED_DIGEST = "sha256:a0a1718e7924f62d0c79f82ed8a3c0a325863e62bd6d897d26a93ae8de2f6c2c"
+
+    # Robinhood's own description of the first of these is "Place a real equity
+    # order with real money". If a change ever flips one of these to allowed,
+    # this list is what fails.
+    TRADING_TOOLS = (
+        "place_equity_order",
+        "place_option_order",
+        "exercise_option",
+        "cancel_equity_order",
+        "cancel_option_order",
+        "cancel_option_exercise",
+    )
+    SIMULATION_TOOLS = ("review_equity_order", "review_option_order")
+
+    def test_it_ships_and_loads(self) -> None:
+        assert PACKAGED_MANIFEST_PATH.exists()
+        assert load_active_manifest().manifest_version
+
+    def test_its_declared_digest_matches_the_recomputed_one(self) -> None:
+        manifest = load_active_manifest()
+        assert manifest.digest == manifest.declared_digest
+
+    def test_the_shipped_digest_is_the_pinned_one(self) -> None:
+        assert load_active_manifest().digest == self.SHIPPED_DIGEST
+
+    @pytest.mark.parametrize("name", TRADING_TOOLS + SIMULATION_TOOLS)
+    def test_no_trading_capability_is_allowed(self, name: str) -> None:
+        """§2 rule 5: trading needs a separate surface, not a wider manifest."""
+        entry = load_active_manifest().capabilities[name]
+        assert entry.disposition == "denied"
+        assert not entry.read_allowed
+
+    def test_every_entry_carries_a_reviewer_rationale(self) -> None:
+        """§6: a disposition without a stated reason is not a review."""
+        for entry in load_active_manifest().entries:
+            assert entry.rationale.strip()
+
+    def test_the_order_simulators_are_flagged_as_mutating(self) -> None:
+        """Their denial rests on distrusting the provider's "does not place" claim.
+
+        Asserting `mutates: false` would put this project's signature on the
+        very evidence the denial rejects, and a future reviewer would read it
+        as "safe". Inert today — they are denied and nothing gates on the flag
+        — which is exactly why it is cheap to get right.
+        """
+        manifest = load_active_manifest()
+        for name in self.SIMULATION_TOOLS:
+            entry = manifest.capabilities[name]
+            assert entry.mutates is True
+            assert not entry.read_allowed
+
+    def test_every_allowed_mutation_is_flagged(self) -> None:
+        """§2.1: a consumer gating writes must not have to infer which ones.
+
+        11 allowed capabilities write watchlist or saved-scan state. Nothing in
+        `read_allowed` distinguishes them from a quote lookup, which is exactly
+        the confusion the flag exists to remove.
+        """
+        allowed_mutations = {
+            e.capability
+            for e in load_active_manifest().entries
+            if e.read_allowed and e.mutates
+        }
+        assert allowed_mutations == {
+            "create_watchlist", "update_watchlist", "add_to_watchlist",
+            "remove_from_watchlist", "add_option_to_watchlist",
+            "remove_option_from_watchlist", "follow_watchlist", "unfollow_watchlist",
+            "create_scan", "update_scan_config", "update_scan_filters",
+        }
+
+    def test_no_read_capability_is_flagged_as_mutating(self) -> None:
+        """The other direction: a read wrongly flagged would be gated for nothing."""
+        manifest = load_active_manifest()
+        reads = [e for e in manifest.entries if e.read_allowed and not e.mutates]
+        assert len(reads) == 34
+        assert all(e.capability.startswith(("get_", "run_", "search")) for e in reads)
+
+    def test_each_allowed_mutation_states_its_own_blast_radius(self) -> None:
+        """§6: one shared rationale would hide that these differ materially.
+
+        `update_scan_filters` replaces a filter set; `add_to_watchlist` appends
+        to one list. Filing both under one string is not a review.
+        """
+        rationales = {
+            e.capability: e.rationale
+            for e in load_active_manifest().entries
+            if e.read_allowed and e.mutates
+        }
+        assert len(set(rationales.values())) == len(rationales)
+        assert "REPLACE" in rationales["update_scan_filters"]
+
+    def test_the_allowed_set_is_the_size_the_reviewer_approved(self) -> None:
+        """A bare count, so an entry appearing or vanishing cannot pass quietly."""
+        manifest = load_active_manifest()
+        assert len(manifest.entries) == 53
+        assert len(manifest.read_capabilities) == 45
 
 
 # --------------------------------------------------------------------------
@@ -1264,6 +1369,7 @@ class TestPreflight:
             schema_digest=tool_schema_digest("synthetic_alpha_read", {}, None),
             metadata_digest=tool_metadata_digest("x", {}),
             disposition="read_allowed",
+            mutates=False,
             rationale="x",
         )
         tampered = replace(consistent, **{field: OTHER_DIGEST})

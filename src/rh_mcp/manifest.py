@@ -1,10 +1,17 @@
 """Reviewed read manifest, digests, and fail-closed drift control (§6, §6.2).
 
 This module is the security boundary. Robinhood advertises a single `internal`
-OAuth scope, so the token is write-capable and read-only behaviour cannot be
-inferred from it, from a tool name, or from an MCP annotation (§2). What makes
-this gateway read-only is a human-reviewed, committed manifest plus the exact
-digest comparisons implemented here. Every check below therefore fails closed:
+OAuth scope, so the token can trade, and what it is permitted to do cannot be
+inferred from the token, from a tool name, or from an MCP annotation (§2) —
+the live surface carries no annotations at all. What holds the boundary is a
+human-reviewed, committed manifest plus the exact digest comparisons
+implemented here.
+
+The boundary is **"no trading", not "no writes"**: the reviewed manifest denies
+all six order tools and both order simulators, and allows 11 non-trading
+mutations alongside its reads (§2.1). Do not restate this module as enforcing
+read-only — it does not, and a comment claiming a property the code lacks is a
+bug this file has already produced twice. Every check below therefore fails closed:
 the outcome of "I do not understand this" is always denial, never a default.
 
 Two error codes are used, and the split is deliberate (§7.3, both exit 3):
@@ -64,7 +71,10 @@ from rh_mcp.validation import (
     require_utc_timestamp,
 )
 
-MANIFEST_FORMAT_VERSION: Final = "1.0"
+MANIFEST_FORMAT_VERSION: Final = "1.1"
+# 1.0 is not accepted. It had no `mutates` field, so a 1.0 manifest cannot say
+# whether a capability writes — and a loader that guessed would be guessing
+# about exactly the thing the field exists to state. Fail closed and migrate.
 SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_FORMAT_VERSION})
 
 # When to bump MANIFEST_FORMAT_VERSION — the rule, before there is a shipped
@@ -74,6 +84,14 @@ SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_
 # or how: a new or removed document field, a change to entry ordering, a change
 # to the digest's input construction. Do *not* bump it for a change confined to
 # loader behaviour that leaves the hashed bytes identical.
+#
+# Whether the old version is *migrated* or *refused* is a separate question,
+# and the answer turns on what the new field records. A field a loader can
+# derive from what a 1.x manifest already holds may be migrated. A field that
+# records a **human judgement** may not: every value a migration could supply
+# would be a guess about exactly the thing a reviewer was supposed to state.
+# `mutates` is the second kind, which is why 1.0 is refused rather than
+# defaulted. Do not read that refusal as a general rule about bumps.
 #
 # The reason is a diagnostic one, and it matters more than it looks. A manifest
 # sealed under an older derivation does not announce itself as stale — it fails
@@ -89,7 +107,7 @@ SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_
 # JSON value — and is published for non-Python implementers. Changing what gets
 # fed into that form is a format change, not a canonicalization change.
 #
-# Known limitation of format 1.0, to revisit on the next bump. An entry stores
+# Known limitation, carried into format 1.1 rather than fixed. An entry stores
 # `description` as a string and `annotations` as an object, so the format
 # cannot represent the difference between a provider that *omitted* either
 # field and one that sent `""` or `{}`. MCP makes both optional, so step 3's
@@ -98,7 +116,8 @@ SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_
 # The exposure is narrow — it is the fail-open direction, but only for a
 # change that carries no meaning — and closing it means adding a
 # null-vs-empty distinction to the entry schema, which is exactly the kind of
-# change this bump rule exists to govern. **Step 6's manifest review must not
+# change this bump rule exists to govern. The 1.1 bump added `mutates` and did
+# not take this on; it is still open. **Step 6's manifest review must not
 # assume a fidelity the format does not have**: if a reviewed tool's
 # description or annotations matter, record them explicitly rather than
 # relying on the digest to notice their disappearance.
@@ -143,6 +162,7 @@ _ENTRY_FIELDS: Final[frozenset[str]] = frozenset(
         "schema_digest",
         "metadata_digest",
         "disposition",
+        "mutates",
         "rationale",
     }
 )
@@ -320,6 +340,7 @@ class ManifestEntry:
     schema_digest: str
     metadata_digest: str
     disposition: Disposition
+    mutates: bool
     rationale: str
 
     @property
@@ -625,16 +646,22 @@ PACKAGED_MANIFEST_PATH: Final = Path(__file__).parent / "manifests" / "read-mani
 def load_active_manifest() -> ReviewedManifest:
     """Load the manifest committed to the installed package (§9).
 
-    No production manifest exists yet: DESIGN.md §13 requires owner-assisted
-    authenticated discovery and human review before one can be committed. This
-    raises rather than falling back to an empty or permissive default, so a
-    gateway built on an unfinished install cannot become ready.
+    A reviewed manifest ships: 53 tools, 45 allowed and 8 denied, produced by
+    owner-assisted discovery on 2026-08-03 and reviewed by hand (§2.1, §13).
+
+    The absent-file branch below is therefore no longer the ordinary state. It
+    is now reachable only through a broken install — a wheel built without
+    package data, or a source tree with the file deleted — so it says that,
+    rather than sending an operator to run discovery for a manifest that is
+    supposed to be sitting next to this module. Either way it raises instead
+    of falling back to an empty or permissive default.
     """
     if not PACKAGED_MANIFEST_PATH.is_file():
         invalid(
-            "this release ships no reviewed read manifest; authenticated discovery and "
-            "human review (DESIGN.md §6.1, §13) must produce one before the gateway can "
-            "become ready",
+            f"the reviewed manifest is missing from this install (expected at "
+            f"{PACKAGED_MANIFEST_PATH.name} inside the package). A release ships one; its "
+            "absence means the package data did not install, not that discovery is "
+            "outstanding. Reinstall rather than regenerating a manifest.",
             _SOURCE,
         )
     return load_manifest_file(PACKAGED_MANIFEST_PATH)
@@ -848,6 +875,14 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
                 output_schema, _LOCAL, path=f"entries[{index}].output_schema"
             )
 
+    mutates = entry["mutates"]
+    if not isinstance(mutates, bool):
+        invalid(
+            f"entries[{index}].mutates must be a boolean; a manifest that does not "
+            "answer whether a capability writes has not answered it",
+            _LOCAL,
+        )
+
     rationale = entry["rationale"]
     require_nonempty(f"entries[{index}].rationale", rationale, _LOCAL)
     if len(rationale) > _MAX_RATIONALE_LENGTH:
@@ -869,6 +904,7 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
         schema_digest=entry["schema_digest"],
         metadata_digest=entry["metadata_digest"],
         disposition=disposition,
+        mutates=mutates,
         rationale=rationale,
     )
 
@@ -1374,6 +1410,7 @@ def manifest_to_json_dict(manifest: ReviewedManifest) -> dict[str, Any]:
                 "schema_digest": entry.schema_digest,
                 "metadata_digest": entry.metadata_digest,
                 "disposition": entry.disposition,
+                "mutates": entry.mutates,
                 "rationale": entry.rationale,
             }
             for entry in manifest.entries

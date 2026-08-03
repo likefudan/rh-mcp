@@ -5,7 +5,7 @@ A default-deny Python Read Gateway for Robinhood's official MCP server
 dedicated read-broker process and expose only tool schemas that have been
 discovered, reviewed, pinned, and marked read-allowed.
 
-The planned public surfaces are:
+The public surfaces are:
 
 - **Library** — `RobinhoodReadGateway`, returning versioned, SDK-neutral,
   bounded JSON result envelopes.
@@ -13,9 +13,14 @@ The planned public surfaces are:
   owner-assisted manifest discovery, and reviewed read capabilities.
 
 There is deliberately no arbitrary `call_tool` or raw MCP session interface.
-OAuth credentials may be capable of trading because Robinhood does not
-currently advertise separate read/write scopes; the committed manifest and
-fail-closed schema checks are therefore the read-only security boundary.
+OAuth credentials are capable of trading because Robinhood does not advertise
+separate read/write scopes; the committed manifest and fail-closed schema
+checks are therefore the security boundary. That boundary is **"no trading",
+not "no writes"** — the reviewed manifest denies all six order tools and both
+order simulators, and allows 11 non-trading mutations (watchlist and
+saved-scan management) alongside its reads. Each entry carries a reviewed
+`mutates` flag, so a consumer that gates writes never has to infer which
+capabilities are which.
 Consumers must independently pin the canonical full-manifest digest. The
 gateway refuses readiness when that expected digest does not exactly match and
 includes the active digest in readiness and every successful result envelope.
@@ -26,26 +31,29 @@ gateway.
 
 ## Status
 
-**Not usable yet.** The security architecture is documented in
-[`DESIGN.md`](DESIGN.md). Build-order steps 1 and 2 have landed:
+**Usable, not yet released.** All six build-order steps have landed and the
+first reviewed manifest is committed. `DESIGN.md` is the authoritative spec.
 
-- **Step 1** — package scaffold, SDK-neutral models, validated configuration,
-  and the stable error contract.
-- **Step 2** — the `rh-canon-1` canonicalization algorithm and SHA-256 digests,
-  the versioned reviewed-manifest format and its fail-closed loader, and
-  readiness/preflight enforcement against a discovered provider surface.
+Owner-assisted discovery ran against the live Robinhood server on 2026-08-03.
+A human reviewed all 53 discovered tools: **45 allowed, 8 denied**. The denied
+set is exactly the trading surface — the six order tools plus both order
+simulators. The allowed set is 34 reads plus 11 non-trading mutations
+(watchlist and saved-scan management), each carrying a reviewed `mutates` flag
+so a consumer gating writes never has to infer which is which.
 
-Nothing that talks to Robinhood exists yet — no MCP transport, no credential or
-OAuth handling, and no gateway or CLI. **No reviewed manifest ships with this
-release**: `load_active_manifest()` deliberately fails rather than falling back
-to a permissive default, because a production manifest requires owner-assisted
-authenticated discovery and independent human review of the live Robinhood tool
-schemas (DESIGN.md §6.1, §13). Every manifest and schema in the test suite is
-synthetic.
+The full-manifest digest a consumer pins:
+
+```
+sha256:a0a1718e7924f62d0c79f82ed8a3c0a325863e62bd6d897d26a93ae8de2f6c2c
+```
+
+Not released yet: the DESIGN.md §12 acceptance list remains — license,
+changelog, tagged artifact with checksums, published compatibility policy, and
+independent security review.
 
 ### Canonicalization and digests
 
-Digest comparisons are the whole read-only boundary, so the canonical form is
+Digest comparisons are the whole boundary, so the canonical form is
 specified rather than left to an implementation. `rh-canon-1` is written out in
 the module docstring of `src/rh_mcp/canonical.py` and pinned by golden vectors
 in `tests/test_canonical.py`. Object key order and insignificant whitespace do

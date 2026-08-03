@@ -244,6 +244,16 @@ class ResourceLimits:
     max_request_bytes: int = 65_536
     max_response_bytes: int = 1_048_576
     max_json_depth: int = 16
+    # Discovery gets its own depth bound because a `tools/list` page is not
+    # shaped like a tool result. A result is *data* — `{"positions": [{...}]}`
+    # — and 16 levels is generous for it. A discovery page is *schemas about*
+    # that data, and every level of the data costs two or three in the schema
+    # (`properties` -> name -> `items` -> `properties` -> ...) on top of the
+    # JSON-RPC envelope. §8 already gives discovery its own page, tool, and
+    # byte bounds; depth was the one dimension it did not get, which was an
+    # oversight rather than a decision — the real provider surface exceeded 16
+    # on the first authenticated run.
+    max_discovery_depth: int = 48
     max_response_nodes: int = 100_000
     max_response_string_length: int = 262_144
 
@@ -262,6 +272,7 @@ class ResourceLimits:
         _bounded_int("max_request_bytes", self.max_request_bytes, ceiling=1_048_576)
         _bounded_int("max_response_bytes", self.max_response_bytes, ceiling=16_777_216)
         _bounded_int("max_json_depth", self.max_json_depth, ceiling=64)
+        _bounded_int("max_discovery_depth", self.max_discovery_depth, ceiling=64)
         _bounded_int("max_response_nodes", self.max_response_nodes, ceiling=1_000_000)
         _bounded_int(
             "max_response_string_length", self.max_response_string_length, ceiling=1_048_576

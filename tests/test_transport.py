@@ -278,11 +278,26 @@ def test_pagination_that_never_answers_times_out() -> None:
 # ==========================================================================
 
 
-def test_response_depth_is_bounded() -> None:
+def test_discovery_depth_is_bounded() -> None:
+    """Discovery is held to `max_discovery_depth`, not the result bound."""
     page = {"tools": [tool(input_schema={"type": "object", "deep": deep_object(30)})]}
-    error = refused(_discover(SyntheticServer(pages=[page]), production_config(max_json_depth=8)))
+    error = refused(
+        _discover(SyntheticServer(pages=[page]), production_config(max_discovery_depth=8))
+    )
     assert error.code is ErrorCode.PROTOCOL_ERROR
-    assert "nests deeper" in error.message
+    assert "past the 8-level limit" in error.message
+    # The depth reached is reported, not just the limit: a bound tuned on
+    # fixtures is a guess until a real provider tests it, and the number is
+    # what turns the next failure into a measurement.
+    assert "nests at least" in error.message
+
+
+def test_result_depth_is_bounded() -> None:
+    """The result bound is unchanged by the discovery split."""
+    server = SyntheticServer(call_result={"structuredContent": deep_object(30)})
+    error = refused(_call(server, config=production_config(max_json_depth=8)))
+    assert error.code is ErrorCode.PROTOCOL_ERROR
+    assert "past the 8-level limit" in error.message
 
 
 def test_response_node_count_is_bounded() -> None:
@@ -1119,3 +1134,73 @@ def test_a_bounded_payload_is_immutable() -> None:
     payload = run(_call(SyntheticServer(call_result={"structuredContent": {"a": {"b": 1}}})))
     with pytest.raises(TypeError):
         payload.data["a"] = 2  # type: ignore[index]
+
+
+class TestDiscoveryDepthIsSeparateFromResultDepth:
+    """A discovery page may nest deeper than a tool result (§8).
+
+    The bound that broke on the real provider surface. A tool result is data;
+    a `tools/list` page is schemas about data, and each level of the data costs
+    two or three in the schema plus the JSON-RPC envelope.
+    """
+
+    @staticmethod
+    def _nested_schema(levels: int) -> dict[str, Any]:
+        """A schema whose *measured* JSON depth is roughly `levels`.
+
+        Each `{"type":"object","properties":{"n": ...}}` wrapper adds two
+        levels, not one — which is the whole reason a schema page outgrows a
+        bound sized for data.
+        """
+        schema: dict[str, Any] = {"type": "string"}
+        for _ in range(levels // 2):
+            schema = {"type": "object", "properties": {"n": schema}}
+        return schema
+
+    def test_a_page_deeper_than_the_result_bound_is_accepted(self) -> None:
+        """~24 levels: past the 16-level result bound, inside the discovery one."""
+        tool = {
+            "name": "synthetic_deep",
+            "description": "",
+            "inputSchema": self._nested_schema(24),
+            "annotations": {},
+        }
+        server = SyntheticServer(pages=[{"tools": [tool]}])
+
+        async def go() -> int:
+            async with open_session(server) as session:
+                return len((await session.discover()).tools)
+
+        assert asyncio.run(go()) == 1
+
+    def test_a_page_past_the_discovery_bound_is_still_refused(self) -> None:
+        tool = {
+            "name": "synthetic_too_deep",
+            "description": "",
+            "inputSchema": self._nested_schema(120),
+            "annotations": {},
+        }
+        server = SyntheticServer(pages=[{"tools": [tool]}])
+
+        async def go() -> None:
+            async with open_session(server) as session:
+                await session.discover()
+
+        with pytest.raises(GatewayError) as excinfo:
+            asyncio.run(go())
+        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR
+
+    def test_a_tool_result_is_still_held_to_the_tighter_bound(self) -> None:
+        """The result bound must not be loosened by the discovery change."""
+        payload: dict[str, Any] = {"v": "x"}
+        for _ in range(20):
+            payload = {"n": payload}
+        server = SyntheticServer(call_result={"structuredContent": payload})
+
+        async def go() -> None:
+            async with open_session(server) as session:
+                await session.call_tool("synthetic_tool", {}, output_schema=None)
+
+        with pytest.raises(GatewayError) as excinfo:
+            asyncio.run(go())
+        assert excinfo.value.code is ErrorCode.PROTOCOL_ERROR

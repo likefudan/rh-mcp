@@ -380,6 +380,7 @@ LIMIT_BOUNDS: dict[str, float] = {
     "max_request_bytes": 1_048_576,
     "max_response_bytes": 16_777_216,
     "max_json_depth": 64,
+    "max_discovery_depth": 64,
     "max_response_nodes": 1_000_000,
     "max_response_string_length": 1_048_576,
 }
@@ -557,3 +558,26 @@ class TestCallbackTimeoutIsReachable:
                 }
             )
         assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+
+class TestDiscoveryDepthIsSeparate:
+    """A `tools/list` page is schemas *about* data, not data (§8).
+
+    The real Robinhood surface exceeded the 16-level result bound on the first
+    authenticated discovery run: every level of the described data costs two or
+    three in the schema, on top of the JSON-RPC envelope. §8 already gave
+    discovery its own page, tool and byte bounds — depth was the one dimension
+    it did not get.
+    """
+
+    def test_discovery_is_deeper_than_the_result_bound(self) -> None:
+        limits = ResourceLimits()
+        assert limits.max_discovery_depth > limits.max_json_depth
+
+    def test_it_is_still_bounded(self) -> None:
+        with pytest.raises(GatewayError):
+            ResourceLimits(max_discovery_depth=1000)
+
+    def test_it_still_rejects_zero(self) -> None:
+        with pytest.raises(GatewayError):
+            ResourceLimits(max_discovery_depth=0)

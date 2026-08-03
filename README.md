@@ -7,7 +7,7 @@ discovered, reviewed, pinned, and marked read-allowed.
 
 The public surfaces are:
 
-- **Library** — `RobinhoodReadGateway`, returning versioned, SDK-neutral,
+- **Library** — `RobinhoodGateway`, returning versioned, SDK-neutral,
   bounded JSON result envelopes.
 - **CLI** — `rh-mcp`, for authentication, readiness diagnostics,
   owner-assisted manifest discovery, and reviewed read capabilities.
@@ -44,12 +44,17 @@ so a consumer gating writes never has to infer which is which.
 The full-manifest digest a consumer pins:
 
 ```
-sha256:a0a1718e7924f62d0c79f82ed8a3c0a325863e62bd6d897d26a93ae8de2f6c2c
+sha256:f7ad490475d0842815173ee416d7fae18f1346f7393a9af658f0702bfcccb5e9
 ```
 
-Not released yet: the DESIGN.md §12 acceptance list remains — license,
-changelog, tagged artifact with checksums, published compatibility policy, and
-independent security review.
+Not released yet: the DESIGN.md §12 acceptance list remains — changelog,
+tagged artifact with checksums, and a published compatibility policy.
+
+**This software has had no independent security review.** Its own design
+document requires one for release; the requirement has been deliberately
+waived, not met. Every review to date was performed by agents operating under
+the same orchestration as the implementation, so no party outside its
+development has examined it. See DESIGN.md §12.1 and `NOTICE`.
 
 ### Canonicalization and digests
 

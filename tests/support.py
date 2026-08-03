@@ -65,7 +65,7 @@ def build_entry(
     input_schema: dict[str, Any],
     output_schema: dict[str, Any] | None = None,
     annotations: dict[str, Any] | None = None,
-    disposition: str = "read_allowed",
+    disposition: str = "allowed",
     mutates: bool = False,
     rationale: str = "synthetic fixture rationale",
 ) -> dict[str, Any]:

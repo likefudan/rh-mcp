@@ -16,3 +16,4 @@ dist/
 candidate.json
 candidate*.json
 review-checklist.txt
+dist/

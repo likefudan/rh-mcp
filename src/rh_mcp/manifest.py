@@ -71,10 +71,20 @@ from rh_mcp.validation import (
     require_utc_timestamp,
 )
 
-MANIFEST_FORMAT_VERSION: Final = "1.1"
-# 1.0 is not accepted. It had no `mutates` field, so a 1.0 manifest cannot say
-# whether a capability writes — and a loader that guessed would be guessing
-# about exactly the thing the field exists to state. Fail closed and migrate.
+MANIFEST_FORMAT_VERSION: Final = "1.2"
+# Neither 1.0 nor 1.1 is accepted.
+#
+# 1.0 had no `mutates` field, so it cannot say whether a capability writes, and
+# a loader that guessed would be guessing about exactly the thing the field
+# exists to state.
+#
+# 1.1 spelled the allowed disposition `read_allowed`. The word was wrong: 11
+# allowed capabilities write. A loader could map the old spelling onto the new
+# one mechanically and safely — unlike `mutates`, nothing would be guessed —
+# but it would leave manifests in circulation whose own disposition field
+# asserts the thing this rename exists to stop asserting, and the migration
+# code would be the only place recording that they disagree. Nothing has been
+# published, so refusing costs one regenerated file.
 SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_FORMAT_VERSION})
 
 # When to bump MANIFEST_FORMAT_VERSION — the rule, before there is a shipped
@@ -184,8 +194,8 @@ PROVIDER_TOOL_NAME_PATTERN: Final = re.compile(r"\A[\x21-\x7e]{1,128}\Z")
 _MAX_MANIFEST_VERSION_LENGTH: Final = 64
 _MAX_RATIONALE_LENGTH: Final = 4096
 
-Disposition = Literal["read_allowed", "denied"]
-_DISPOSITIONS: Final[frozenset[str]] = frozenset({"read_allowed", "denied"})
+Disposition = Literal["allowed", "denied"]
+_DISPOSITIONS: Final[frozenset[str]] = frozenset({"allowed", "denied"})
 
 _LOCAL = ErrorCode.NOT_READY
 _SOURCE = ErrorCode.CONFIGURATION_ERROR
@@ -345,7 +355,7 @@ class ManifestEntry:
 
     @property
     def read_allowed(self) -> bool:
-        return self.disposition == "read_allowed"
+        return self.disposition == "allowed"
 
     def recomputed_schema_digest(self) -> str:
         return tool_schema_digest(
@@ -578,7 +588,7 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     `json.loads` silently keeps the last occurrence. In a document whose whole
     purpose is human review that is a fail-open: a reviewer reads
     `"disposition": "denied"` on line 20 while the loader uses
-    `"disposition": "read_allowed"` from line 40. The full-manifest digest
+    `"disposition": "allowed"` from line 40. The full-manifest digest
     would cover only the surviving value, so pinning would not catch it either.
     """
     seen: dict[str, Any] = {}
@@ -868,7 +878,7 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
     # keyword anywhere in the provider surface permanently un-loadable — the
     # likely outcome of the first real `admin discover`, and a fail-closed
     # check with no remediation short of the provider changing its schema.
-    if disposition == "read_allowed":
+    if disposition == "allowed":
         ensure_schema_supported(input_schema, _LOCAL, path=f"entries[{index}].input_schema")
         if output_schema is not None:
             ensure_schema_supported(

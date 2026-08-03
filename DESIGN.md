@@ -310,6 +310,39 @@ this paragraph exists for is unchanged and still live: a provisional name
 observed anywhere else must not enter the manifest without authenticated
 discovery and review.
 
+### 6.1.1 Refreshing a stale manifest
+
+The committed manifest went stale within a day of first being committed: two
+output schemas changed, readiness refused, and all 53 dispositions were still
+correct. That is the ordinary case and it recurs, so it has one procedure:
+
+```
+rh-mcp admin discover > candidate.json
+python scripts/refresh_manifest.py candidate.json --dry-run   # read the report
+python scripts/refresh_manifest.py candidate.json
+```
+
+The script carries every reviewer decision forward verbatim and refreshes only
+provider-derived fields and the digests over them. It cannot grant a
+permission, because it never writes a disposition it did not read from the
+previous manifest. It **refuses** when a tool appears or disappears (a changed
+tool *set* is a review, not a refresh — no prior decision exists to carry
+forward), when the observed surface is identical to the committed one (a
+digest that moves when nothing moved destroys the signal the value carries),
+and when either document fails to load.
+
+It has no flag to change a disposition, and a test asserts none is ever added.
+A permission change goes through §6.1's review, with a human writing the
+rationale.
+
+It does not update the pinned digest anywhere else. Every consumer of that
+value has to be changed deliberately, because accepting a new manifest is the
+decision §9's expected-digest mechanism exists to make explicit.
+
+**A refresh is not a review.** Digests moving is the signal to go and read what
+changed in those tools — a tool that gained a write capability would still
+carry its previous `allowed` disposition through a refresh.
+
 ### 6.2 Startup and call preflight
 
 Before becoming ready, the gateway discovers the complete provider surface

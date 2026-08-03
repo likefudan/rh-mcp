@@ -119,6 +119,30 @@ class CapabilityDescription:
         }
 
 
+def capability_listing(manifest: ReviewedManifest) -> tuple[CapabilityDescription, ...]:
+    """The reviewed capabilities of a manifest, allowed and denied alike.
+
+    A module-level function, not only a gateway method, because listing the
+    manifest needs no credential, no session, and no provider: it reports a
+    file that ships inside the package. Routing it through the gateway meant
+    opening a credential store first, so on a host without one — CI, a
+    container, anything not macOS — `rh-mcp capabilities` failed with a
+    configuration error while the manifest sat right there readable.
+    """
+    return tuple(
+        CapabilityDescription(
+            capability=capability,
+            read_allowed=entry.read_allowed,
+            mutates=entry.mutates,
+            description=entry.description,
+            schema_digest=entry.schema_digest,
+            rationale=entry.rationale,
+            input_schema=entry.input_schema,
+        )
+        for capability, entry in sorted(manifest.capabilities.items())
+    )
+
+
 class RobinhoodReadGateway:
     """A default-deny read gateway over a reviewed manifest (§7.1).
 
@@ -179,18 +203,7 @@ class RobinhoodReadGateway:
         Safe without readiness: it reports the committed manifest, which is in
         the repository, and says nothing about the provider.
         """
-        return tuple(
-            CapabilityDescription(
-                capability=capability,
-                read_allowed=entry.read_allowed,
-                mutates=entry.mutates,
-                description=entry.description,
-                schema_digest=entry.schema_digest,
-                rationale=entry.rationale,
-                input_schema=entry.input_schema,
-            )
-            for capability, entry in sorted(self.__manifest.capabilities.items())
-        )
+        return capability_listing(self.__manifest)
 
     # -- reads -------------------------------------------------------------
 
@@ -361,6 +374,7 @@ def render_json(value: Any) -> str:
 __all__ = [
     "AdminDiscoveryContext",
     "CapabilityDescription",
+    "capability_listing",
     "RobinhoodReadGateway",
     "open_admin_discovery",
     "open_gateway",

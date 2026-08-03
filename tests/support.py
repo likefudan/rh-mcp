@@ -66,6 +66,7 @@ def build_entry(
     output_schema: dict[str, Any] | None = None,
     annotations: dict[str, Any] | None = None,
     disposition: str = "read_allowed",
+    mutates: bool = False,
     rationale: str = "synthetic fixture rationale",
 ) -> dict[str, Any]:
     """One manifest entry with digests that match its own contents."""
@@ -80,6 +81,7 @@ def build_entry(
         "schema_digest": tool_schema_digest(provider_tool_name, input_schema, output_schema),
         "metadata_digest": tool_metadata_digest(description, resolved_annotations),
         "disposition": disposition,
+        "mutates": mutates,
         "rationale": rationale,
     }
 
@@ -191,6 +193,7 @@ def _as_manifest_entries(entries: list[dict[str, Any]]) -> list[ManifestEntry]:
             schema_digest=entry["schema_digest"],
             metadata_digest=entry["metadata_digest"],
             disposition=entry["disposition"],
+            mutates=entry["mutates"],
             rationale=entry["rationale"],
         )
         for entry in entries

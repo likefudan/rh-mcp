@@ -1,5 +1,5 @@
 {
-  "manifest_format_version": "1.0",
+  "manifest_format_version": "1.1",
   "canonicalization_version": "rh-canon-1",
   "digest_algorithm": "sha256",
   "manifest_version": "2026.08.03",
@@ -7,7 +7,7 @@
   "observed_at": "2026-08-03T00:35:54.895670+00:00",
   "reviewer": {
     "name": "Ke Li",
-    "reviewed_at": "2026-08-03T00:46:17.432964+00:00"
+    "reviewed_at": "2026-08-03T06:27:27.480943+00:00"
   },
   "entries": [
     {
@@ -95,7 +95,8 @@
       "schema_digest": "sha256:03c105535f08d3bc9c7477d3daa8499807bf5e05d4690d53b534624f4384203a",
       "metadata_digest": "sha256:a9d0bc28c7c76c1f962802bd5a934c1f8ddf7ce384bba6d2fd70f41a2c35b1cc",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Adds option contracts to the options watchlist. Additive."
     },
     {
       "capability": "add_to_watchlist",
@@ -221,7 +222,8 @@
       "schema_digest": "sha256:8b68c4ccc739d61be6fa3098cefbdc343c6093adac6bf914eedbe06c69a7b33f",
       "metadata_digest": "sha256:8adb597d7f36d80590f658a5d3d002158f06651d2c9720e015862ee18ef89267",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Adds symbols to an existing watchlist. Additive within one list."
     },
     {
       "capability": "cancel_equity_order",
@@ -277,7 +279,8 @@
       "schema_digest": "sha256:eedeaf9b62d74e3f238f2a58be54100b55551a5bedd0380b1e502e692d76a4fb",
       "metadata_digest": "sha256:b05d589328e3934bfda4a99f3fa25854e40b2683f93d48c83747d1894cddc0ea",
       "disposition": "denied",
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by DESIGN.md §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
     },
     {
       "capability": "cancel_option_exercise",
@@ -425,7 +428,8 @@
       "schema_digest": "sha256:f7a52eb7b548b5d1b22edffcc9f6f960a614b4ea9768ee2d4a9f849fcc92dd9b",
       "metadata_digest": "sha256:d6fd36c7da95e88277e6de771f9cab00d4a652a4eaf5cbef5043aab08f30e552",
       "disposition": "denied",
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by DESIGN.md §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
     },
     {
       "capability": "cancel_option_order",
@@ -481,7 +485,8 @@
       "schema_digest": "sha256:f6ad968e464a38d27305db854bffc4ef02f35abbc2bb3f573df7794d3c76b095",
       "metadata_digest": "sha256:49e66324eb083505d19c57b24b57d782b40a71ae5c27af4f8ee4850d978262e9",
       "disposition": "denied",
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by DESIGN.md §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
     },
     {
       "capability": "create_scan",
@@ -718,7 +723,8 @@
       "schema_digest": "sha256:d1581dd301770a06378d59921ae6f35963edc720a1c1d6c89e840121a56d0e75",
       "metadata_digest": "sha256:7773e888888b8223730e8867e771a06e167fb978792aeb44de7ee5a713b83b43",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Creates a saved scanner. Additive, but a failure partway can leave a scan with incomplete filters, so a retry may leave an orphan."
     },
     {
       "capability": "create_watchlist",
@@ -823,7 +829,8 @@
       "schema_digest": "sha256:869caf9bf0aebfb3313d815eb862c2c85ebd619d224fc3ad6a14294e02c8ad9a",
       "metadata_digest": "sha256:e08f8fd0159be1339fec3bcfcb0dc16fa531d4474ab173e85c6ea6cc3fb5b124",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Creates a new watchlist. Additive; leaves existing lists untouched. Partial state is possible if the call fails midway, so a retry may leave a duplicate list."
     },
     {
       "capability": "exercise_option",
@@ -977,7 +984,8 @@
       "schema_digest": "sha256:9179ebd01003589b86705ab0ae77438aece943d7bb0e886173dac962bbfc0a9a",
       "metadata_digest": "sha256:d7c6838de68f33160b4aa4d6ce05a3d3c7f4b8866946be1c3cc0d8bbb0c66ab1",
       "disposition": "denied",
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by DESIGN.md §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
     },
     {
       "capability": "follow_watchlist",
@@ -1070,7 +1078,8 @@
       "schema_digest": "sha256:ec2a8ace831acb7a6acd377186d9196cdc1c9afa1be30e2489a5a8ecf47aa26f",
       "metadata_digest": "sha256:9cf7c85d378bf9ac2ea97bc1cf6e2e1596e17b371c226fc3fdb01c57f853cd90",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Follows a public watchlist. Additive; affects only the follow relationship."
     },
     {
       "capability": "get_accounts",
@@ -1192,6 +1201,7 @@
       "schema_digest": "sha256:d9e746369d3fc749e95cdac898937b273610b1f20a54172795af6f7bc189d6a7",
       "metadata_digest": "sha256:4885d350880c068cef634a8d188285419e001920a969e6a7d2b4e96cedcbaedb",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -1337,6 +1347,7 @@
       "schema_digest": "sha256:ed7fb826132d31f3c8b2759af53f2c8c3cf1fd9a0c356a765e576c175f884eb5",
       "metadata_digest": "sha256:6ce89d08d11bf667bac8c07662f595e9cb4af042c996f511d90aed2f9b8f9232",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -1487,6 +1498,7 @@
       "schema_digest": "sha256:ff2381947760c458170610bde3da39e0818438adf51f8d6738fd2a8dd89a2a8b",
       "metadata_digest": "sha256:d10c04512e812205bd5ea6eee7573c05f654f711f3807ec12a34023a24ecc0ee",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -1844,6 +1856,7 @@
       "schema_digest": "sha256:def12a35d0ee17fe2b4166745365428d7c20b91b98a486713a74f8cb486d8578",
       "metadata_digest": "sha256:fed3ea068590ebbe5ec5cb6d672a1dec710d0919b69205ea9b1d6f24b53fcdaa",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -2015,6 +2028,7 @@
       "schema_digest": "sha256:7434bca043ea3a8d69bd14fcb72bf1a1b9ec1d134edd894de2faf6560c830662",
       "metadata_digest": "sha256:5fc0eea52e55d419e76013923b4060da16e97054ae1aa53de6084791ca6c30de",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -2281,6 +2295,7 @@
       "schema_digest": "sha256:b7b93d6c79ddfcca51f6573e46b5a0896fe158f6f529907ba3019b76106befef",
       "metadata_digest": "sha256:ffea4ae46dc8b3f258489354cd3d4f906d8acdf6134d9e198d97e93b7bb57279",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -2411,6 +2426,7 @@
       "schema_digest": "sha256:3b7ea114e8ed58ffb079014879c815bfed4b6f3aa898d3b2ee805230e5d5f0f4",
       "metadata_digest": "sha256:ecd3e6fdc401d4338b930aa9f6ffe1630e81884e37ca8475ec72cb0ff0428c59",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -2569,6 +2585,7 @@
       "schema_digest": "sha256:8cdff74ccedfaa101887749bb009cd93eaf3910f13bd23750dc5d1c0105fbc3a",
       "metadata_digest": "sha256:e63e488cfb54b87fbe888be658f171bbb3e85a2bb4adaeb790635e358f33fb4b",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -2785,6 +2802,7 @@
       "schema_digest": "sha256:bac99897df30d17e8510ea9c5978be038325326e8ba005383a6a64a962d138b6",
       "metadata_digest": "sha256:3abc96723aa8ea8bb0ce41bb74f7e985586c71648bafe07564639d83b7b183c3",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -2918,6 +2936,7 @@
       "schema_digest": "sha256:5d758dbd3d77bf71fd3eec904c8e5e9cef3be31991a0d8a404ebc956cb109133",
       "metadata_digest": "sha256:c7c3d6a4ee6e1c6fcf3f5a4daa2932bb4a39e44cf08b7ecc4b1e00d090668dbd",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -3109,6 +3128,7 @@
       "schema_digest": "sha256:9b30ea9392a2b36970a859b0dafdbbf15e506251711ae113f84f0a437ba77b57",
       "metadata_digest": "sha256:f3cc6cf2c680b983a75c078b1302e0b85a5a10c9745b74448884c00c7625c95d",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -3290,6 +3310,7 @@
       "schema_digest": "sha256:14a0403bb139f4d5f1b71b21dae47033caf96cfcc3cd2eedf125914a959f84a9",
       "metadata_digest": "sha256:1ec96fff49bc7e0e7496f0e839cab6d6c4857dd470f867663487555ca6288af1",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -3448,6 +3469,7 @@
       "schema_digest": "sha256:e03a274a79f36d541013fbbc48c3716694665113f90c139d01fc3d45ca7b57a8",
       "metadata_digest": "sha256:33a29c018bc3d2065b269c0d83fcb49adce4d6083c4a10637e537df42e955e42",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -3634,6 +3656,7 @@
       "schema_digest": "sha256:3b03c9c332ae39bead63ce55f004595a63ab77a8937e9e09e1c44a6bf8ef73ec",
       "metadata_digest": "sha256:d601728c51e112f68fa1525384d7b0df00657987941c926d7efe3a7dfbf826fd",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -3768,6 +3791,7 @@
       "schema_digest": "sha256:fcb07859f0495652b435d79426c38b1cbb249e5c830d65d82776be0b91b7aad0",
       "metadata_digest": "sha256:7fb248353086dde6c5d71f4dd77d8292e46e404b9eaa413b1302de581516ba4c",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -3893,6 +3917,7 @@
       "schema_digest": "sha256:dcd39e8548cc280a892e5d07637d262b95662084bb25831e9553d866923b5d15",
       "metadata_digest": "sha256:dc6eeaa020f4310a0abe6f572848e44883b1e234ffaea974ab13400f8705c7b4",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -4073,6 +4098,7 @@
       "schema_digest": "sha256:72c1bdc4781386dbeb79de17d5b1f456d73e615730a583b24591afb9114082dc",
       "metadata_digest": "sha256:508ba7d52bbdbae9532ca6796d3532cfd3f3f8fd26e7faeeaf4aef1066161ab5",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -4249,6 +4275,7 @@
       "schema_digest": "sha256:11ceed9fc88534ce4f47a84c33f3ec5ffce8a333176384fbe111417d35423911",
       "metadata_digest": "sha256:bb91dcb9a74b8146e91f371f54e3ebaf2644fdb75bcf7e946729d72ee2bc62e0",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -4427,6 +4454,7 @@
       "schema_digest": "sha256:379b3cfde959658c76409e3f8a6b17637163b1bdc66ed77d532b9b9bccb79832",
       "metadata_digest": "sha256:a5ff1a728d4dc5d88535441f9143d23258c6ee3f87cd53032c5b7a926a048c2c",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -4483,6 +4511,7 @@
       "schema_digest": "sha256:636fd23dc3f09c593e02cb9f57fa9fb5c6a019ec1f82f80b692b38f7af930865",
       "metadata_digest": "sha256:101ddfe7cc30d6d62a0fcbd7bb1d620464a69f90fff1e6488011dd6645856dd5",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -4820,6 +4849,7 @@
       "schema_digest": "sha256:503521ac6e9f3eb69efe6dbe188d6a7ee5df8ddaadd47001520e3ca9d4cc886f",
       "metadata_digest": "sha256:f841e0f5c921572d33c01c3b9a7978506ad2068fb6dc498347a5b2e3d2c565d3",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -5004,6 +5034,7 @@
       "schema_digest": "sha256:ea6f910e1994fb551abb36cb590fd2a724d5251b7f4040c143f04e65929a6cb9",
       "metadata_digest": "sha256:e032463d90fb79d459f61ae5b93cd3bbb45615609d0fe6e40ebeb4e157f53001",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -5295,6 +5326,7 @@
       "schema_digest": "sha256:b17f30cd887b38812890c58d09b46168266c2a334ae61d466cdce899b32d4bff",
       "metadata_digest": "sha256:862b380930761cf6faa275106c831f70d560ca5d6a9271038cbbc8cb22653a4c",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -5393,6 +5425,7 @@
       "schema_digest": "sha256:606c1b7819e1739b8315186f2a99828e94fcedc85692771998cf929df87408da",
       "metadata_digest": "sha256:fc0f49339923a5e76d8eae9efdc039ac3c2a3c0d5a0d3eca1bc8f9f29176712d",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -5512,6 +5545,7 @@
       "schema_digest": "sha256:5f4bca449a68dd1d749d81516a4ff9944ab98b3e1d221abc84128c95d88666de",
       "metadata_digest": "sha256:3a12e9aae29b2edab320185b551d88ab412fc1dfe47e4c86f84b3d4f5ae607c3",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -5591,6 +5625,7 @@
       "schema_digest": "sha256:8434f14efcb6d5d5b5e877d934a331eb69c8e98603f22c4bc29262092ab2d4f9",
       "metadata_digest": "sha256:e7b5b909f1de9809b75f72135924ad2dfcc7e3133c8447c5f1dcbf538be9adee",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -5751,6 +5786,7 @@
       "schema_digest": "sha256:4cad4e624963d36199e9158c089d716627cc7ff97c329ea71ae91751c080abc1",
       "metadata_digest": "sha256:d23da6b3e81cfa9c9fd4e6b4105adbab53ce755131328deb0bed18ec14ffc1e6",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -5901,6 +5937,7 @@
       "schema_digest": "sha256:1bb5ecc71a01c408ed7eb64afad70ff747031b1d76de3a72c6bafdfd2b72bdbf",
       "metadata_digest": "sha256:98420698ad54a7fba247181303f15214118e0b3908ace30e47708591754fa0e6",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -6022,6 +6059,7 @@
       "schema_digest": "sha256:f31d98d8fc7ad79b93e8b354751441e70712db80035912b8b79c3cbab8532fce",
       "metadata_digest": "sha256:955079b3b871b12a36fadd92c274436b044d85935eee04f9176a76347b93b5f3",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -6195,6 +6233,7 @@
       "schema_digest": "sha256:6630e8e3073c5bb00d261d86b9c0d00176b1ef47ad4df666963d1cebc536b086",
       "metadata_digest": "sha256:8541ba856e2ede01459f1a8617dd9130c8681d1beb1dc39ef6275bd58f211819",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -6279,6 +6318,7 @@
       "schema_digest": "sha256:2543b8f5bd185ca71f1d1a6e67130382c5ea94bb5c012eb3aa57491aace69447",
       "metadata_digest": "sha256:1fb610abe0af635543b5d28383b6b37c2c0de10b51f393938b2397ffb4691267",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -6373,6 +6413,7 @@
       "schema_digest": "sha256:f42ef6de31607b44a4abc35d2281e9697756ae5c67c7c66b59de2dd0191ada74",
       "metadata_digest": "sha256:4491368b15b94599f095e9c31561e2c949532e8560b681daf55e2b32e353f39c",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -6670,7 +6711,8 @@
       "schema_digest": "sha256:438e19d4e0e32963db5479020f6d031f41e0f66dafe84aa2c389e1c30dee34a2",
       "metadata_digest": "sha256:8b35db6258b4a196c194a821c05bcc486eaeedb2b3725aee8e7f6c3ccb46bf68",
       "disposition": "denied",
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by DESIGN.md §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
     },
     {
       "capability": "place_option_order",
@@ -7030,7 +7072,8 @@
       "schema_digest": "sha256:94c83d91aa0fc882be7d9754237fcaee1a69a0e33eac5da238edff1d3b443aa5",
       "metadata_digest": "sha256:bc5b66dde8fc929adb4e7446d6719dad4002a9206154a084ffa4b241547a8f81",
       "disposition": "denied",
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by DESIGN.md §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
     },
     {
       "capability": "remove_from_watchlist",
@@ -7156,7 +7199,8 @@
       "schema_digest": "sha256:f5c33e3b02647910eed125b5a8f819733b7bcd43342e4715e87ce7332c8f9d75",
       "metadata_digest": "sha256:1e1163c9639d9bd55a01bd19c7e265d94a7630219fa973b274bc38c2155372a4",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Removes symbols from an existing watchlist. Destructive within one list — the removed entries are not recoverable through this surface."
     },
     {
       "capability": "remove_option_from_watchlist",
@@ -7243,7 +7287,8 @@
       "schema_digest": "sha256:2723927b5a6ae80e2a34dc541fbd9f6be02d6fb17d675d8cf48e9ff2e05a7c63",
       "metadata_digest": "sha256:25fa2e058b542f2d1e5e2d90d735281583c565f87928928e49839d9f6e0a38b3",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Removes option contracts from the options watchlist. Destructive within that list."
     },
     {
       "capability": "review_equity_order",
@@ -7485,7 +7530,8 @@
       "schema_digest": "sha256:65924b990a12ce20f88d6c405db3064a38d347e9a20010473f6f9ab848a2ccf4",
       "metadata_digest": "sha256:5a6699190a41e638234942cb8fdee94d99fcba600c314dacaf1c9e110f3b5590",
       "disposition": "denied",
-      "rationale": "Order simulation. Takes a complete order as its argument and its semantics are defined entirely on the provider's side; it is not a read of account state, and a change in what 'simulate' means would make that argument a live order."
+      "mutates": false,
+      "rationale": "Order simulation. Its input schema is the corresponding place_* schema minus only the idempotency key, with the same required set — so allowing it means forwarding a complete order payload with nothing but the tool name between it and a fill. Simulation is also not a read of account state, and what 'simulate' means is defined entirely on the provider's side."
     },
     {
       "capability": "review_option_order",
@@ -8118,7 +8164,8 @@
       "schema_digest": "sha256:2264890019d566f1a3baa389b7dcbaa98f2ea704d70e4f82f9a9194fd05dc44e",
       "metadata_digest": "sha256:a10ad70ff0df2199b2509c2ec2d4fad575c5a7bbff172db259637c9cd9318313",
       "disposition": "denied",
-      "rationale": "Order simulation. Takes a complete order as its argument and its semantics are defined entirely on the provider's side; it is not a read of account state, and a change in what 'simulate' means would make that argument a live order."
+      "mutates": false,
+      "rationale": "Order simulation. Its input schema is the corresponding place_* schema minus only the idempotency key, with the same required set — so allowing it means forwarding a complete order payload with nothing but the tool name between it and a fill. Simulation is also not a read of account state, and what 'simulate' means is defined entirely on the provider's side."
     },
     {
       "capability": "run_scan",
@@ -8297,6 +8344,7 @@
       "schema_digest": "sha256:5fb9007806548cc8f5ead5b5bf672175e33a298d82eb8539d5643cc6ce908e90",
       "metadata_digest": "sha256:997644a615c2a669285688e7d52ea4c5838971b86cb140ea0f21554a18970125",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -8447,6 +8495,7 @@
       "schema_digest": "sha256:c5f984e999b94c9c9d2704aa2d54d2e52bd7dda2e99a0af8e0a4953c32bb4663",
       "metadata_digest": "sha256:ef2151a6671f47fe3c0afcca4f63bf38bf413c6efd6a9439b06058ebac1d447d",
       "disposition": "read_allowed",
+      "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
     },
     {
@@ -8540,7 +8589,8 @@
       "schema_digest": "sha256:c75f7af53b54d19ed6d65eeb37fa2659f7805ca9488135831e79de1bee7ee688",
       "metadata_digest": "sha256:26c9315ce898735f6810064c90d544ddebc46473b498fd0b481f27279b27fcd5",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Unfollows a watchlist. Reverses a follow; does not delete the underlying list."
     },
     {
       "capability": "update_scan_config",
@@ -8729,7 +8779,8 @@
       "schema_digest": "sha256:9330cc029b05f525e283f7d0ddae1d1773500ee9dc9699ed1fa1c872b1850604",
       "metadata_digest": "sha256:b3895c4276e157ca1c83948aa37dd215bf1df28e2b91fe15a6ed7e9030223319",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Changes a saved scan's sort column and direction. Overwrites those two fields only."
     },
     {
       "capability": "update_scan_filters",
@@ -8966,7 +9017,8 @@
       "schema_digest": "sha256:802bcc994f5ad68ebcf46979f92a647dadddd75fb1f6ab9e2efabf3a427693ad",
       "metadata_digest": "sha256:21ce3a183b776f0ac2158c846796af2bddb04fb5ab36660b9682bd280c82f51f",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Replaces a saved scan's filter set. REPLACE, not merge — the previous filters are discarded and are not recoverable through this surface. The widest blast radius of the eleven."
     },
     {
       "capability": "update_watchlist",
@@ -9075,8 +9127,9 @@
       "schema_digest": "sha256:abbaaec3b3879a9ceccf4d5654ede2f79f4962f634f7a441222483face5f0b49",
       "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191",
       "disposition": "read_allowed",
-      "rationale": "Reviewed non-trading mutation. Writes watchlist or saved-scan state on the provider. Moves no money and touches no order; allowed knowingly per §2.1."
+      "mutates": true,
+      "rationale": "Renames a watchlist or changes its icon/description. Overwrites the named fields on an existing list; does not touch its contents."
     }
   ],
-  "full_manifest_digest": "sha256:e67abe279e87a9e01cbd7041995c39464eac07aea7181e0d6c3a668dca03218b"
+  "full_manifest_digest": "sha256:e5aa454419b7936af78a160ad4eeea8f89e81840520d42369c98abdaa0900e1c"
 }

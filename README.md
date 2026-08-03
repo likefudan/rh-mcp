@@ -13,9 +13,14 @@ The planned public surfaces are:
   owner-assisted manifest discovery, and reviewed read capabilities.
 
 There is deliberately no arbitrary `call_tool` or raw MCP session interface.
-OAuth credentials may be capable of trading because Robinhood does not
-currently advertise separate read/write scopes; the committed manifest and
-fail-closed schema checks are therefore the read-only security boundary.
+OAuth credentials are capable of trading because Robinhood does not advertise
+separate read/write scopes; the committed manifest and fail-closed schema
+checks are therefore the security boundary. That boundary is **"no trading",
+not "no writes"** — the reviewed manifest denies all six order tools and both
+order simulators, and allows 11 non-trading mutations (watchlist and
+saved-scan management) alongside its reads. Each entry carries a reviewed
+`mutates` flag, so a consumer that gates writes never has to infer which
+capabilities are which.
 Consumers must independently pin the canonical full-manifest digest. The
 gateway refuses readiness when that expected digest does not exactly match and
 includes the active digest in readiness and every successful result envelope.
@@ -26,7 +31,7 @@ gateway.
 
 ## Status
 
-**Not usable yet.** The security architecture is documented in
+**Usable, not yet released.** The security architecture is documented in
 [`DESIGN.md`](DESIGN.md). Build-order steps 1 and 2 have landed:
 
 - **Step 1** — package scaffold, SDK-neutral models, validated configuration,
@@ -45,7 +50,7 @@ synthetic.
 
 ### Canonicalization and digests
 
-Digest comparisons are the whole read-only boundary, so the canonical form is
+Digest comparisons are the whole boundary, so the canonical form is
 specified rather than left to an implementation. `rh-canon-1` is written out in
 the module docstring of `src/rh_mcp/canonical.py` and pinned by golden vectors
 in `tests/test_canonical.py`. Object key order and insignificant whitespace do

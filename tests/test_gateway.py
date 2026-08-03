@@ -29,7 +29,7 @@ from rh_mcp.models import ResultEnvelope
 from rh_mcp.transport import ToolPayload
 from tests.support import build_manifest, dumps
 
-BASE_DIGEST = "sha256:463295e635f21ed81c3792da15f3474c6096d8821cd815d9cbddc6867dc8b705"
+BASE_DIGEST = "sha256:2fb965eac851c00f489dde270c0de19506538adf74e8b88251c1ce8420c29ed9"
 OTHER_DIGEST = "sha256:" + "c" * 64
 VALID_ARGS: dict[str, Any] = {"synthetic_symbol": "AAPL"}
 
@@ -262,6 +262,20 @@ class TestNoEscapeHatch:
     def test_open_gateway_has_no_flag_that_disables_enforcement(self) -> None:
         parameters = set(inspect.signature(open_gateway).parameters)
         assert parameters == {"config", "store", "manifest", "transport"}
+
+
+class TestCapabilityListingShowsMutation:
+    """§2.1: `read_allowed: true` on a writing capability is the confusion."""
+
+    def test_the_listing_carries_a_mutation_flag_and_a_rationale(
+        self, document: dict[str, Any], transport: SpyTransport
+    ) -> None:
+        rendered = [c.to_json_dict() for c in gateway_for(document, transport).capabilities()]
+        assert rendered
+        for entry in rendered:
+            assert "mutates" in entry
+            assert isinstance(entry["mutates"], bool)
+            assert entry["rationale"].strip()
 
 
 class TestAdminDiscovery:

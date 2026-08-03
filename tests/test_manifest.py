@@ -57,7 +57,7 @@ from tests.support import (
 # The golden full-manifest digest of the synthetic fixture. Written out by
 # hand: if a change to canonicalization, the manifest format, or the fixture
 # moves it, that is exactly the explicit migration DESIGN.md §6 requires.
-BASE_DIGEST = "sha256:463295e635f21ed81c3792da15f3474c6096d8821cd815d9cbddc6867dc8b705"
+BASE_DIGEST = "sha256:2fb965eac851c00f489dde270c0de19506538adf74e8b88251c1ce8420c29ed9"
 # Arguments that satisfy ALPHA_INPUT_SCHEMA, so a preflight test fails for the
 # reason it is named after rather than on input validation.
 VALID_ARGS: dict[str, Any] = {"synthetic_symbol": "AAPL"}
@@ -824,7 +824,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:e67abe279e87a9e01cbd7041995c39464eac07aea7181e0d6c3a668dca03218b"
+    SHIPPED_DIGEST = "sha256:e5aa454419b7936af78a160ad4eeea8f89e81840520d42369c98abdaa0900e1c"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -861,6 +861,46 @@ class TestTheShippedManifest:
         """§6: a disposition without a stated reason is not a review."""
         for entry in load_active_manifest().entries:
             assert entry.rationale.strip()
+
+    def test_every_allowed_mutation_is_flagged(self) -> None:
+        """§2.1: a consumer gating writes must not have to infer which ones.
+
+        11 allowed capabilities write watchlist or saved-scan state. Nothing in
+        `read_allowed` distinguishes them from a quote lookup, which is exactly
+        the confusion the flag exists to remove.
+        """
+        allowed_mutations = {
+            e.capability
+            for e in load_active_manifest().entries
+            if e.read_allowed and e.mutates
+        }
+        assert allowed_mutations == {
+            "create_watchlist", "update_watchlist", "add_to_watchlist",
+            "remove_from_watchlist", "add_option_to_watchlist",
+            "remove_option_from_watchlist", "follow_watchlist", "unfollow_watchlist",
+            "create_scan", "update_scan_config", "update_scan_filters",
+        }
+
+    def test_no_read_capability_is_flagged_as_mutating(self) -> None:
+        """The other direction: a read wrongly flagged would be gated for nothing."""
+        manifest = load_active_manifest()
+        reads = [e for e in manifest.entries if e.read_allowed and not e.mutates]
+        assert len(reads) == 34
+        assert all(e.capability.startswith(("get_", "run_", "search")) for e in reads)
+
+    def test_each_allowed_mutation_states_its_own_blast_radius(self) -> None:
+        """§6: one shared rationale would hide that these differ materially.
+
+        `update_scan_filters` replaces a filter set; `add_to_watchlist` appends
+        to one list. Filing both under one string is not a review.
+        """
+        rationales = {
+            e.capability: e.rationale
+            for e in load_active_manifest().entries
+            if e.read_allowed and e.mutates
+        }
+        assert len(set(rationales.values())) == len(rationales)
+        assert "REPLACE" in rationales["update_scan_filters"]
 
     def test_the_allowed_set_is_the_size_the_reviewer_approved(self) -> None:
         """A bare count, so an entry appearing or vanishing cannot pass quietly."""
@@ -1315,6 +1355,7 @@ class TestPreflight:
             schema_digest=tool_schema_digest("synthetic_alpha_read", {}, None),
             metadata_digest=tool_metadata_digest("x", {}),
             disposition="read_allowed",
+            mutates=False,
             rationale="x",
         )
         tampered = replace(consistent, **{field: OTHER_DIGEST})

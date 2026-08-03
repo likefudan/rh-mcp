@@ -96,16 +96,25 @@ class CapabilityDescription:
 
     capability: str
     read_allowed: bool
+    mutates: bool
     description: str
     schema_digest: str
+    rationale: str
     input_schema: Mapping[str, Any]
 
     def to_json_dict(self) -> dict[str, Any]:
         return {
             "capability": self.capability,
             "read_allowed": self.read_allowed,
+            # Reported next to `read_allowed`, because `read_allowed: true` on
+            # a capability that writes is exactly the confusion §2.1 warns
+            # about. A consumer gating mutations reads this field; asking it to
+            # infer the answer from a tool name would be asking it to re-do
+            # the human review.
+            "mutates": self.mutates,
             "description": self.description,
             "schema_digest": self.schema_digest,
+            "rationale": self.rationale,
             "input_schema": json_safe(self.input_schema),
         }
 
@@ -174,8 +183,10 @@ class RobinhoodReadGateway:
             CapabilityDescription(
                 capability=capability,
                 read_allowed=entry.read_allowed,
+                mutates=entry.mutates,
                 description=entry.description,
                 schema_digest=entry.schema_digest,
+                rationale=entry.rationale,
                 input_schema=entry.input_schema,
             )
             for capability, entry in sorted(self.__manifest.capabilities.items())

@@ -1,10 +1,17 @@
 """Reviewed read manifest, digests, and fail-closed drift control (§6, §6.2).
 
 This module is the security boundary. Robinhood advertises a single `internal`
-OAuth scope, so the token is write-capable and read-only behaviour cannot be
-inferred from it, from a tool name, or from an MCP annotation (§2). What makes
-this gateway read-only is a human-reviewed, committed manifest plus the exact
-digest comparisons implemented here. Every check below therefore fails closed:
+OAuth scope, so the token can trade, and what it is permitted to do cannot be
+inferred from the token, from a tool name, or from an MCP annotation (§2) —
+the live surface carries no annotations at all. What holds the boundary is a
+human-reviewed, committed manifest plus the exact digest comparisons
+implemented here.
+
+The boundary is **"no trading", not "no writes"**: the reviewed manifest denies
+all six order tools and both order simulators, and allows 11 non-trading
+mutations alongside its reads (§2.1). Do not restate this module as enforcing
+read-only — it does not, and a comment claiming a property the code lacks is a
+bug this file has already produced twice. Every check below therefore fails closed:
 the outcome of "I do not understand this" is always denial, never a default.
 
 Two error codes are used, and the split is deliberate (§7.3, both exit 3):
@@ -64,7 +71,10 @@ from rh_mcp.validation import (
     require_utc_timestamp,
 )
 
-MANIFEST_FORMAT_VERSION: Final = "1.0"
+MANIFEST_FORMAT_VERSION: Final = "1.1"
+# 1.0 is not accepted. It had no `mutates` field, so a 1.0 manifest cannot say
+# whether a capability writes — and a loader that guessed would be guessing
+# about exactly the thing the field exists to state. Fail closed and migrate.
 SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_FORMAT_VERSION})
 
 # When to bump MANIFEST_FORMAT_VERSION — the rule, before there is a shipped
@@ -143,6 +153,7 @@ _ENTRY_FIELDS: Final[frozenset[str]] = frozenset(
         "schema_digest",
         "metadata_digest",
         "disposition",
+        "mutates",
         "rationale",
     }
 )
@@ -320,6 +331,7 @@ class ManifestEntry:
     schema_digest: str
     metadata_digest: str
     disposition: Disposition
+    mutates: bool
     rationale: str
 
     @property
@@ -848,6 +860,14 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
                 output_schema, _LOCAL, path=f"entries[{index}].output_schema"
             )
 
+    mutates = entry["mutates"]
+    if not isinstance(mutates, bool):
+        invalid(
+            f"entries[{index}].mutates must be a boolean; a manifest that does not "
+            "answer whether a capability writes has not answered it",
+            _LOCAL,
+        )
+
     rationale = entry["rationale"]
     require_nonempty(f"entries[{index}].rationale", rationale, _LOCAL)
     if len(rationale) > _MAX_RATIONALE_LENGTH:
@@ -869,6 +889,7 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
         schema_digest=entry["schema_digest"],
         metadata_digest=entry["metadata_digest"],
         disposition=disposition,
+        mutates=mutates,
         rationale=rationale,
     )
 
@@ -1374,6 +1395,7 @@ def manifest_to_json_dict(manifest: ReviewedManifest) -> dict[str, Any]:
                 "schema_digest": entry.schema_digest,
                 "metadata_digest": entry.metadata_digest,
                 "disposition": entry.disposition,
+                "mutates": entry.mutates,
                 "rationale": entry.rationale,
             }
             for entry in manifest.entries

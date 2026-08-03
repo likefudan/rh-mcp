@@ -1,10 +1,11 @@
 # rh-mcp — Design
 
-Status: **security architecture agreed; implementation and authenticated tool
-discovery are not complete.** This document defines the contract that must be
-implemented before the project can be called a Robinhood Read Gateway. The
-first production manifest still requires an owner-assisted login and review of
-the live tool schemas (§6 and §13).
+Status: **implemented, and the first manifest is reviewed and committed.**
+Owner-assisted discovery ran against the live server on 2026-08-03; a human
+reviewed all 53 tools and committed 45 allowed / 8 denied (§2.1). What remains
+before a release is the §12 acceptance list — license, changelog, tagged
+artifact, published digest, compatibility policy, and independent security
+review.
 
 ## 1. Purpose
 
@@ -100,8 +101,16 @@ Two consequences a consumer must not discover by surprise:
 - §10 tells `ainvest` this surface is safe to call unattended. That remains
   true for the trading boundary, which is what its approval and paper/live
   gates exist for — but an unattended call can now create a watchlist. If
-  `ainvest` gates mutations separately, it must gate these too, and it cannot
-  infer which capabilities mutate from the method name.
+  `ainvest` gates mutations separately, it must gate these too.
+
+  It does not have to infer which ones. Every manifest entry carries a
+  reviewed `mutates` boolean, reported alongside `read_allowed` in
+  `capabilities` output. That field is why the manifest format is **1.1** and
+  not 1.0: a 1.0 manifest cannot say whether a capability writes, and a loader
+  that guessed would be guessing about precisely the thing the field exists to
+  state, so 1.0 is refused rather than migrated in place. Adding it after a
+  consumer had pinned a digest would have cost a coordinated migration; adding
+  it now costs one regenerated file.
 
 Also out of scope for v0:
 
@@ -486,7 +495,11 @@ credentials.
 - strategy, sizing, risk limits, approval, paper/live gates, application audit,
   and user-facing CLI or Telegram workflows;
 - system-level tests proving Research and Strategy components cannot obtain a
-  credential, raw MCP session, unreviewed tool, or write capability.
+  credential, raw MCP session, unreviewed tool, or **trading** capability —
+  and, separately, gating the 11 reviewed non-trading mutations §2.1 allows.
+  "No write capability" was the original wording and is no longer true: a
+  test asserting it would either fail or, worse, pass while asserting
+  something false.
 
 The consuming application must not parse MCP content blocks or receive a
 Robinhood token. If deployed out of process, the broker protocol is separately
@@ -551,24 +564,33 @@ against the built artifact.
 
 ## 13. Open items
 
-The OAuth discovery endpoints are known, but these owner-assisted observations
-remain before the first production release:
+All six owner-assisted observations are **closed**, on 2026-08-03:
 
-1. Confirm DCR acceptance and redirect-URI constraints during a real login.
-2. Determine whether no explicit scope or `internal` is required, and record
-   the granted scope without logging tokens.
-3. Capture the complete authenticated tool surface and schemas into a
-   sanitized candidate manifest.
-4. Review each observed tool for read behavior and side effects, then commit
-   both allowed and denied dispositions.
-5. Compute, independently review, and publish the resulting full-manifest
-   digest for consumers to pin.
-6. Confirm real response content shapes and pagination using manifest-approved
-   reads without retaining account data.
+1. ~~Confirm DCR acceptance and redirect-URI constraints.~~ Registration was
+   accepted and reused across logins; the loopback redirect URI was not
+   constrained beyond the registration.
+2. ~~Determine whether an explicit scope is required.~~ `internal` was granted.
+   The credential is write-capable and the token lifetime is ~4.7 days.
+3. ~~Capture the authenticated tool surface.~~ 53 tools.
+4. ~~Review each tool and commit dispositions.~~ 45 allowed, 8 denied (§2.1).
+5. ~~Compute and publish the full-manifest digest.~~ Pinned in
+   `tests/test_manifest.py::TestTheShippedManifest` and published in §12's
+   release artifact.
+6. ~~Confirm real response shapes and pagination.~~ Discovery paged and
+   terminated within bounds. One bound was wrong and is fixed: a `tools/list`
+   page is schemas *about* data and outgrew a depth limit sized for data, so
+   discovery now has its own (§8).
 
-These items block a production manifest, not implementation of the offline
-security boundary. Any unexpected OAuth or tool behavior triggers design
-review rather than a permissive fallback.
+Two provider behaviours observed and deliberately not worked around:
+
+- **No tool carries any annotation.** Rule 4's "annotations are evidence, never
+  authority" turned out to be moot — there is no evidence at all.
+- **Session termination returns 400.** The MCP SDK sends a DELETE on close and
+  Robinhood rejects it. Non-fatal; discovery completes. Left unsilenced,
+  because suppressing another library's warning hides a signal that is not
+  ours to hide.
+
+What remains is the §12 release-acceptance list, not further observation.
 
 ## 14. Build order
 

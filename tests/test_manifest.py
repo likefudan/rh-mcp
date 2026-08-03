@@ -812,10 +812,61 @@ class TestManifestSource:
         path.write_bytes(b'{"a": "\xff\xfe"}')
         expect_source_failure(lambda: load_manifest_file(path), "not valid UTF-8")
 
-    def test_no_reviewed_manifest_ships_with_this_release(self) -> None:
-        """§13: a production manifest requires owner-assisted discovery first."""
-        assert not PACKAGED_MANIFEST_PATH.exists()
-        expect_source_failure(load_active_manifest, "ships no reviewed read manifest")
+class TestTheShippedManifest:
+    """Regression tests on the committed manifest itself (§6, §13).
+
+    Produced by owner-assisted discovery on 2026-08-03 and reviewed by hand.
+    These are the tests that matter most in the repository: the manifest is
+    the only thing standing between a consumer and Robinhood's trading tools,
+    and it is a data file, so nothing else would notice it changing.
+    """
+
+    # Pin the digest. Any edit to the manifest moves it, which is the point:
+    # a permission change must show up as a deliberate diff in this constant,
+    # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
+    SHIPPED_DIGEST = "sha256:e67abe279e87a9e01cbd7041995c39464eac07aea7181e0d6c3a668dca03218b"
+
+    # Robinhood's own description of the first of these is "Place a real equity
+    # order with real money". If a change ever flips one of these to allowed,
+    # this list is what fails.
+    TRADING_TOOLS = (
+        "place_equity_order",
+        "place_option_order",
+        "exercise_option",
+        "cancel_equity_order",
+        "cancel_option_order",
+        "cancel_option_exercise",
+    )
+    SIMULATION_TOOLS = ("review_equity_order", "review_option_order")
+
+    def test_it_ships_and_loads(self) -> None:
+        assert PACKAGED_MANIFEST_PATH.exists()
+        assert load_active_manifest().manifest_version
+
+    def test_its_declared_digest_matches_the_recomputed_one(self) -> None:
+        manifest = load_active_manifest()
+        assert manifest.digest == manifest.declared_digest
+
+    def test_the_shipped_digest_is_the_pinned_one(self) -> None:
+        assert load_active_manifest().digest == self.SHIPPED_DIGEST
+
+    @pytest.mark.parametrize("name", TRADING_TOOLS + SIMULATION_TOOLS)
+    def test_no_trading_capability_is_allowed(self, name: str) -> None:
+        """§2 rule 5: trading needs a separate surface, not a wider manifest."""
+        entry = load_active_manifest().capabilities[name]
+        assert entry.disposition == "denied"
+        assert not entry.read_allowed
+
+    def test_every_entry_carries_a_reviewer_rationale(self) -> None:
+        """§6: a disposition without a stated reason is not a review."""
+        for entry in load_active_manifest().entries:
+            assert entry.rationale.strip()
+
+    def test_the_allowed_set_is_the_size_the_reviewer_approved(self) -> None:
+        """A bare count, so an entry appearing or vanishing cannot pass quietly."""
+        manifest = load_active_manifest()
+        assert len(manifest.entries) == 53
+        assert len(manifest.read_capabilities) == 45
 
 
 # --------------------------------------------------------------------------

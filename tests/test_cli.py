@@ -107,12 +107,20 @@ class TestFailuresEmitNothingToStdout:
         assert "rh-mcp login" in err
         assert out == ""
 
-    def test_a_missing_manifest_fails_cleanly_with_empty_stdout(self) -> None:
-        """The normal state until step 6: no reviewed manifest ships."""
+    def test_a_mismatched_pin_still_lists_but_says_so(self) -> None:
+        """§7.1: the listing is of the committed manifest, not a permission grant.
+
+        `capabilities` reports what the installed manifest says and stays exit
+        0 — making it fail under a mismatch would break the command that best
+        explains a mismatch — but it must not let a reader mistake the listing
+        for a statement about what is currently permitted.
+        """
         exit_code, out, err = invoke(["capabilities"])
-        assert exit_code == EXIT_CODE_CONFIGURATION_ERROR
-        assert out == ""
-        assert err.strip()
+        assert exit_code == EXIT_CODE_SUCCESS
+        payload = json.loads(out)
+        assert payload["digest_matches"] is False
+        assert payload["expected_manifest_digest"] == DIGEST
+        assert "not the one this deployment pinned" in err
 
     def test_a_missing_expected_digest_is_a_configuration_error(
         self, monkeypatch: pytest.MonkeyPatch

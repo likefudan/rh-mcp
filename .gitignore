@@ -15,3 +15,4 @@ dist/
 # the raw dump is never committed.
 candidate.json
 candidate*.json
+review-checklist.txt

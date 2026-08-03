@@ -9,9 +9,18 @@ the live tool schemas (§6 and §13).
 ## 1. Purpose
 
 `rh-mcp` is a default-deny Python gateway to Robinhood's official MCP server.
-It gives a consuming application a narrow, reviewable read surface while
+It gives a consuming application a narrow, reviewable capability surface while
 keeping OAuth credentials, the MCP SDK, transport objects, and unreviewed MCP
 tools behind the gateway boundary.
+
+**The boundary this gateway enforces is "no trading", not "no writes".** The
+first reviewed manifest allows a set of non-trading mutations — watchlist and
+saved-scan management — alongside its reads. That was a deliberate reviewer
+decision, and §2 states the resulting rule precisely. Say it plainly here
+because the type is still named `RobinhoodReadGateway` and its method is still
+`read()`: those names are narrower than what the manifest now permits, and a
+name that overstates a guarantee is how a reader ends up trusting one that
+does not exist.
 
 It has two supported public surfaces:
 
@@ -28,31 +37,75 @@ The CLI is a thin shell over the same gateway. Neither surface exposes an MCP
 
 Robinhood currently advertises one OAuth scope, `internal`, rather than
 separate read and write scopes. A token must therefore be treated as capable
-of trading even when this gateway uses it only for reads. Read-only behavior
-is enforced locally with a committed allowlist and exact schema validation;
-it is not inferred from the token, a tool name, or an MCP annotation.
+of trading whatever this gateway chooses to do with it. The boundary is
+enforced locally with a committed allowlist and exact schema validation; it is
+not inferred from the token, a tool name, or an MCP annotation.
+
+Authenticated discovery (§13) settled two facts that this section previously
+had to speculate about, and both matter more than they look:
+
+- The provider surface is 53 tools, and **six of them place, cancel, or
+  exercise real orders**. They arrive over the same session, under the same
+  token, as every quote and position read. This manifest is the only thing
+  between a consumer and a trade.
+- **Not one of the 53 tools carries `readOnlyHint`, or any annotation at
+  all.** Rule 4 below said annotations are evidence and never authority; the
+  live surface supplies no evidence whatsoever. Every disposition in the
+  manifest is a human judgement from a name, a description, and a schema.
 
 The governing rules are:
 
 1. Every discovered tool is denied unless a reviewed manifest entry marks its
-   exact schema digest as read-allowed.
+   exact schema digest as allowed.
 2. An unknown, missing, duplicate, malformed, or changed tool makes the
    gateway not ready. Discovery never grants permission automatically.
 3. A denied request is rejected before any MCP tool call is sent.
 4. MCP annotations such as `readOnlyHint` are review evidence only and never
    authority.
-5. Future write support must use a separate client surface, credential
-   namespace, runtime identity, and deployment role. It must not be added by
-   widening this gateway.
+5. **Trading support** — order submission, cancellation, replacement, and
+   option exercise — must use a separate client surface, credential namespace,
+   runtime identity, and deployment role. It must not be added by widening
+   this gateway. The six trading tools and both order-simulation tools are
+   denied in the committed manifest, and a reviewer moving any of them to
+   allowed is making that change, not a configuration tweak.
 
-The gateway owns transport security and the read boundary. It does **not** own
-investment risk limits, order approval, strategy policy, portfolio semantics,
-or application audit workflows. Those remain responsibilities of the
-consumer (§10).
+The gateway owns transport security and the capability boundary. It does
+**not** own investment risk limits, order approval, strategy policy, portfolio
+semantics, or application audit workflows. Those remain responsibilities of
+the consumer (§10).
+
+### 2.1 What the first manifest actually allows
+
+45 of 53 tools are allowed; 8 are denied. The denied set is exactly the
+trading surface:
+
+| denied | why |
+|---|---|
+| `place_equity_order`, `place_option_order` | Robinhood's own description: "Place a real equity order with **real money**" |
+| `cancel_equity_order`, `cancel_option_order`, `cancel_option_exercise` | change the state of a live order |
+| `exercise_option` | exercises a position |
+| `review_equity_order`, `review_option_order` | "simulate an order without placing it" — denied anyway. Simulation is not a read of account state, it takes a complete order as its argument, and the meaning of "simulate" is defined entirely on Robinhood's side. If that meaning ever shifts, what we handed over was an order. |
+
+The allowed set is 34 reads plus **11 non-trading mutations**: watchlist
+create/update/add/remove/follow/unfollow, and saved-scan create/update. These
+write to Robinhood, and calling them through a method named `read()` is a wart
+the reviewer accepted knowingly. They move no money and touch no order.
+
+Two consequences a consumer must not discover by surprise:
+
+- `RobinhoodReadGateway.read()` can mutate. Renaming the type and method to
+  match is deferred, not rejected — nothing has shipped, so the cost is low
+  and the reason to wait is that a rename should follow the §12 release gate
+  rather than ride along with a manifest change.
+- §10 tells `ainvest` this surface is safe to call unattended. That remains
+  true for the trading boundary, which is what its approval and paper/live
+  gates exist for — but an unattended call can now create a watchlist. If
+  `ainvest` gates mutations separately, it must gate these too, and it cannot
+  infer which capabilities mutate from the method name.
 
 Also out of scope for v0:
 
-- order submission, cancellation, replacement, or any other mutation;
+- order submission, cancellation, replacement, and option exercise;
 - Robinhood domain models such as `Quote`, `Position`, or `Order`;
 - response caching, a general community-server client, or a public raw MCP
   debugging interface;

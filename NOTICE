@@ -1,0 +1,58 @@
+rh-mcp
+Copyright 2026 Ke Li
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
+
+---
+
+This notice carries two facts about what this software does and does not
+guarantee. Apache-2.0 §4(d) requires them to travel with any redistribution,
+which is why they are here rather than only in the documentation.
+
+1. THE CREDENTIAL THIS SOFTWARE HOLDS CAN TRADE.
+
+   Robinhood advertises a single OAuth scope, `internal`. There is no
+   read-only scope to request. A token obtained by this software is capable of
+   placing, cancelling, and exercising orders, whatever this software chooses
+   to do with it.
+
+   What restrains it is a human-reviewed manifest committed to this package,
+   plus exact digest comparisons made before every call. That boundary is
+   "no trading", not "no writes": the reviewed manifest denies all six order
+   tools and both order simulators, and allows a set of non-trading mutations
+   (watchlist and saved-scan management) alongside its reads. Each capability
+   carries a reviewed `mutates` flag.
+
+   A fork that edits the manifest, weakens the digest checks, or ships its own
+   manifest changes this property. Apache-2.0 §4(b) requires such a fork to
+   carry prominent notice of the modification. For this software that
+   requirement is not a formality — the manifest is the entire security
+   boundary, and a consumer pinning a digest is relying on it.
+
+2. THIS SOFTWARE HAS NOT HAD AN INDEPENDENT SECURITY REVIEW.
+
+   Its own design document (DESIGN.md §12) lists one as a release-acceptance
+   requirement. That requirement has been deliberately waived, not met.
+
+   Every review performed to date was conducted by agents operating under the
+   same orchestration as the implementation. Those reviews found real defects
+   — a fail-open argument-validation bypass, a callback-abort bypass, a
+   credential record reaching a public repr, an account identifier reaching
+   consumer-visible JSON — and each was fixed and covered by tests. But they
+   were not independent in the sense §12 means: no party outside the
+   development of this software has examined it.
+
+   Anyone deploying this against a real brokerage account should read that as
+   what it is.
+
+---
+
+This product includes software developed by third parties:
+
+  mcp     (Model Context Protocol Python SDK)  MIT License
+  httpx2                                       BSD 3-Clause License
+
+Both are private implementation dependencies. No public signature, exception,
+serialized result, or type annotation of this package contains a type from
+either (DESIGN.md §4), so a consumer holding its own version of either does not
+inherit a conflict from this package.

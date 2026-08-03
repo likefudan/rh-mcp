@@ -20,7 +20,7 @@ from rh_mcp.config import GatewayConfig
 from rh_mcp.errors import ErrorCode, GatewayError
 from rh_mcp.gateway import (
     AdminDiscoveryContext,
-    RobinhoodReadGateway,
+    RobinhoodGateway,
     open_admin_discovery,
     open_gateway,
 )
@@ -29,7 +29,7 @@ from rh_mcp.models import ResultEnvelope
 from rh_mcp.transport import ToolPayload
 from tests.support import build_manifest, dumps
 
-BASE_DIGEST = "sha256:2fb965eac851c00f489dde270c0de19506538adf74e8b88251c1ce8420c29ed9"
+BASE_DIGEST = "sha256:3b7f113be230012d7f1949789401e60e9b84274ecf09f8a8ced31d5fc3e11250"
 OTHER_DIGEST = "sha256:" + "c" * 64
 VALID_ARGS: dict[str, Any] = {"synthetic_symbol": "AAPL"}
 
@@ -85,8 +85,8 @@ def transport(document: dict[str, Any]) -> SpyTransport:
 
 def gateway_for(
     document: dict[str, Any], transport: SpyTransport, digest: str = BASE_DIGEST
-) -> RobinhoodReadGateway:
-    return RobinhoodReadGateway(
+) -> RobinhoodGateway:
+    return RobinhoodGateway(
         GatewayConfig(expected_manifest_digest=digest),
         load_manifest_text(dumps(document)),
         transport,
@@ -134,7 +134,7 @@ class TestReadsThatMustNotReachTheTransport:
     ) -> None:
         gateway = gateway_for(document, transport, digest)
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read(capability, arguments))
+            run(gateway.invoke(capability, arguments))
         assert excinfo.value.code is code
         assert transport.call_tool_calls == []
 
@@ -203,7 +203,7 @@ class TestSuccessfulRead:
     def test_returns_an_envelope_carrying_the_active_digest(
         self, document: dict[str, Any], transport: SpyTransport
     ) -> None:
-        envelope = run(gateway_for(document, transport).read("alpha_reading", VALID_ARGS))
+        envelope = run(gateway_for(document, transport).invoke("alpha_reading", VALID_ARGS))
         assert isinstance(envelope, ResultEnvelope)
         assert envelope.manifest_digest == BASE_DIGEST
         assert envelope.capability == "alpha_reading"
@@ -214,21 +214,21 @@ class TestSuccessfulRead:
     ) -> None:
         """§7.1/§10: the consumer verifies the contract the call was made under."""
         config_digest = BASE_DIGEST
-        envelope = run(gateway_for(document, transport, config_digest).read(
-            "alpha_reading", VALID_ARGS
-        ))
+        envelope = run(
+            gateway_for(document, transport, config_digest).invoke("alpha_reading", VALID_ARGS)
+        )
         assert envelope.manifest_digest == config_digest
 
     def test_calls_the_provider_tool_the_manifest_pins(
         self, document: dict[str, Any], transport: SpyTransport
     ) -> None:
-        run(gateway_for(document, transport).read("alpha_reading", VALID_ARGS))
+        run(gateway_for(document, transport).invoke("alpha_reading", VALID_ARGS))
         assert transport.call_tool_calls == [("synthetic_alpha_read", VALID_ARGS)]
 
     def test_the_result_digest_binds_the_payload(
         self, document: dict[str, Any], transport: SpyTransport
     ) -> None:
-        envelope = run(gateway_for(document, transport).read("alpha_reading", VALID_ARGS))
+        envelope = run(gateway_for(document, transport).invoke("alpha_reading", VALID_ARGS))
         assert envelope.result_digest.startswith("sha256:")
         assert envelope.to_json_dict()["result_digest"] == envelope.result_digest
 
@@ -249,13 +249,13 @@ class TestNoEscapeHatch:
 
     def test_the_gateway_has_no_generic_call_method(self) -> None:
         methods = {
-            n for n, _ in inspect.getmembers(RobinhoodReadGateway) if not n.startswith("_")
+            n for n, _ in inspect.getmembers(RobinhoodGateway) if not n.startswith("_")
         }
         assert methods == {
             "capabilities",
+            "invoke",
             "manifest_digest",
             "manifest_version",
-            "read",
             "readiness",
         }
 
@@ -324,7 +324,7 @@ class TestUndeclaredArgumentsAreRefused:
     """
 
     @staticmethod
-    def _loose_gateway() -> tuple[RobinhoodReadGateway, SpyTransport]:
+    def _loose_gateway() -> tuple[RobinhoodGateway, SpyTransport]:
         from tests.support import build_entry, default_entries, reseal
 
         entries = default_entries()
@@ -343,7 +343,7 @@ class TestUndeclaredArgumentsAreRefused:
         document = reseal(build_manifest(entries))
         manifest = load_manifest_text(dumps(document))
         transport = SpyTransport(document)
-        gateway = RobinhoodReadGateway(
+        gateway = RobinhoodGateway(
             GatewayConfig(expected_manifest_digest=manifest.digest), manifest, transport
         )
         return gateway, transport
@@ -357,20 +357,20 @@ class TestUndeclaredArgumentsAreRefused:
             "account_id": "RH-9999",
         }
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read("alpha_reading", hostile))
+            run(gateway.invoke("alpha_reading", hostile))
         assert excinfo.value.code is ErrorCode.INPUT_INVALID
         assert transport.call_tool_calls == []
 
     def test_declared_arguments_still_pass(self) -> None:
         gateway, transport = self._loose_gateway()
-        run(gateway.read("alpha_reading", {"synthetic_symbol": "AAPL"}))
+        run(gateway.invoke("alpha_reading", {"synthetic_symbol": "AAPL"}))
         assert transport.call_tool_calls == [("synthetic_alpha_read", {"synthetic_symbol": "AAPL"})]
 
     def test_the_refusal_names_only_caller_supplied_keys(self) -> None:
         """§7.3: the names came from the caller, so echoing them is safe."""
         gateway, _ = self._loose_gateway()
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read("alpha_reading", {"synthetic_symbol": "A", "side": "sell"}))
+            run(gateway.invoke("alpha_reading", {"synthetic_symbol": "A", "side": "sell"}))
         assert "side" in excinfo.value.message
 
 
@@ -412,7 +412,7 @@ class TestUndeclaredArgumentsAtEveryDepth:
     """
 
     @staticmethod
-    def _gateway(schema: dict[str, Any]) -> tuple[RobinhoodReadGateway, SpyTransport]:
+    def _gateway(schema: dict[str, Any]) -> tuple[RobinhoodGateway, SpyTransport]:
         from tests.support import build_entry, default_entries, reseal
 
         entries = default_entries()
@@ -427,7 +427,7 @@ class TestUndeclaredArgumentsAtEveryDepth:
         manifest = load_manifest_text(dumps(document))
         transport = SpyTransport(document)
         return (
-            RobinhoodReadGateway(
+            RobinhoodGateway(
                 GatewayConfig(expected_manifest_digest=manifest.digest), manifest, transport
             ),
             transport,
@@ -475,7 +475,7 @@ class TestUndeclaredArgumentsAtEveryDepth:
     ) -> None:
         gateway, transport = self._gateway(schema)
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read("alpha_reading", arguments))
+            run(gateway.invoke("alpha_reading", arguments))
         assert excinfo.value.code is ErrorCode.INPUT_INVALID
         assert transport.call_tool_calls == []
 
@@ -489,7 +489,7 @@ class TestUndeclaredArgumentsAtEveryDepth:
         gateway, transport = self._gateway(
             {"type": "object", "allOf": [{"properties": {"synthetic_symbol": {"type": "string"}}}]}
         )
-        run(gateway.read("alpha_reading", {"synthetic_symbol": "AAPL"}))
+        run(gateway.invoke("alpha_reading", {"synthetic_symbol": "AAPL"}))
         assert transport.call_tool_calls
 
     @pytest.mark.parametrize(
@@ -509,7 +509,7 @@ class TestUndeclaredArgumentsAtEveryDepth:
                                                    "properties": {"ok": {"type": "string"}}}}}
         )
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read("alpha_reading", {"s": inner}))
+            run(gateway.invoke("alpha_reading", {"s": inner}))
         assert excinfo.value.code is ErrorCode.INPUT_INVALID
         assert transport.call_tool_calls == []
 
@@ -528,7 +528,7 @@ class TestReadSurfacesTheOriginatingError:
         transport = AuthFailingTransport(document)
         gateway = gateway_for(document, transport)
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read("alpha_reading", VALID_ARGS))
+            run(gateway.invoke("alpha_reading", VALID_ARGS))
         assert excinfo.value.code is ErrorCode.AUTH_REQUIRED
         assert transport.call_tool_calls == []
 
@@ -536,7 +536,7 @@ class TestReadSurfacesTheOriginatingError:
         transport = SpyTransport(document)
         gateway = gateway_for(document, transport, OTHER_DIGEST)
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read("alpha_reading", VALID_ARGS))
+            run(gateway.invoke("alpha_reading", VALID_ARGS))
         assert excinfo.value.code is ErrorCode.NOT_READY
 
 
@@ -559,7 +559,7 @@ class TestTheArgumentWalkIsBounded:
             cursor.append(nxt)
             cursor = nxt
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read("alpha_reading", payload))
+            run(gateway.invoke("alpha_reading", payload))
         assert excinfo.value.code is ErrorCode.INPUT_INVALID
         assert "nests deeper" in excinfo.value.message
         assert transport.call_tool_calls == []
@@ -582,7 +582,7 @@ class TestTheArgumentWalkIsBounded:
                 },
             }
         )
-        run(gateway.read("alpha_reading", {"a": {"b": {"c": "x"}}}))
+        run(gateway.invoke("alpha_reading", {"a": {"b": {"c": "x"}}}))
         assert transport.call_tool_calls
 
 
@@ -609,7 +609,7 @@ class TestCombinatorDescent:
                 ],
             }
         )
-        run(gateway.read("alpha_reading", {"filter": {"ok": "x"}}))
+        run(gateway.invoke("alpha_reading", {"filter": {"ok": "x"}}))
         assert transport.call_tool_calls == [("synthetic_alpha_read", {"filter": {"ok": "x"}})]
 
     def test_an_undeclared_name_under_a_combinator_is_still_refused(self) -> None:
@@ -629,7 +629,7 @@ class TestCombinatorDescent:
             }
         )
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read("alpha_reading", {"filter": {"ok": "x", "side": "sell"}}))
+            run(gateway.invoke("alpha_reading", {"filter": {"ok": "x", "side": "sell"}}))
         assert excinfo.value.code is ErrorCode.INPUT_INVALID
         assert transport.call_tool_calls == []
 
@@ -651,6 +651,6 @@ class TestAdditionalPropertiesIsDeliberatelyNotFollowed:
             }
         )
         with pytest.raises(GatewayError) as excinfo:
-            run(gateway.read("alpha_reading", {"s": "A", "anything": {"side": "sell"}}))
+            run(gateway.invoke("alpha_reading", {"s": "A", "anything": {"side": "sell"}}))
         assert excinfo.value.code is ErrorCode.INPUT_INVALID
         assert transport.call_tool_calls == []

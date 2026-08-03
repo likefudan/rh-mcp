@@ -105,7 +105,7 @@ class CapabilityDescription:
     def to_json_dict(self) -> dict[str, Any]:
         return {
             "capability": self.capability,
-            "read_allowed": self.read_allowed,
+            "allowed": self.read_allowed,
             # Reported next to `read_allowed`, because `read_allowed: true` on
             # a capability that writes is exactly the confusion §2.1 warns
             # about. A consumer gating mutations reads this field; asking it to
@@ -143,7 +143,7 @@ def capability_listing(manifest: ReviewedManifest) -> tuple[CapabilityDescriptio
     )
 
 
-class RobinhoodReadGateway:
+class RobinhoodGateway:
     """A default-deny read gateway over a reviewed manifest (§7.1).
 
     Open it as an async context manager. `readiness()` reports whether reads
@@ -207,7 +207,7 @@ class RobinhoodReadGateway:
 
     # -- reads -------------------------------------------------------------
 
-    async def read(
+    async def invoke(
         self, capability: object, arguments: Mapping[str, Any] | None = None
     ) -> ResultEnvelope:
         """Perform one reviewed read (§7.1).
@@ -251,7 +251,7 @@ async def open_gateway(
     store: CredentialStore | None = None,
     manifest: ReviewedManifest | None = None,
     transport: ProviderTransport | None = None,
-) -> AsyncIterator[RobinhoodReadGateway]:
+) -> AsyncIterator[RobinhoodGateway]:
     """Open a gateway over the active reviewed manifest.
 
     `manifest` and `transport` exist for tests and for `admin discover`; a
@@ -263,13 +263,13 @@ async def open_gateway(
     active = load_active_manifest() if manifest is None else manifest
 
     if transport is not None:
-        yield RobinhoodReadGateway(config, active, transport)
+        yield RobinhoodGateway(config, active, transport)
         return
 
     credential_store = open_credential_store(config) if store is None else store
     token_provider = _token_provider_for(config, credential_store)
     async with open_provider_session(config, token_provider=token_provider) as session:
-        yield RobinhoodReadGateway(config, active, session)
+        yield RobinhoodGateway(config, active, session)
 
 
 def _token_provider_for(config: GatewayConfig, store: CredentialStore) -> Any:
@@ -287,7 +287,7 @@ def _token_provider_for(config: GatewayConfig, store: CredentialStore) -> Any:
 class AdminDiscoveryContext:
     """Owner-run discovery that cannot read (§6.1, §7.1).
 
-    Deliberately not a `RobinhoodReadGateway` subclass and deliberately not
+    Deliberately not a `RobinhoodGateway` subclass and deliberately not
     holding a manifest. There is no `read`, no capability resolution, and no
     readiness — so "discovery-only" is a property of the type rather than a
     rule someone has to remember. It observes the surface and writes a
@@ -375,7 +375,7 @@ __all__ = [
     "AdminDiscoveryContext",
     "CapabilityDescription",
     "capability_listing",
-    "RobinhoodReadGateway",
+    "RobinhoodGateway",
     "open_admin_discovery",
     "open_gateway",
     "render_json",

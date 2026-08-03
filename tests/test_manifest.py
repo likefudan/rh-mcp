@@ -57,7 +57,7 @@ from tests.support import (
 # The golden full-manifest digest of the synthetic fixture. Written out by
 # hand: if a change to canonicalization, the manifest format, or the fixture
 # moves it, that is exactly the explicit migration DESIGN.md §6 requires.
-BASE_DIGEST = "sha256:2fb965eac851c00f489dde270c0de19506538adf74e8b88251c1ce8420c29ed9"
+BASE_DIGEST = "sha256:3b7f113be230012d7f1949789401e60e9b84274ecf09f8a8ced31d5fc3e11250"
 # Arguments that satisfy ALPHA_INPUT_SCHEMA, so a preflight test fails for the
 # reason it is named after rather than on input validation.
 VALID_ARGS: dict[str, Any] = {"synthetic_symbol": "AAPL"}
@@ -328,7 +328,7 @@ def _edited_annotations() -> dict[str, Any]:
 def _flipped_disposition() -> dict[str, Any]:
     entries = default_entries()
     entries[0]["disposition"] = "denied"
-    entries[1]["disposition"] = "read_allowed"
+    entries[1]["disposition"] = "allowed"
     return reseal(build_manifest(entries))
 
 
@@ -681,7 +681,9 @@ class TestEntryValidation:
             reseal(build_manifest(entries, sort_entries=False)), "printable ASCII"
         )
 
-    @pytest.mark.parametrize("disposition", ["allowed", "READ_ALLOWED", "", None, True])
+    @pytest.mark.parametrize(
+        "disposition", ["read_allowed", "ALLOWED", "", None, True]
+    )
     def test_rejects_a_malformed_disposition(self, disposition: Any) -> None:
         expect_local_failure(
             reseal(self._with_entry(disposition=disposition)), "disposition must be one of"
@@ -824,7 +826,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:a0a1718e7924f62d0c79f82ed8a3c0a325863e62bd6d897d26a93ae8de2f6c2c"
+    SHIPPED_DIGEST = "sha256:f7ad490475d0842815173ee416d7fae18f1346f7393a9af658f0702bfcccb5e9"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -1368,7 +1370,7 @@ class TestPreflight:
             annotations={},
             schema_digest=tool_schema_digest("synthetic_alpha_read", {}, None),
             metadata_digest=tool_metadata_digest("x", {}),
-            disposition="read_allowed",
+            disposition="allowed",
             mutates=False,
             rationale="x",
         )

@@ -18,14 +18,14 @@ tools behind the gateway boundary.
 first reviewed manifest allows a set of non-trading mutations — watchlist and
 saved-scan management — alongside its reads. That was a deliberate reviewer
 decision, and §2 states the resulting rule precisely. Say it plainly here
-because the type is still named `RobinhoodReadGateway` and its method is still
+because the type is still named `RobinhoodGateway` and its method is still
 `read()`: those names are narrower than what the manifest now permits, and a
 name that overstates a guarantee is how a reader ends up trusting one that
 does not exist.
 
 It has two supported public surfaces:
 
-- **Library** — `RobinhoodReadGateway`, an async context manager for a trusted
+- **Library** — `RobinhoodGateway`, an async context manager for a trusted
   read-broker process.
 - **CLI** — `rh-mcp`, for login, readiness diagnostics, and invoking only
   capabilities present in the reviewed read manifest.
@@ -94,7 +94,7 @@ the reviewer accepted knowingly. They move no money and touch no order.
 
 Two consequences a consumer must not discover by surprise:
 
-- `RobinhoodReadGateway.read()` can mutate. Renaming the type and method to
+- `RobinhoodGateway.read()` can mutate. Renaming the type and method to
   match is deferred, not rejected — nothing has shipped, so the cost is low
   and the reason to wait is that a rename should follow the §12 release gate
   rather than ride along with a manifest change.
@@ -156,7 +156,7 @@ credentials.py  CredentialStore protocol and explicit adapters.
 auth.py         OAuth provider, DCR, browser redirect, loopback callback.
 manifest.py     Manifest loading, canonicalization, digests, drift checks.
 transport.py    Private MCP SDK v2 session and bounded pagination.
-gateway.py      RobinhoodReadGateway; preflight deny and result sanitization.
+gateway.py      RobinhoodGateway; preflight deny and result sanitization.
 models.py       SDK-neutral result envelope, readiness report, stable errors.
 cli.py          Thin CLI over gateway/auth/admin workflows.
 ```
@@ -343,7 +343,7 @@ The conceptual interface is:
 
 ```python
 config = GatewayConfig(expected_manifest_digest="sha256:...")
-async with RobinhoodReadGateway(config, credential_store) as gateway:
+async with RobinhoodGateway(config, credential_store) as gateway:
     readiness = await gateway.readiness()
     result = await gateway.read(capability, arguments)
 ```
@@ -576,6 +576,31 @@ A release is not production-ready until authenticated discovery has produced
 a reviewed manifest, all drift/deny tests pass, the credential adapter for the
 target environment is validated, and an offline consumer contract test passes
 against the built artifact.
+
+### 12.1 Independent security review — WAIVED, not satisfied
+
+The last item above has been **deliberately waived by the project owner**. It
+is recorded here as an exemption rather than quietly dropped, because a reader
+scanning §12 for what was done would otherwise reasonably assume it was.
+
+Every review this project has had was performed by agents operating under the
+same orchestration as the implementation. Those reviews were adversarial and
+productive — they found, among others, a fail-open argument-validation bypass
+that forwarded caller-chosen keys to a write-capable tool, a non-ASCII `state`
+that defeated the OAuth callback's abort, a credential record printed by a
+`__repr__`, an account identifier reaching consumer-visible JSON, and four
+separate documentation claims the code did not support. Each was fixed and
+pinned by a test.
+
+None of that makes them independent in the sense this section means. **No
+party outside the development of this software has examined it.** A reviewer
+sharing an orchestrator with the implementer shares its blind spots, and the
+three defects that reached `main` were all caught by CI running somewhere
+else — not by review.
+
+Anyone evaluating this software for use against a real brokerage account
+should weigh that directly. The same statement appears in `NOTICE`, so it
+travels with any redistribution under Apache-2.0 §4(d).
 
 ## 13. Open items
 

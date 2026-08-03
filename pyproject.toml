@@ -3,6 +3,8 @@ name = "rh-mcp"
 version = "0.1.0"
 description = "A default-deny Python Read Gateway for Robinhood's official MCP server"
 readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.12"
 # DESIGN.md §12: pinned compatible MCP SDK v2 constraints. Both are *private*
 # implementation dependencies (§4) — no public signature, exception, serialized

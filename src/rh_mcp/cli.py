@@ -209,7 +209,7 @@ async def _cmd_read(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     config = GatewayConfig.from_env()
     arguments = _parse_input(args.input)
     async with open_gateway(config) as gateway:
-        envelope = await gateway.read(args.capability, arguments)
+        envelope = await gateway.invoke(args.capability, arguments)
     _emit(envelope.to_json_dict(), out)
     return 0
 

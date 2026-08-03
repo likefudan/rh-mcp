@@ -2,12 +2,12 @@
   "manifest_format_version": "1.2",
   "canonicalization_version": "rh-canon-1",
   "digest_algorithm": "sha256",
-  "manifest_version": "2026.08.03",
-  "provider_surface_digest": "sha256:69de76b14bdec43bc5836d5a9161584e096660625746a5ca2c7a34ed1fc3eb48",
-  "observed_at": "2026-08-03T00:35:54.895670+00:00",
+  "manifest_version": "2026.08.03.1",
+  "provider_surface_digest": "sha256:a7b23c7bcf5b563a35f21331ece72a90d5df1be8149cd7b90303565d2f1b1e32",
+  "observed_at": "2026-08-03T11:13:09.688108+00:00",
   "reviewer": {
     "name": "Ke Li",
-    "reviewed_at": "2026-08-03T06:27:27.480943+00:00"
+    "reviewed_at": "2026-08-03T11:42:53.775001+00:00"
   },
   "entries": [
     {
@@ -1122,6 +1122,10 @@
                       "type": "string",
                       "description": "'cash' or 'margin' — the trading-permissions classification for the brokerage account. Crypto accounts are never marginable, so a linked crypto account has no equivalent. On retirement (IRA) accounts 'margin' means limited margin; full margin is not available there."
                     },
+                    "unsettled_funds": {
+                      "type": "string",
+                      "description": "Proceeds from recent sales not yet settled (cash accounts settle T+1), in the account's currency. Informational only and may lag live trading — this is NOT a spendable or order-gating figure; buying_power from get_portfolio is authoritative for what can be traded now. A cash-type account with unsettled_funds greater than 0 could trade with those proceeds immediately by upgrading to limited margin. Absent when upstream does not report it — treat as unknown, not zero."
+                    },
                     "brokerage_account_type": {
                       "type": "string",
                       "description": "Account type, e.g. 'individual', 'ira_traditional', 'ira_roth', 'ira_traditional_inherited', 'ira_roth_inherited', 'isa_stocks_and_shares'."
@@ -1188,7 +1192,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "Sort the list deterministically when presenting: the default account first, agentic accounts (agentic_allowed=true) second, then other individual accounts, then retirement (IRA) accounts. Present account_number, rhc_account_number (label it \"Crypto Account\"), brokerage_account_type (label it \"Account Type\" — a linked crypto account always shares it, so never add a separate crypto account type column), type (label it \"Brokerage Trading Type\"), nickname (if set), and is_default — in that column order. In the Crypto Account column show \"N/A\" for accounts with an empty rhc_account_number; omit the column entirely only when no account has one. When referring to the account in user-facing prose (e.g. \"your <X> account\"), use nickname when set; fall back to brokerage_account_type otherwise. When displaying account_number or rhc_account_number to the user, mask all but the last 4 digits (e.g. '••••1234'); pass the full value to other tools unchanged — including get_option_level_upgrade_info and any fallback upgrade URL; masking breaks the link. Flag agentic_allowed when the user is choosing an account for a trade. agentic_allowed is caller-relative — true means accessible to this agent, false means this agent cannot act on it (the account may still be agentic-enabled for a different agent). Do not use nickname to determine agentic-account eligibility. Skip false accounts for trade operations; if the user asks why, say the account is not accessible to this agent, not that it needs to be enabled. When option_level is empty or 'option_level_0' and the user wants options, call get_option_level_upgrade_info with the account_number; if that tool is unavailable, direct the user to https://applink.robinhood.com/upgrade_options?account_number=<that account's account_number> (embed the full unmasked account_number in the URL). management_type='managed' is layered on brokerage_account_type — surface alongside, not as a replacement. For tools that ask for an account identifier on a crypto-backed flow (get_crypto_positions, future crypto write tools), pass rhs_account_number; for everything else (equities, options, etc.) pass account_number."
+            "description": "Sort the list deterministically when presenting: the default account first, agentic accounts (agentic_allowed=true) second, then other individual accounts, then retirement (IRA) accounts. Present account_number, rhc_account_number (label it \"Crypto Account\"), brokerage_account_type (label it \"Account Type\" — a linked crypto account always shares it, so never add a separate crypto account type column), type (label it \"Brokerage Trading Type\"), nickname (if set), and is_default — in that column order. In the Crypto Account column show \"N/A\" for accounts with an empty rhc_account_number; omit the column entirely only when no account has one. When referring to the account in user-facing prose (e.g. \"your <X> account\"), use nickname when set; fall back to brokerage_account_type otherwise. When displaying account_number or rhc_account_number to the user, mask all but the last 4 digits (e.g. '••••1234'); pass the full value to other tools unchanged — including get_option_level_upgrade_info and any fallback upgrade URL; masking breaks the link. Flag agentic_allowed when the user is choosing an account for a trade. agentic_allowed is caller-relative — true means accessible to this agent, false means this agent cannot act on it (the account may still be agentic-enabled for a different agent). Do not use nickname to determine agentic-account eligibility. Skip false accounts for trade operations; if the user asks why, say the account is not accessible to this agent, not that it needs to be enabled. When option_level is empty or 'option_level_0' and the user wants options, call get_option_level_upgrade_info with the account_number; if that tool is unavailable, direct the user to https://applink.robinhood.com/upgrade_options?account_number=<that account's account_number> (embed the full unmasked account_number in the URL). management_type='managed' is layered on brokerage_account_type — surface alongside, not as a replacement. For tools that ask for an account identifier on a crypto-backed flow (get_crypto_positions, future crypto write tools), pass rhs_account_number; for everything else (equities, options, etc.) pass account_number. Do not add an unsettled_funds column to the account table — surface it only via the following rule. Whenever you report an account's funds, value, or buying power and that account has type='cash' with unsettled_funds greater than 0, tell the user those unsettled proceeds could be traded immediately with a limited-margin upgrade, and — if the get_limited_margin_upgrade_info tool is available — call it with the account_number and share the appropriate upgrade link. If that tool is not available, say nothing about limited margin (there is no fallback). "
           }
         },
         "required": [
@@ -1198,7 +1202,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:d9e746369d3fc749e95cdac898937b273610b1f20a54172795af6f7bc189d6a7",
+      "schema_digest": "sha256:6bc2edfdd4398048c09c9d0ec1737d05b4a6db261c1c895c364c0e8ccf8e0944",
       "metadata_digest": "sha256:4885d350880c068cef634a8d188285419e001920a969e6a7d2b4e96cedcbaedb",
       "disposition": "allowed",
       "mutates": false,
@@ -5773,7 +5777,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "Show total_value as \"account value\" or \"portfolio value\". The breakdown fields show how value is distributed across asset types. Zero-value fields mean the user has no holdings in that asset class — omit them from display unless the user explicitly asks. For \"how much cash do I have?\" use the cash field. buying_power is the real-time authoritative spendable figure from the broker; quote buying_power.buying_power as the primary affordability answer with buying_power.display_currency. For \"how much can I spend on crypto?\" quote crypto_buying_power.buying_power instead — crypto is cash-only (not marginable), so the top-level buying_power may overstate it; crypto_buying_power is omitted when unavailable. crypto_value reflects the user's crypto holdings value."
+            "description": "Show total_value as \"account value\" or \"portfolio value\". The breakdown fields show how value is distributed across asset types. Zero-value fields mean the user has no holdings in that asset class — omit them from display unless the user explicitly asks. For \"how much cash do I have?\" use the cash field. buying_power is the real-time authoritative spendable figure from the broker; quote buying_power.buying_power as the primary affordability answer with buying_power.display_currency. For \"how much can I spend on crypto?\" quote crypto_buying_power.buying_power instead — crypto is cash-only (not marginable), so the top-level buying_power may overstate it; crypto_buying_power is omitted when unavailable. crypto_value reflects the user's crypto holdings value. On a cash account, recently sold proceeds that have not yet settled are not spendable and are not included in buying_power; that unsettled amount is reported as unsettled_funds by get_accounts (not here), so if you do not already have the account's unsettled_funds, call get_accounts to check it. Whenever you report buying power or account value for a type='cash' account whose unsettled_funds is greater than 0, inform the user those unsettled proceeds could be traded immediately with a limited-margin upgrade, and — if the get_limited_margin_upgrade_info tool is available — call it with the account_number and share the appropriate upgrade link. If that tool is not available, say nothing about limited margin (there is no fallback)."
           }
         },
         "required": [
@@ -5783,7 +5787,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:4cad4e624963d36199e9158c089d716627cc7ff97c329ea71ae91751c080abc1",
+      "schema_digest": "sha256:07a6ddd447bbbbf973cbbac644bbf8c5b71022e728bde817082d175fc7ee44ea",
       "metadata_digest": "sha256:d23da6b3e81cfa9c9fd4e6b4105adbab53ce755131328deb0bed18ec14ffc1e6",
       "disposition": "allowed",
       "mutates": false,
@@ -9131,5 +9135,5 @@
       "rationale": "Renames a watchlist or changes its icon/description. Overwrites the named fields on an existing list; does not touch its contents."
     }
   ],
-  "full_manifest_digest": "sha256:f7ad490475d0842815173ee416d7fae18f1346f7393a9af658f0702bfcccb5e9"
+  "full_manifest_digest": "sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b"
 }

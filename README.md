@@ -44,7 +44,7 @@ so a consumer gating writes never has to infer which is which.
 The full-manifest digest a consumer pins:
 
 ```
-sha256:f7ad490475d0842815173ee416d7fae18f1346f7393a9af658f0702bfcccb5e9
+sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b
 ```
 
 Not released yet: the DESIGN.md §12 acceptance list remains — changelog,

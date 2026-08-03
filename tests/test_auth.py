@@ -1543,3 +1543,33 @@ def test_an_unreachable_metadata_document_reports_only_a_status() -> None:
     )
     error = refused(_discover(server))
     assert "503" in error.message
+
+
+def test_the_timeout_message_explains_the_browser_error() -> None:
+    """The user sees ERR_CONNECTION_REFUSED, not this message — say so here.
+
+    Once the budget expires the listener closes, so the redirect lands on a
+    dead port. Without the connection back to a timeout, the browser error
+    looks like a network or firewall problem.
+    """
+    import asyncio
+
+    from rh_mcp.auth import await_authorization_code
+    from rh_mcp.config import GatewayConfig, ResourceLimits
+    from rh_mcp.errors import ErrorCode, GatewayError
+
+    config = GatewayConfig(
+        expected_manifest_digest="sha256:" + "a" * 64,
+        limits=ResourceLimits(oauth_callback_timeout_s=0.01),
+    )
+
+    async def drive() -> GatewayError:
+        loop = asyncio.get_running_loop()
+        with pytest.raises(GatewayError) as excinfo:
+            await await_authorization_code(config, loop.create_future())
+        return excinfo.value
+
+    error = asyncio.run(drive())
+    assert error.code is ErrorCode.TIMEOUT
+    assert "ERR_CONNECTION_REFUSED" in error.message
+    assert "RH_MCP_CALLBACK_TIMEOUT_S" in error.message

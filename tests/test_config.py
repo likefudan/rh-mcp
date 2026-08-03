@@ -513,3 +513,47 @@ class TestFromEnv:
                 }
             )
         assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+
+class TestCallbackTimeoutIsReachable:
+    """The one tunable a human-in-the-loop login depends on (§5.1, §9).
+
+    The original 120s default was not survivable — a real sign-in is a
+    password, a 2FA code, and sometimes an approval in a phone app — and it
+    was not settable from the environment, so a user whose login took longer
+    could not complete `rh-mcp login` at all.
+    """
+
+    def test_the_default_allows_a_realistic_sign_in(self) -> None:
+        assert GatewayConfig(expected_manifest_digest=DIGEST).limits.oauth_callback_timeout_s >= 300
+
+    def test_it_can_be_raised_from_the_environment(self) -> None:
+        config = GatewayConfig.from_env(
+            environ={
+                "RH_MCP_EXPECTED_MANIFEST_DIGEST": DIGEST,
+                "RH_MCP_CALLBACK_TIMEOUT_S": "480",
+            }
+        )
+        assert config.limits.oauth_callback_timeout_s == 480.0
+
+    def test_it_is_still_bounded_by_the_reviewed_ceiling(self) -> None:
+        """§5.1 wants a short window; configurable is not unbounded."""
+        with pytest.raises(GatewayError) as excinfo:
+            GatewayConfig.from_env(
+                environ={
+                    "RH_MCP_EXPECTED_MANIFEST_DIGEST": DIGEST,
+                    "RH_MCP_CALLBACK_TIMEOUT_S": "99999",
+                }
+            )
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR
+
+    @pytest.mark.parametrize("raw", ["not-a-number", "", "0", "-5"])
+    def test_a_malformed_value_is_a_configuration_error(self, raw: str) -> None:
+        with pytest.raises(GatewayError) as excinfo:
+            GatewayConfig.from_env(
+                environ={
+                    "RH_MCP_EXPECTED_MANIFEST_DIGEST": DIGEST,
+                    "RH_MCP_CALLBACK_TIMEOUT_S": raw,
+                }
+            )
+        assert excinfo.value.code is ErrorCode.CONFIGURATION_ERROR

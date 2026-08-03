@@ -222,7 +222,16 @@ class ResourceLimits:
     connect_timeout_s: float = 5.0
     read_timeout_s: float = 10.0
     total_timeout_s: float = 30.0
-    oauth_callback_timeout_s: float = 120.0
+    # 120s was the original value and it is not survivable in practice: a real
+    # login is a password, a 2FA code, and sometimes an approval in a phone
+    # app. When the budget expires the listener closes, so the browser's
+    # redirect arrives at a dead port and the user sees ERR_CONNECTION_REFUSED
+    # with no clue that a timeout caused it. §5.1 wants a *short* window, not
+    # an unusable one — the window is only reachable over loopback and only
+    # accepts a code carrying the expected `state`, so minutes are defensible
+    # where hours would not be. Settable via RH_MCP_CALLBACK_TIMEOUT_S up to
+    # the ceiling below.
+    oauth_callback_timeout_s: float = 300.0
     discovery_timeout_s: float = 30.0
     pagination_timeout_s: float = 60.0
     max_discovery_pages: int = 20
@@ -407,6 +416,13 @@ class GatewayConfig:
                 kwargs["callback_port"] = int(raw_port)
             except ValueError:
                 _fail(f"RH_MCP_CALLBACK_PORT must be an integer, got {raw_port!r}")
+        if "RH_MCP_CALLBACK_TIMEOUT_S" in env:
+            raw_timeout = env["RH_MCP_CALLBACK_TIMEOUT_S"]
+            try:
+                seconds = float(raw_timeout)
+            except ValueError:
+                _fail(f"RH_MCP_CALLBACK_TIMEOUT_S must be a number, got {raw_timeout!r}")
+            kwargs["limits"] = ResourceLimits(oauth_callback_timeout_s=seconds)
         if "RH_MCP_CALLBACK_PATH" in env:
             kwargs["callback_path"] = env["RH_MCP_CALLBACK_PATH"]
         if "RH_MCP_DEV_URL" in env:

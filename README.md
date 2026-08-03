@@ -5,7 +5,7 @@ A default-deny Python Read Gateway for Robinhood's official MCP server
 dedicated read-broker process and expose only tool schemas that have been
 discovered, reviewed, pinned, and marked read-allowed.
 
-The planned public surfaces are:
+The public surfaces are:
 
 - **Library** — `RobinhoodReadGateway`, returning versioned, SDK-neutral,
   bounded JSON result envelopes.
@@ -44,7 +44,7 @@ so a consumer gating writes never has to infer which is which.
 The full-manifest digest a consumer pins:
 
 ```
-sha256:1790c9a915571c40b48de7a59f1a6deed6e9b97228f0e0d63e2122ee08abc375
+sha256:a0a1718e7924f62d0c79f82ed8a3c0a325863e62bd6d897d26a93ae8de2f6c2c
 ```
 
 Not released yet: the DESIGN.md §12 acceptance list remains — license,

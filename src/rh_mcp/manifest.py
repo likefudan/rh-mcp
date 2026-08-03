@@ -107,7 +107,7 @@ SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_
 # JSON value — and is published for non-Python implementers. Changing what gets
 # fed into that form is a format change, not a canonicalization change.
 #
-# Known limitation of format 1.0, to revisit on the next bump. An entry stores
+# Known limitation, carried into format 1.1 rather than fixed. An entry stores
 # `description` as a string and `annotations` as an object, so the format
 # cannot represent the difference between a provider that *omitted* either
 # field and one that sent `""` or `{}`. MCP makes both optional, so step 3's
@@ -116,7 +116,8 @@ SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_
 # The exposure is narrow — it is the fail-open direction, but only for a
 # change that carries no meaning — and closing it means adding a
 # null-vs-empty distinction to the entry schema, which is exactly the kind of
-# change this bump rule exists to govern. **Step 6's manifest review must not
+# change this bump rule exists to govern. The 1.1 bump added `mutates` and did
+# not take this on; it is still open. **Step 6's manifest review must not
 # assume a fidelity the format does not have**: if a reviewed tool's
 # description or annotations matter, record them explicitly rather than
 # relying on the digest to notice their disappearance.
@@ -645,16 +646,22 @@ PACKAGED_MANIFEST_PATH: Final = Path(__file__).parent / "manifests" / "read-mani
 def load_active_manifest() -> ReviewedManifest:
     """Load the manifest committed to the installed package (§9).
 
-    No production manifest exists yet: DESIGN.md §13 requires owner-assisted
-    authenticated discovery and human review before one can be committed. This
-    raises rather than falling back to an empty or permissive default, so a
-    gateway built on an unfinished install cannot become ready.
+    A reviewed manifest ships: 53 tools, 45 allowed and 8 denied, produced by
+    owner-assisted discovery on 2026-08-03 and reviewed by hand (§2.1, §13).
+
+    The absent-file branch below is therefore no longer the ordinary state. It
+    is now reachable only through a broken install — a wheel built without
+    package data, or a source tree with the file deleted — so it says that,
+    rather than sending an operator to run discovery for a manifest that is
+    supposed to be sitting next to this module. Either way it raises instead
+    of falling back to an empty or permissive default.
     """
     if not PACKAGED_MANIFEST_PATH.is_file():
         invalid(
-            "this release ships no reviewed read manifest; authenticated discovery and "
-            "human review (DESIGN.md §6.1, §13) must produce one before the gateway can "
-            "become ready",
+            f"the reviewed manifest is missing from this install (expected at "
+            f"{PACKAGED_MANIFEST_PATH.name} inside the package). A release ships one; its "
+            "absence means the package data did not install, not that discovery is "
+            "outstanding. Reinstall rather than regenerating a manifest.",
             _SOURCE,
         )
     return load_manifest_file(PACKAGED_MANIFEST_PATH)

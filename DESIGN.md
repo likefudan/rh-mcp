@@ -516,9 +516,12 @@ reviewed capabilities.
 
 ## 11. Testing requirements
 
-The default test suite is offline and uses synthetic schemas, fake OAuth
+The default test suite is offline. It uses synthetic schemas, fake OAuth
 services, fake transports, temporary or in-memory credential stores, and a
-controllable clock. Required coverage includes:
+controllable clock — with one deliberate exception: `TestTheShippedManifest`
+asserts directly on the committed manifest, pinning its digest and naming
+every trading tool that must stay denied. The manifest is a data file, so
+without it nothing in the suite would notice a disposition changing. Required coverage includes:
 
 - canonicalization and digest golden vectors;
 - full-manifest golden vectors proving that capability mapping, provider tool,

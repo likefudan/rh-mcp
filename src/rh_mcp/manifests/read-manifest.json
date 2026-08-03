@@ -7531,7 +7531,7 @@
       "metadata_digest": "sha256:5a6699190a41e638234942cb8fdee94d99fcba600c314dacaf1c9e110f3b5590",
       "disposition": "denied",
       "mutates": true,
-      "rationale": "Order simulation. Its input schema is the corresponding place_* schema minus only ref_id, the idempotency key, with the same required set — so allowing it would mean forwarding a complete order payload with nothing but the tool name between it and a fill. Flagged mutates=true deliberately: the only evidence it does not write is the provider's own claim, and this entry is denied precisely because that claim is not trusted. Asserting false here would put a reviewer's signature on the evidence the denial rejects."
+      "rationale": "Order simulation. Its input schema is place_equity_order's minus exactly one property, ref_id — the idempotency key — with an identical required set. Allowing it would mean forwarding a complete equity order payload with nothing but the tool name between it and a fill. Flagged mutates=true deliberately: the only evidence it does not write is the provider's own claim, and this entry is denied precisely because that claim is not trusted. Asserting false would put a reviewer's signature on the evidence the denial rejects."
     },
     {
       "capability": "review_option_order",
@@ -8165,7 +8165,7 @@
       "metadata_digest": "sha256:a10ad70ff0df2199b2509c2ec2d4fad575c5a7bbff172db259637c9cd9318313",
       "disposition": "denied",
       "mutates": true,
-      "rationale": "Order simulation. Its input schema is the corresponding place_* schema minus only ref_id, the idempotency key, with the same required set — so allowing it would mean forwarding a complete order payload with nothing but the tool name between it and a fill. Flagged mutates=true deliberately: the only evidence it does not write is the provider's own claim, and this entry is denied precisely because that claim is not trusted. Asserting false here would put a reviewer's signature on the evidence the denial rejects."
+      "rationale": "Order simulation. Its input schema carries every property of place_option_order except ref_id, the idempotency key, with an identical required set; it additionally accepts chain_symbol and underlying_type, which place_option_order does not. So it is not a strict subset — but every field needed to describe a complete option order is present, which is the part that matters. Flagged mutates=true deliberately: the only evidence it does not write is the provider's own claim, and this entry is denied precisely because that claim is not trusted. Asserting false would put a reviewer's signature on the evidence the denial rejects."
     },
     {
       "capability": "run_scan",
@@ -9131,5 +9131,5 @@
       "rationale": "Renames a watchlist or changes its icon/description. Overwrites the named fields on an existing list; does not touch its contents."
     }
   ],
-  "full_manifest_digest": "sha256:1790c9a915571c40b48de7a59f1a6deed6e9b97228f0e0d63e2122ee08abc375"
+  "full_manifest_digest": "sha256:a0a1718e7924f62d0c79f82ed8a3c0a325863e62bd6d897d26a93ae8de2f6c2c"
 }

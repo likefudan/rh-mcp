@@ -336,3 +336,32 @@ class TestLogoutAsksBeforeItPrepares:
         assert exit_code == EXIT_CODE_USAGE_ERROR
         assert opened == []
         assert out == ""
+
+
+class TestCapabilitiesNeedsNoCredential:
+    """It reads a file inside the package (§7.2).
+
+    CI caught the original: `capabilities` went through `open_gateway`, which
+    opens a credential store before anything else, so on a host without a
+    keychain the command failed with a configuration error while the manifest
+    sat right there readable. The local suite could not see it — macOS has a
+    keychain — which is the same shape as the logout ordering defect.
+    """
+
+    def test_no_credential_store_is_opened(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def explode(*args: Any, **kwargs: Any) -> Any:
+            raise AssertionError("capabilities must not open a credential store")
+
+        monkeypatch.setattr(cli, "open_credential_store", explode)
+        exit_code, out, _ = invoke(["capabilities"])
+        assert exit_code == EXIT_CODE_SUCCESS
+        assert json.loads(out)["capabilities"]
+
+    def test_no_session_is_opened(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def explode(*args: Any, **kwargs: Any) -> Any:
+            raise AssertionError("capabilities must not open a provider session")
+
+        monkeypatch.setattr(cli, "open_gateway", explode)
+        exit_code, out, _ = invoke(["capabilities"])
+        assert exit_code == EXIT_CODE_SUCCESS
+        assert json.loads(out)["capabilities"]

@@ -45,7 +45,13 @@ from rh_mcp.errors import (
     GatewayError,
     exit_code_for,
 )
-from rh_mcp.gateway import open_admin_discovery, open_gateway, render_json
+from rh_mcp.gateway import (
+    capability_listing,
+    open_admin_discovery,
+    open_gateway,
+    render_json,
+)
+from rh_mcp.manifest import load_active_manifest
 
 PROGRAM: Final = "rh-mcp"
 
@@ -172,22 +178,24 @@ async def _cmd_status(args: argparse.Namespace, out: TextIO, err: TextIO) -> int
 
 async def _cmd_capabilities(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     config = GatewayConfig.from_env()
-    async with open_gateway(config) as gateway:
-        # Both digests and an explicit comparison. This command reports the
-        # *committed* manifest, so it stays exit 0 and never establishes
-        # readiness — making it fail under a mismatch would break the one
-        # command that best explains a mismatch. But a listing of
-        # `read_allowed: true` entries could be misread as a statement about
-        # what is currently permitted, so it says plainly whether the active
-        # manifest is the one the deployment pinned.
-        matches = gateway.manifest_digest == config.expected_manifest_digest
-        payload = {
-            "manifest_version": gateway.manifest_version,
-            "manifest_digest": gateway.manifest_digest,
-            "expected_manifest_digest": config.expected_manifest_digest,
-            "digest_matches": matches,
-            "capabilities": [c.to_json_dict() for c in gateway.capabilities()],
-        }
+    # No gateway, no credential store, no session. This command reads a file
+    # that ships inside the package; opening a credential store first made it
+    # fail on any host without one while the manifest sat there readable.
+    manifest = load_active_manifest()
+    # Both digests and an explicit comparison. This command reports the
+    # *committed* manifest, so it stays exit 0 and never establishes readiness
+    # — making it fail under a mismatch would break the one command that best
+    # explains a mismatch. But a listing of `read_allowed: true` entries could
+    # be misread as a statement about what is currently permitted, so it says
+    # plainly whether the active manifest is the one the deployment pinned.
+    matches = manifest.digest == config.expected_manifest_digest
+    payload = {
+        "manifest_version": manifest.manifest_version,
+        "manifest_digest": manifest.digest,
+        "expected_manifest_digest": config.expected_manifest_digest,
+        "digest_matches": matches,
+        "capabilities": [c.to_json_dict() for c in capability_listing(manifest)],
+    }
     _emit(payload, out)
     if not matches:
         err.write(

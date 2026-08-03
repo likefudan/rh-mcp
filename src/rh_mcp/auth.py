@@ -931,10 +931,17 @@ async def await_authorization_code(
     try:
         return await asyncio.wait_for(future, timeout=config.limits.oauth_callback_timeout_s)
     except TimeoutError:
+        # Say what the user will actually see, because they will see it in the
+        # browser and not here: once this budget expires the listener closes,
+        # so the redirect lands on a dead port and Chrome reports
+        # ERR_CONNECTION_REFUSED with nothing tying it back to a timeout.
         _fail(
             ErrorCode.TIMEOUT,
             "the login callback was not completed within "
-            f"{config.limits.oauth_callback_timeout_s} seconds",
+            f"{config.limits.oauth_callback_timeout_s:g} seconds, so the local listener "
+            "closed; a browser redirect arriving now will report "
+            "ERR_CONNECTION_REFUSED. Re-run `rh-mcp login`, and if the sign-in "
+            "legitimately takes longer, raise RH_MCP_CALLBACK_TIMEOUT_S",
         )
 
 

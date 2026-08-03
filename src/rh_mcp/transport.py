@@ -242,6 +242,21 @@ def _budget_for_response(limits: ResourceLimits) -> _Budget:
     )
 
 
+def _budget_for_discovery(limits: ResourceLimits) -> _Budget:
+    """Bounds for a `tools/list` page (§8).
+
+    Same byte, node and string ceilings as any other response; only the depth
+    differs, because a page of schemas is structurally deeper than a page of
+    data. See `ResourceLimits.max_discovery_depth`.
+    """
+    return _Budget(
+        max_bytes=limits.max_response_bytes,
+        max_depth=limits.max_discovery_depth,
+        max_nodes=limits.max_response_nodes,
+        max_string_length=limits.max_response_string_length,
+    )
+
+
 def _budget_for_request(limits: ResourceLimits) -> _Budget:
     # §8 bounds request depth and serialized size. Node count and string length
     # have no separate request knob, so the response bounds stand in: they are
@@ -275,7 +290,17 @@ def bound_json(value: Any, budget: _Budget, code: ErrorCode, *, label: str = "pa
     def walk(item: Any, depth: int) -> Any:
         nonlocal nodes
         if depth > budget.max_depth:
-            _fail(code, f"{label} nests deeper than the {budget.max_depth}-level limit")
+            # Report the depth reached, not just the limit. A bound tuned
+            # against synthetic fixtures is a guess until a real provider
+            # tests it, and "it was too deep" leaves the operator guessing
+            # too. The number is structural, not payload content, so it is
+            # safe telemetry under §8 — and it turns the next failure into a
+            # measurement instead of another round of guessing.
+            _fail(
+                code,
+                f"{label} nests at least {depth} levels deep, past the "
+                f"{budget.max_depth}-level limit",
+            )
         nodes += 1
         if nodes > budget.max_nodes:
             _fail(code, f"{label} contains more than {budget.max_nodes} JSON nodes")
@@ -864,6 +889,7 @@ class _GuardedJsonClient:
         self._limits = limits
         self._response_budget = _budget_for_response(limits)
         self._request_budget = _budget_for_request(limits)
+        self._discovery_budget = _budget_for_discovery(limits)
 
     async def get_json(self, url: str) -> HttpJsonResponse:
         return await self._send("GET", url, content=None, content_type=None)
@@ -1035,6 +1061,7 @@ class _PrivateSession:
         self._semaphore = _anyio.Semaphore(limits.max_concurrent_calls)
         self._response_budget = _budget_for_response(limits)
         self._request_budget = _budget_for_request(limits)
+        self._discovery_budget = _budget_for_discovery(limits)
 
     # -- discovery ---------------------------------------------------------
 
@@ -1124,7 +1151,7 @@ class _PrivateSession:
             request_read_timeout_seconds=self._limits.discovery_timeout_s,
         )
         bounded = bound_json(
-            raw.root, self._response_budget, ErrorCode.PROTOCOL_ERROR, label="a tools/list page"
+            raw.root, self._discovery_budget, ErrorCode.PROTOCOL_ERROR, label="a tools/list page"
         )
         return cast(Mapping[str, Any], bounded)
 

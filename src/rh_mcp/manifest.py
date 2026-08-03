@@ -83,12 +83,14 @@ MANIFEST_FORMAT_VERSION: Final = "1.2"
 # one mechanically and safely — unlike `mutates`, nothing would be guessed —
 # but it would leave manifests in circulation whose own disposition field
 # asserts the thing this rename exists to stop asserting, and the migration
-# code would be the only place recording that they disagree. Nothing has been
-# published, so refusing costs one regenerated file.
+# code would be the only place recording that they disagree. Refusing costs one
+# regenerated file; the shipped manifest has been format 1.2 since v0.1.0, so
+# no 1.0 or 1.1 manifest was ever published by this project.
 SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_FORMAT_VERSION})
 
-# When to bump MANIFEST_FORMAT_VERSION — the rule, before there is a shipped
-# manifest to get it wrong on.
+# When to bump MANIFEST_FORMAT_VERSION. There *is* now a shipped manifest to
+# get this wrong on — 2026.08.03.1, pinned by consumers — so the rule below is
+# no longer free to apply.
 #
 # Bump it for any change that alters what `compute_full_manifest_digest` hashes
 # or how: a new or removed document field, a change to entry ordering, a change
@@ -117,7 +119,7 @@ SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_
 # JSON value — and is published for non-Python implementers. Changing what gets
 # fed into that form is a format change, not a canonicalization change.
 #
-# Known limitation, carried into format 1.1 rather than fixed. An entry stores
+# Known limitation, carried into format 1.2 rather than fixed. An entry stores
 # `description` as a string and `annotations` as an object, so the format
 # cannot represent the difference between a provider that *omitted* either
 # field and one that sent `""` or `{}`. MCP makes both optional, so step 3's

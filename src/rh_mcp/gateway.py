@@ -23,7 +23,7 @@ arbitrary tool would be a gateway whose manifest is advisory.
 
 `AdminDiscoveryContext` is the deliberate exception, and it is exceptional in
 the safe direction: it can observe the provider surface but has no manifest,
-cannot become ready, and has no `read` at all.
+cannot become ready, and has no `invoke` at all.
 """
 
 from __future__ import annotations
@@ -302,7 +302,7 @@ class AdminDiscoveryContext:
     """Owner-run discovery that cannot read (§6.1, §7.1).
 
     Deliberately not a `RobinhoodGateway` subclass and deliberately not
-    holding a manifest. There is no `read`, no capability resolution, and no
+    holding a manifest. There is no `invoke`, no capability resolution, and no
     readiness — so "discovery-only" is a property of the type rather than a
     rule someone has to remember. It observes the surface and writes a
     candidate manifest for human review; it grants nothing.

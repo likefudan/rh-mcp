@@ -7,12 +7,16 @@ discovered, reviewed, pinned, and marked read-allowed.
 
 The public surfaces are:
 
-- **Library** — `RobinhoodGateway`, returning versioned, SDK-neutral,
-  bounded JSON result envelopes.
+- **Library** — `open_gateway(config)`, an async context manager yielding a
+  `RobinhoodGateway` whose `invoke(capability, arguments)` returns versioned,
+  SDK-neutral, bounded JSON result envelopes. Import it as
+  `from rh_mcp.gateway import open_gateway`; the top-level `rh_mcp` package
+  re-exports nothing.
 - **CLI** — `rh-mcp`, for authentication, readiness diagnostics,
   owner-assisted manifest discovery, and reviewed read capabilities.
 
 There is deliberately no arbitrary `call_tool` or raw MCP session interface.
+(In `v0.1.0` there was one, via `rh_mcp.transport`; see Status below.)
 OAuth credentials are capable of trading because Robinhood does not advertise
 separate read/write scopes; the committed manifest and fail-closed schema
 checks are therefore the security boundary. That boundary is **"no trading",
@@ -31,8 +35,10 @@ gateway.
 
 ## Status
 
-**Usable, not yet released.** All six build-order steps have landed and the
-first reviewed manifest is committed. `DESIGN.md` is the authoritative spec.
+**Released.** `v0.1.0` shipped on 2026-08-03; `v0.2.0` is the response to the
+independent security review below. All seven DESIGN.md §14 build-order steps
+have landed except the remainder of step 7, and the first reviewed manifest is
+committed. `DESIGN.md` is the authoritative spec.
 
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03.
 A human reviewed all 53 discovered tools: **45 allowed, 8 denied**. The denied
@@ -47,14 +53,25 @@ The full-manifest digest a consumer pins:
 sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b
 ```
 
-Not released yet: the DESIGN.md §12 acceptance list remains — changelog,
-tagged artifact with checksums, and a published compatibility policy.
+Of the DESIGN.md §12 acceptance list, the changelog, the tagged artifact with
+checksums, and the independent security review have landed. A published
+compatibility policy has not.
 
-**This software has had no independent security review.** Its own design
-document requires one for release; the requirement has been deliberately
-waived, not met. Every review to date was performed by agents operating under
-the same orchestration as the implementation, so no party outside its
-development has examined it. See DESIGN.md §12.1 and `NOTICE`.
+**This software has now had an independent security review, and it found
+blocking defects.** An AI-assisted reviewer outside this project examined the
+exact `v0.1.0` artifacts and returned **CHANGES_REQUIRED**: a public transport
+export that accepted an arbitrary provider tool name with no manifest check
+(reaching `place_equity_order`), and a validated-argument snapshot that
+`invoke` discarded in favour of the caller's live mapping. Both are fixed in
+`v0.2.0`. Four prior review rounds, all run under the same orchestration as the
+implementation, found neither.
+
+The review is committed in full at `security-review/v0.1.0/`, including the
+reviewer's own adversarial tests, which CI runs on every commit. It is an
+AI-assisted review with a disclosed independence limitation, not a human
+penetration test or a certification, and its approval gate is bound to the
+`v0.1.0` artifacts — **`v0.2.0` has not been re-reviewed**. See DESIGN.md
+§12.1 and `NOTICE`.
 
 ### Canonicalization and digests
 

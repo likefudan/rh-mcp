@@ -29,18 +29,40 @@ which is why they are here rather than only in the documentation.
    requirement is not a formality — the manifest is the entire security
    boundary, and a consumer pinning a digest is relying on it.
 
-2. THIS SOFTWARE HAS NOT HAD AN INDEPENDENT SECURITY REVIEW.
+2. THIS SOFTWARE HAS HAD ONE INDEPENDENT SECURITY REVIEW. IT FOUND BLOCKING
+   DEFECTS, AND IT COVERS VERSION 0.1.0 ONLY.
 
-   Its own design document (DESIGN.md §12) lists one as a release-acceptance
-   requirement. That requirement has been deliberately waived, not met.
+   Its own design document (DESIGN.md §12) lists an independent review as a
+   release-acceptance requirement. That requirement was waived for 0.1.0. It
+   has since been met: an AI-assisted reviewer outside this project examined
+   the exact released 0.1.0 artifacts and returned CHANGES_REQUIRED. The full
+   report and the reviewer's adversarial tests are committed in this
+   repository at `security-review/v0.1.0/`.
 
-   Every review performed to date was conducted by agents operating under the
-   same orchestration as the implementation. Those reviews found real defects
-   — a fail-open argument-validation bypass, a callback-abort bypass, a
-   credential record reaching a public repr, an account identifier reaching
-   consumer-visible JSON — and each was fixed and covered by tests. But they
-   were not independent in the sense §12 means: no party outside the
-   development of this software has examined it.
+   The two blocking findings, both fixed in 0.2.0:
+
+     - A public export in `rh_mcp.transport` accepted an arbitrary provider
+       tool name with no manifest check. The reviewer reached
+       `place_equity_order` through it, while the documentation stated no
+       public surface could do that.
+     - Argument validation ran against a private copy and the result was
+       discarded; the caller's live mapping was sent to the provider, so
+       undeclared keys could be added after validation passed.
+
+   Four earlier review rounds found neither. Those rounds were conducted by
+   agents operating under the same orchestration as the implementation, and
+   they did find real defects — a fail-open argument-validation bypass, a
+   callback-abort bypass, a credential record reaching a public repr, an
+   account identifier reaching consumer-visible JSON — each fixed and covered
+   by tests. They were not independent in the sense §12 means, and the two
+   findings above are the evidence that the distinction is not procedural.
+
+   What this review is not: a human penetration test, a third-party
+   certification, or a live-authenticated assessment. The reviewer disclosed
+   that it ran in a cloud-agent environment previously used for this
+   repository's development setup. Its approval gate is bound to the exact
+   0.1.0 commit and artifacts it names. VERSION 0.2.0 HAS NOT BEEN
+   RE-REVIEWED.
 
    Anyone deploying this against a real brokerage account should read that as
    what it is.

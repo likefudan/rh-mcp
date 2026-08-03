@@ -3,7 +3,8 @@
 ## Cursor Cloud specific instructions
 
 `rh-mcp` is a single Python package (no web UI, no long-running server): a
-default-deny read gateway exposed as a library (`RobinhoodGateway`) and a CLI
+default-deny read gateway exposed as a library (`rh_mcp.gateway.open_gateway`,
+yielding a `RobinhoodGateway`) and a CLI
 (`rh-mcp`). Development is driven with [`uv`](https://docs.astral.sh/uv/); the
 authoritative spec is `DESIGN.md` and the CI contract is
 `.github/workflows/ci.yml`.

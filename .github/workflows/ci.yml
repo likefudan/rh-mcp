@@ -49,3 +49,82 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy src
       - run: uv run pytest
+
+  # Everything above tests the source tree. This tests the artifact a consumer
+  # actually installs, which is not the same thing: package data can be missing
+  # from a wheel while every source-tree test passes, and the manifest *is*
+  # package data. A gateway whose manifest did not install cannot become ready.
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.13"
+      - run: uv build
+
+      - name: Install the wheel into a clean environment
+        run: |
+          uv venv /tmp/smoke
+          # No --frozen, no source tree on the path: this must work from the
+          # artifact alone, the way a consumer gets it.
+          VIRTUAL_ENV=/tmp/smoke uv pip install dist/*.whl
+
+      - name: The manifest, LICENSE and NOTICE ship in the wheel
+        run: |
+          cd /tmp
+          /tmp/smoke/bin/python - <<'PY'
+          import importlib.metadata as md, json
+          from rh_mcp.manifest import PACKAGED_MANIFEST_PATH, load_active_manifest
+
+          assert PACKAGED_MANIFEST_PATH.is_file(), "manifest missing from the installed package"
+          manifest = load_active_manifest()
+          assert manifest.digest == manifest.declared_digest
+          print(f"manifest {manifest.manifest_version}: {manifest.digest}")
+
+          files = {f.name for f in md.files("rh-mcp") or []}
+          for required in ("LICENSE", "NOTICE"):
+              assert required in files, f"{required} missing from the distribution"
+          print("LICENSE and NOTICE present")
+          PY
+
+      - name: The console script exists and refuses without configuration
+        run: |
+          cd /tmp
+          /tmp/smoke/bin/rh-mcp --help > /dev/null
+          # No expected digest configured: must be a configuration error (exit 3),
+          # never a crash and never a success.
+          set +e
+          /tmp/smoke/bin/rh-mcp capabilities > /tmp/out.txt 2> /tmp/err.txt
+          code=$?
+          set -e
+          test "$code" -eq 3 || { echo "expected exit 3, got $code"; cat /tmp/err.txt; exit 1; }
+          test ! -s /tmp/out.txt || { echo "stdout must be empty on failure"; exit 1; }
+          echo "unconfigured invocation: exit 3, stdout empty"
+
+      - name: Trading capabilities are denied in the shipped manifest
+        run: |
+          cd /tmp
+          /tmp/smoke/bin/python - <<'PY'
+          from rh_mcp.manifest import load_active_manifest
+
+          TRADING = (
+              "place_equity_order", "place_option_order", "exercise_option",
+              "cancel_equity_order", "cancel_option_order", "cancel_option_exercise",
+              "review_equity_order", "review_option_order",
+          )
+          manifest = load_active_manifest()
+          for name in TRADING:
+              entry = manifest.capabilities[name]
+              assert entry.disposition == "denied", f"{name} is {entry.disposition} in the wheel"
+          print(f"{len(TRADING)} trading capabilities denied in the installed artifact")
+          PY
+
+      - name: Checksums
+        run: |
+          cd dist && sha256sum * | tee SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

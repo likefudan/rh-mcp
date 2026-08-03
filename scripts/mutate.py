@@ -40,6 +40,77 @@ class Mutation:
 
 
 MUTATIONS: list[Mutation] = [
+    # -- v0.2.0: the independent review's findings -------------------------
+    #
+    # Every one of these reverts the shipped v0.1.0 defect exactly. If any
+    # survives, the fix for that finding is held by no test and would ship
+    # again the next time someone tidied the line.
+    Mutation(
+        "P1: invoke sends the validated snapshot, not the caller's mapping",
+        "gateway.py",
+        "        payload = await self.__transport.call_tool(\n            entry.provider_tool_name,\n            preflight.arguments,",
+        "        payload = await self.__transport.call_tool(\n            entry.provider_tool_name,\n            arguments or {},",
+        "tests/test_gateway.py::TestValidatedSnapshotReachesTheTransport"
+        "::test_a_mapping_that_flips_after_preflight_cannot_smuggle_keys",
+    ),
+    Mutation(
+        "P1: the returned snapshot is deep-frozen, not a mutable copy",
+        "manifest.py",
+        "        arguments=freeze_json(safe_arguments, ErrorCode.INPUT_INVALID, label=\"arguments\"),",
+        "        arguments=safe_arguments,",
+        "tests/test_gateway.py::TestValidatedSnapshotReachesTheTransport"
+        "::test_the_snapshot_the_transport_receives_cannot_be_edited",
+    ),
+    Mutation(
+        "P0: ProviderTransport stays out of the published surface",
+        "transport.py",
+        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"GuardedJsonClient\",",
+        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"ProviderTransport\",\n    \"GuardedJsonClient\",",
+        "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
+        "[rh_mcp.transport]",
+    ),
+    Mutation(
+        "P0: no published name hands back a raw session",
+        "transport.py",
+        "    \"open_json_client\",\n]",
+        "    \"open_json_client\",\n    \"open_provider_session\",\n]\n\nopen_provider_session = _open_provider_session",
+        "tests/test_public_surface.py::test_no_star_imported_callable_returns_a_raw_call_surface"
+        "[rh_mcp.transport]",
+    ),
+    Mutation(
+        "P0: StoredTokenProvider stays out of the published surface",
+        "auth.py",
+        "    \"LoginOutcome\",\n    \"allowed_endpoint_origins\",",
+        "    \"LoginOutcome\",\n    \"StoredTokenProvider\",\n    \"allowed_endpoint_origins\",",
+        "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
+        "[rh_mcp.auth]",
+    ),
+    Mutation(
+        "P0: the credential store factory stays out of the published surface",
+        "credentials.py",
+        "    \"default_credential_directory\",\n]",
+        "    \"default_credential_directory\",\n    \"open_credential_store\",\n]",
+        "tests/test_public_surface.py::test_the_credential_store_factory_is_not_advertised",
+    ),
+    Mutation(
+        "P0: the transport's call takes a reviewed name, not a free-form one",
+        "transport.py",
+        "    async def call_tool(\n        self,\n        reviewed_tool_name: str,\n        arguments: Mapping[str, Any],\n        *,\n        output_schema: Mapping[str, Any] | None,\n    ) -> ToolPayload:\n        \"\"\"Send one call for an already-reviewed tool.",
+        "    async def call_tool(\n        self,\n        provider_tool_name: str,\n        arguments: Mapping[str, Any],\n        *,\n        output_schema: Mapping[str, Any] | None,\n    ) -> ToolPayload:\n        \"\"\"Send one call for an already-reviewed tool.",
+        "tests/test_public_surface.py::test_the_capability_argument_is_not_a_provider_tool_name",
+    ),
+    # A mutation of the *detector*, not of a guard. `_has_raw_call_surface`
+    # is what every sweep above depends on, and a sweep that silently stopped
+    # detecting anything would report a clean package on a broken one. This is
+    # the failure mode `TestNoEscapeHatch` had for the whole of v0.1.0, in a
+    # different form, so it gets its own mutation.
+    Mutation(
+        "the escape-hatch detector itself still detects",
+        "transport.py",
+        "    async def discover(self) -> ObservedSurface: ...\n\n    async def call_tool(",
+        "    async def discover(self) -> ObservedSurface: ...\n\n    async def call_tool_renamed(",
+        "tests/test_public_surface.py::test_the_package_still_contains_raw_call_surfaces_to_find",
+    ),
     # -- credentials.py: file adapter --------------------------------------
     Mutation(
         "file mode 0600 is enforced on read",

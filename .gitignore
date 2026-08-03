@@ -17,3 +17,11 @@ candidate.json
 candidate*.json
 review-checklist.txt
 dist/
+
+# Local agent/editor settings. The released v0.1.0 sdist shipped
+# `.claude/settings.local.json` because the release was cut from a working tree
+# where this line did not exist. Ignoring it is the smaller half of the fix —
+# the real one is the sdist allowlist in `pyproject.toml` and
+# `scripts/check_sdist.py`, which refuse an unexpected path whether or not
+# anyone remembered to ignore it.
+.claude/

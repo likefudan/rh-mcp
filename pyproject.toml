@@ -41,6 +41,43 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/rh_mcp"]
 
+# An allowlist, and it has to be one. Hatchling's default sdist is "everything
+# in the directory that git does not ignore", which is a blocklist whose
+# entries live in `.gitignore` — so any file a contributor's tooling drops into
+# the tree and nobody thought to ignore ships to PyPI. That is not theoretical:
+# the released `rh_mcp-0.1.0.tar.gz` contains `.claude/settings.local.json`,
+# a developer's local editor permissions including a filesystem path, which is
+# in no commit at the tagged revision. The wheel was clean and byte-identical
+# to a rebuild; the sdist was not, which means the release was cut from a dirty
+# working tree.
+#
+# No credential was in that file. The reason to fix it anyway is
+# reproducibility: an sdist that is not a function of the commit cannot be
+# verified against the commit, and "rebuild it yourself and compare" is the
+# only check a consumer can run without trusting us. §11.
+#
+# Adding a pattern here is a supply-chain change. `scripts/check_sdist.py`
+# re-derives the same allowlist independently and CI runs it against the built
+# artifact, so a widened glob has to be widened in two places by someone who
+# meant it.
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src/rh_mcp",
+  "/tests",
+  "/scripts",
+  "/security-review",
+  "/.github/workflows",
+  "/AGENTS.md",
+  "/CHANGELOG.md",
+  "/DESIGN.md",
+  "/INDEPENDENT_SECURITY_REVIEW.md",
+  "/LICENSE",
+  "/NOTICE",
+  "/README.md",
+  "/pyproject.toml",
+  "/uv.lock",
+]
+
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]

@@ -302,9 +302,13 @@ sanitized candidate manifest. It does not invoke a tool, print account data,
 change the active manifest, or grant permissions. The candidate becomes
 active only after code review and a package release.
 
-No real tool names or schemas are guessed before that run. Documentation and
-tests use synthetic fixtures; any provisional names observed elsewhere must
-not enter the production manifest without authenticated discovery and review.
+No real tool names or schemas are guessed before that run. Until it happened
+the documentation and tests used synthetic fixtures only; that run has now
+occurred (§13), so the committed manifest and `TestTheShippedManifest` hold
+real names and schemas while every other fixture stays synthetic. The rule
+this paragraph exists for is unchanged and still live: a provisional name
+observed anywhere else must not enter the manifest without authenticated
+discovery and review.
 
 ### 6.2 Startup and call preflight
 

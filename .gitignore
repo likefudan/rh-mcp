@@ -8,3 +8,10 @@ __pycache__/
 build/
 dist/
 .env
+
+# Owner-assisted discovery output (DESIGN.md §6.1). A successful run writes the
+# provider's complete unsanitized tool surface here — descriptions, schemas,
+# annotations. It is reviewed by a human and folded into a manifest by hand;
+# the raw dump is never committed.
+candidate.json
+candidate*.json

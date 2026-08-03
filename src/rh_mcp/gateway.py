@@ -10,8 +10,11 @@ others. The orders that matter here:
   refused unless the assessment it is checked against describes the same
   manifest the entry came from.
 * `preflight_read` resolves the capability *and* validates the arguments in
-  one call, so a caller cannot hold a pinned entry it has not earned.
-* Only after both does anything reach `ProviderTransport.call_tool`.
+  one call, so a caller cannot hold a pinned entry it has not earned — and it
+  hands back the frozen arguments it validated, so the value that reaches the
+  transport is the value that was checked rather than one that merely tested
+  clean a moment earlier.
+* Only after both does anything reach the transport's `call_tool`.
 
 What this module must never do is give a caller a way around that order. No
 public surface exposes an MCP session, a raw provider result, a provider tool
@@ -40,6 +43,7 @@ from rh_mcp.errors import ErrorCode, GatewayError
 from rh_mcp.manifest import (
     ManifestEntry,
     ObservedSurface,
+    PreflightResult,
     ReadinessAssessment,
     ReviewedManifest,
     establish_readiness,
@@ -47,7 +51,7 @@ from rh_mcp.manifest import (
     preflight_read,
 )
 from rh_mcp.models import ResultEnvelope
-from rh_mcp.transport import ProviderTransport, open_provider_session
+from rh_mcp.transport import ProviderTransport, _open_provider_session
 from rh_mcp.validation import invalid, json_safe
 
 _LOCAL: Final = ErrorCode.NOT_READY
@@ -146,8 +150,9 @@ def capability_listing(manifest: ReviewedManifest) -> tuple[CapabilityDescriptio
 class RobinhoodGateway:
     """A default-deny read gateway over a reviewed manifest (§7.1).
 
-    Open it as an async context manager. `readiness()` reports whether reads
-    are permitted and why not; `read()` performs one, or refuses.
+    Open it with `open_gateway`, as an async context manager. `readiness()`
+    reports whether reads are permitted and why not; `invoke()` performs one,
+    or refuses.
 
     The gateway holds the transport privately. There is no property, no
     attribute, and no method that yields it, the MCP session beneath it, or a
@@ -219,13 +224,22 @@ class RobinhoodGateway:
         """
         assessment = await self.readiness()
         _raise_originating_error(assessment)
-        entry: ManifestEntry = preflight_read(
+        preflight: PreflightResult = preflight_read(
             self.__manifest, assessment, capability, arguments or {}
         )
+        entry: ManifestEntry = preflight.entry
 
+        # `preflight.arguments`, never `arguments`. The caller's mapping is not
+        # this package's value: an independent security review demonstrated a
+        # `MutableMapping` that read as `{"synthetic_symbol": "AAPL"}` while
+        # preflight walked it and as `{..., "side": "buy", "quantity": "100"}`
+        # by the time the transport iterated it, and both keys reached the
+        # wire. Sending the frozen snapshot is what makes §6.2's ordering —
+        # validate against the pinned schema, and only then call the transport
+        # — a property of the data rather than of the sequence of statements.
         payload = await self.__transport.call_tool(
             entry.provider_tool_name,
-            arguments or {},
+            preflight.arguments,
             output_schema=entry.output_schema,
         )
 
@@ -268,7 +282,7 @@ async def open_gateway(
 
     credential_store = open_credential_store(config) if store is None else store
     token_provider = _token_provider_for(config, credential_store)
-    async with open_provider_session(config, token_provider=token_provider) as session:
+    async with _open_provider_session(config, token_provider=token_provider) as session:
         yield RobinhoodGateway(config, active, session)
 
 
@@ -362,7 +376,7 @@ async def open_admin_discovery(
 
     credential_store = open_credential_store(config) if store is None else store
     token_provider = _token_provider_for(config, credential_store)
-    async with open_provider_session(config, token_provider=token_provider) as session:
+    async with _open_provider_session(config, token_provider=token_provider) as session:
         yield AdminDiscoveryContext(session)
 
 

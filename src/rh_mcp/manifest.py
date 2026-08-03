@@ -1207,19 +1207,48 @@ async def establish_readiness(
 # --------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class PreflightResult:
+    """The pinned entry *and* the exact arguments that were validated (§6.2).
+
+    Both halves, returned together, because returning only the entry was a
+    real defect: the caller then had nothing to send but the mapping it was
+    handed, and an independent security reviewer proved that a caller-supplied
+    `MutableMapping` could grow `side` and `quantity` between validation and
+    the transport call. The argument walk below is exhaustive to every depth
+    and every declared name — and the wiring above it threw the walk's result
+    away and forwarded the live mapping instead. A validated copy that the
+    caller cannot send is not a validation.
+
+    `arguments` is deep-frozen (`MappingProxyType` and tuples all the way
+    down), so it is not merely a snapshot taken at the right moment but one
+    that stays true afterwards: nothing downstream, and nothing that still
+    holds a reference to the caller's original, can edit what the transport
+    will send.
+    """
+
+    entry: ManifestEntry
+    arguments: Mapping[str, Any]
+
+
 def preflight_read(
     manifest: ReviewedManifest,
     assessment: ReadinessAssessment,
     capability: object,
     arguments: Mapping[str, Any],
-) -> ManifestEntry:
+) -> PreflightResult:
     """Resolve a capability and validate its arguments, as one event (§6.2).
 
-    Returns the pinned entry only when the gateway is ready, the assessment
-    describes *this* manifest, the capability is declared, its review
-    disposition is `read_allowed`, its stored digests still match its own
-    stored schemas and metadata, **and `arguments` validates against the
-    pinned input schema**.
+    Returns the pinned entry *and the frozen arguments that were validated*,
+    and only when the gateway is ready, the assessment describes *this*
+    manifest, the capability is declared, its review disposition is
+    `read_allowed`, its stored digests still match its own stored schemas and
+    metadata, **and `arguments` validates against the pinned input schema**.
+
+    The caller must send `PreflightResult.arguments`, never the mapping it
+    passed in. That is not a style preference: the mapping a caller passes in
+    is a value this package does not control, and every check below runs
+    against a private copy of it.
 
     An unknown capability and a denied one produce the identical error, so the
     failure never discloses whether a name exists in the manifest.
@@ -1261,6 +1290,11 @@ def preflight_read(
 
     if not isinstance(arguments, Mapping):
         invalid("arguments must be a JSON object", ErrorCode.INPUT_INVALID)
+    # One read of the caller's mapping, and everything after this line works on
+    # the copy. A caller's `Mapping` is arbitrary code: `__getitem__`, `keys`
+    # and `__iter__` may return different answers on every call, so re-reading
+    # the original after validating is re-asking a witness that is free to
+    # change its story.
     safe_arguments = json_safe(arguments)
     validate_instance(
         safe_arguments,
@@ -1270,7 +1304,14 @@ def preflight_read(
         label="arguments",
     )
     _refuse_undeclared_arguments(entry, safe_arguments)
-    return entry
+    # Frozen *after* the checks and over the very object they ran against, so
+    # the value the caller may send is the value that was proved. Freezing a
+    # third copy, or re-deriving one from `arguments`, would reopen the gap
+    # this return value exists to close.
+    return PreflightResult(
+        entry=entry,
+        arguments=freeze_json(safe_arguments, ErrorCode.INPUT_INVALID, label="arguments"),
+    )
 
 
 def _refuse_undeclared_arguments(entry: ManifestEntry, arguments: Mapping[str, Any]) -> None:
@@ -1444,6 +1485,7 @@ __all__ = [
     "ManifestEntry",
     "ObservedSurface",
     "ObservedTool",
+    "PreflightResult",
     "ReadinessAssessment",
     "ReviewedManifest",
     "SurfaceDiscovery",

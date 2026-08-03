@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-from collections.abc import Coroutine, Mapping
+from collections.abc import Coroutine, Mapping, MutableMapping
 from typing import Any
 
 import pytest
@@ -233,8 +233,139 @@ class TestSuccessfulRead:
         assert envelope.to_json_dict()["result_digest"] == envelope.result_digest
 
 
+class TestValidatedSnapshotReachesTheTransport:
+    """Finding P1: `invoke` must send what preflight validated, not its input.
+
+    The reviewer's demonstration, kept in this repository's own suite so it
+    runs on every commit rather than only when someone remembers the review
+    directory. The bug was not in any check — the argument walk in
+    `manifest._refuse_undeclared` is exhaustive to every depth and every
+    declared name. It was in the wiring: `preflight_read` validated
+    `json_safe(arguments)`, a private copy, and `invoke` then forwarded the
+    caller's original mapping to the transport. A thorough guard whose result
+    is discarded is not a guard.
+    """
+
+    def test_a_mapping_that_flips_after_preflight_cannot_smuggle_keys(
+        self, document: dict[str, Any], transport: SpyTransport
+    ) -> None:
+        class FlipAfterValidate(MutableMapping[str, Any]):
+            """Valid while preflight reads it, hostile immediately after.
+
+            Not a contrived object: any `Mapping` a caller passes is arbitrary
+            code, and a plain `dict` shared with a concurrent task has the same
+            property with less effort.
+            """
+
+            def __init__(self) -> None:
+                self._current: dict[str, Any] = dict(VALID_ARGS)
+
+            def flip(self) -> None:
+                self._current = {**VALID_ARGS, "side": "buy", "quantity": "100"}
+
+            def __getitem__(self, key: str) -> Any:
+                return self._current[key]
+
+            def __setitem__(self, key: str, value: Any) -> None:
+                self._current[key] = value
+
+            def __delitem__(self, key: str) -> None:
+                del self._current[key]
+
+            def __iter__(self) -> Any:
+                return iter(self._current)
+
+            def __len__(self) -> int:
+                return len(self._current)
+
+        arguments = FlipAfterValidate()
+
+        import rh_mcp.gateway as gateway_module
+
+        original = gateway_module.preflight_read
+
+        def flipping(*args: Any, **kwargs: Any) -> Any:
+            result = original(*args, **kwargs)
+            arguments.flip()
+            return result
+
+        gateway = gateway_for(document, transport)
+        gateway_module.preflight_read = flipping  # type: ignore[assignment]
+        try:
+            run(gateway.invoke("alpha_reading", arguments))
+        finally:
+            gateway_module.preflight_read = original  # type: ignore[assignment]
+
+        assert transport.call_tool_calls, "the read should have succeeded"
+        sent_name, sent_arguments = transport.call_tool_calls[0]
+        assert sent_name == "synthetic_alpha_read"
+        assert dict(sent_arguments) == VALID_ARGS
+        assert "side" not in sent_arguments
+        assert "quantity" not in sent_arguments
+
+    def test_the_snapshot_the_transport_receives_cannot_be_edited(
+        self, document: dict[str, Any], transport: SpyTransport
+    ) -> None:
+        """A snapshot that is still mutable is a snapshot with a later window.
+
+        `SpyTransport` copies what it is handed, so this test keeps the object
+        itself: the property being asserted is that the *real* transport, which
+        iterates the mapping some time after `invoke` passed it along, cannot
+        be handed something that is still editable in the meantime. A plain
+        `dict` copy would close the reviewer's exact demonstration and leave
+        the shape of it open.
+        """
+
+        class RawRecordingTransport(SpyTransport):
+            def __init__(self, document: dict[str, Any]) -> None:
+                super().__init__(document)
+                self.raw: list[Mapping[str, Any]] = []
+
+            async def call_tool(
+                self,
+                provider_tool_name: str,
+                arguments: Mapping[str, Any],
+                *,
+                output_schema: Mapping[str, Any] | None,
+            ) -> ToolPayload:
+                self.raw.append(arguments)
+                return await super().call_tool(
+                    provider_tool_name, arguments, output_schema=output_schema
+                )
+
+        recorder = RawRecordingTransport(document)
+        run(gateway_for(document, recorder).invoke("alpha_reading", VALID_ARGS))
+        sent_arguments = recorder.raw[0]
+        assert dict(sent_arguments) == VALID_ARGS
+        with pytest.raises(TypeError):
+            sent_arguments["side"] = "buy"  # type: ignore[index]
+        assert sent_arguments is not VALID_ARGS
+
+    def test_preflight_no_longer_returns_something_sendable_on_its_own(self) -> None:
+        """The type change is the durable half of the fix.
+
+        Returning a bare `ManifestEntry` let `invoke` reach for the only
+        arguments in scope — the caller's. Returning entry *and* snapshot
+        together means the wiring bug would now be a mypy error.
+        """
+        from rh_mcp.manifest import ManifestEntry, PreflightResult, preflight_read
+
+        returned = inspect.signature(preflight_read).return_annotation
+        assert returned in (PreflightResult, "PreflightResult")
+        assert returned is not ManifestEntry
+
+
 class TestNoEscapeHatch:
-    """§1/§2: no public surface may yield a session, a raw result, or a tool name."""
+    """§1/§2: no public surface may yield a session, a raw result, or a tool name.
+
+    Scoped to `RobinhoodGateway`, and that scope is why finding P0 shipped:
+    the claim these tests were written to defend is about the whole package,
+    and `rh_mcp.transport` exported a generic `call_tool` for the whole of
+    v0.1.0 with this class green. The package-wide sweep now lives in
+    `tests/test_public_surface.py`; what stays here is the behavioural half —
+    that a *constructed* gateway holds no reachable transport — which a static
+    sweep over `__all__` cannot see.
+    """
 
     def test_the_gateway_exposes_no_transport_or_session(
         self, document: dict[str, Any], transport: SpyTransport

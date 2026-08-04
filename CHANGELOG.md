@@ -28,6 +28,37 @@ that carries them.
 
 ## [Unreleased]
 
+### Changed
+
+- `v0.2.0` was re-reviewed as a fresh artifact by the independent reviewer and
+  returned **APPROVED_FOR_AINVEST_INTEGRATION**, bound to commit `46128a62`
+  and to the released wheel and sdist re-hashed from GitHub. Both prior
+  blocking findings are recorded as resolved on the published surface. The
+  report and the reviewer's tests are committed at `security-review/v0.2.0/`.
+- DESIGN §12.1–12.3, README and `NOTICE` record the approval, what these
+  reviews are and are not, and the two non-blocking items below.
+- CI and the release workflow now discover reviewer suites with
+  `find security-review -name 'test_*.py'` rather than naming files. Listing
+  them was the same mistake as `TestNoEscapeHatch` asserting against one class:
+  the next review's tests would land in the repo and silently not run. 38
+  adversarial tests now run on every commit.
+
+### Residual risks recorded, not fixed
+
+- **Private names remain importable (reviewer P2).** A caller that deliberately
+  imports `_open_provider_session` with `StoredTokenProvider` and
+  `open_credential_store` can assemble a manifest-free session and place an
+  order. Accepted under DESIGN §3, which already states that importing this
+  package into a privileged process is not a security boundary. Recorded as a
+  **consumer requirement**: use only `open_gateway` / `RobinhoodGateway.invoke`
+  and the `rh-mcp` CLI.
+- **One `v0.1.0` adversarial assertion is defeatable by renaming (reviewer
+  P3).** Their `test_call_tool_protocol_accepts_arbitrary_provider_name_without_manifest`
+  checks the first parameter is no longer named `provider_tool_name`, which a
+  rename greens without adding a manifest check. The load-bearing check is
+  `tests/test_public_surface.py`, which asks the question of every published
+  name rather than of a list.
+
 ## [0.2.0] — unreleased
 
 The response to the independent security review of `v0.1.0`, which returned

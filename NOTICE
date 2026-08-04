@@ -29,8 +29,8 @@ which is why they are here rather than only in the documentation.
    requirement is not a formality — the manifest is the entire security
    boundary, and a consumer pinning a digest is relying on it.
 
-2. THIS SOFTWARE HAS HAD ONE INDEPENDENT SECURITY REVIEW. IT FOUND BLOCKING
-   DEFECTS, AND IT COVERS VERSION 0.1.0 ONLY.
+2. THIS SOFTWARE HAS HAD TWO INDEPENDENT SECURITY REVIEWS. THE FIRST FOUND
+   BLOCKING DEFECTS IN 0.1.0; THE SECOND APPROVED 0.2.0.
 
    Its own design document (DESIGN.md §12) lists an independent review as a
    release-acceptance requirement. That requirement was waived for 0.1.0. It
@@ -57,12 +57,36 @@ which is why they are here rather than only in the documentation.
    by tests. They were not independent in the sense §12 means, and the two
    findings above are the evidence that the distinction is not procedural.
 
-   What this review is not: a human penetration test, a third-party
-   certification, or a live-authenticated assessment. The reviewer disclosed
-   that it ran in a cloud-agent environment previously used for this
-   repository's development setup. Its approval gate is bound to the exact
-   0.1.0 commit and artifacts it names. VERSION 0.2.0 HAS NOT BEEN
-   RE-REVIEWED.
+   Version 0.2.0 was then re-reviewed as a fresh artifact and returned
+   APPROVED_FOR_AINVEST_INTEGRATION, bound to commit 46128a62 and to the
+   released wheel and sdist re-hashed from GitHub. That report is at
+   `security-review/v0.2.0/`. Both blocking findings are recorded as resolved
+   on the published surface.
+
+   ONE RESIDUAL RISK IS A REQUIREMENT ON YOU, NOT A DEFECT HERE.
+
+   A caller that imports underscore-prefixed internals by name —
+   `_open_provider_session`, together with `StoredTokenProvider` and
+   `open_credential_store` — can still assemble a session that bypasses the
+   manifest entirely and place an order. This is accepted rather than fixed,
+   because DESIGN.md §3 already states that importing this package into a
+   privileged process is not a security boundary: package separation isolates
+   neither memory nor credentials, so a caller able to do that already holds
+   the credential.
+
+   The consequence for a consumer is exact, and the reviewer recorded it as a
+   requirement:
+
+     Use only `open_gateway` / `RobinhoodGateway.invoke` and the `rh-mcp` CLI.
+     A consumer that does cannot bypass the manifest. A consumer that imports
+     underscore-prefixed names can.
+
+   What these reviews are not: human penetration tests, third-party
+   certifications, or live-authenticated assessments. The reviewer disclosed
+   that both ran in a cloud-agent environment previously used for this
+   repository's development setup, though not for the production fixes each
+   examined. Each verdict is bound to the exact commit and artifacts it names;
+   a later release is a new artifact and inherits neither.
 
    Anyone deploying this against a real brokerage account should read that as
    what it is.

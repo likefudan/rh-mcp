@@ -59,7 +59,17 @@ jobs:
       - name: Independent security review — adversarial tests
         env:
           PYTHONPATH: ${{ github.workspace }}
-        run: uv run pytest security-review/v0.1.0/test_adversarial_review.py -v
+        # Every reviewer's suite, discovered from the directory rather than
+        # listed. Naming files here is the same mistake as `TestNoEscapeHatch`
+        # asserting against one class: the next review's tests would be added
+        # to the repo and silently not run. They live outside `testpaths` on
+        # purpose, so the `uv run pytest` above does not reach them, and this
+        # step is not redundant with it.
+        run: |
+          suites=$(find security-review -name 'test_*.py' | sort)
+          test -n "$suites" || { echo "no reviewer suites found"; exit 1; }
+          echo "running: $suites"
+          uv run pytest $suites -v
 
   # Everything above tests the source tree. This tests the artifact a consumer
   # actually installs, which is not the same thing: package data can be missing

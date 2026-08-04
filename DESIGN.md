@@ -709,8 +709,53 @@ repository, though not production code for `v0.1.0`, and it used a detached
 worktree at the pinned commit. It is not a human penetration test, not a
 third-party certification, and it performed no live authenticated calls
 against Robinhood. Its approval gate is bound to the exact commit and
-artifacts it names; `v0.2.0` is a new artifact and is **not** covered by it.
-Re-review of `v0.2.0` is required before this section can say more.
+artifacts it names.
+
+### 12.2 Independent security review — APPROVED for v0.2.0
+
+`v0.2.0` was re-reviewed as a fresh artifact and returned
+**APPROVED_FOR_AINVEST_INTEGRATION** on 2026-08-04, bound to commit
+`46128a62`, the released wheel and sdist re-hashed from GitHub, manifest
+`2026.08.03.1`, and envelope version `1.0`. The report and the reviewer's own
+tests are committed at `security-review/v0.2.0/`.
+
+Both prior blocking findings are recorded as resolved *on the published
+surface*. Two non-blocking items remain, and both are consumer-facing rather
+than defects to fix here:
+
+**P2 — private names remain importable, and that is the accepted model.**
+`_open_provider_session`, `StoredTokenProvider` and `open_credential_store`
+can still be assembled into a manifest-free session by a caller who imports
+them deliberately by name. §3 already states the threat model this sits
+inside: importing this package into a broadly privileged process is not a
+security boundary, because package separation isolates neither memory nor
+credentials. The reviewer accepted it on that basis and recorded it as **a
+requirement on the consumer**, which is the useful form: *a consumer that uses
+only `open_gateway` / `RobinhoodGateway.invoke` cannot bypass the manifest; a
+consumer that imports underscore-prefixed names can.* That sentence belongs in
+`ainvest`'s integration checklist, not in a future patch here.
+
+**P3 — one of their own `v0.1.0` assertions is defeatable by renaming.**
+`test_call_tool_protocol_accepts_arbitrary_provider_name_without_manifest`
+checks that the first parameter is no longer called `provider_tool_name`, so a
+rename greens it without adding any manifest check. They flagged it against
+their own test, which is the right instinct and worth recording: the
+load-bearing check is `tests/test_public_surface.py`, which asks whether any
+published name — or anything one returns — can reach the network, derived from
+the claim rather than from a list of names. Both suites now run in CI on every
+commit so neither can regress quietly.
+
+### 12.3 What the reviews are and are not
+
+Both were **AI-assisted independent reviews with a disclosed limitation**: they
+ran in the same cloud-agent environment that had previously done
+development-environment setup for this repository, though not the production
+fixes they examined, and each used a detached worktree at its pinned commit.
+Neither is a human penetration test, neither is a third-party certification,
+and neither performed a live authenticated call against Robinhood.
+
+Each verdict is bound to the exact commit and artifacts it names. A future
+release is a new artifact and inherits neither.
 
 Anyone evaluating this software for use against a real brokerage account
 should weigh that directly. The same statement appears in `NOTICE`, so it

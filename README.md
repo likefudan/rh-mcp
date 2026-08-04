@@ -57,21 +57,39 @@ Of the DESIGN.md §12 acceptance list, the changelog, the tagged artifact with
 checksums, and the independent security review have landed. A published
 compatibility policy has not.
 
-**This software has now had an independent security review, and it found
-blocking defects.** An AI-assisted reviewer outside this project examined the
-exact `v0.1.0` artifacts and returned **CHANGES_REQUIRED**: a public transport
-export that accepted an arbitrary provider tool name with no manifest check
-(reaching `place_equity_order`), and a validated-argument snapshot that
-`invoke` discarded in favour of the caller's live mapping. Both are fixed in
-`v0.2.0`. Four prior review rounds, all run under the same orchestration as the
-implementation, found neither.
+**Two independent security reviews. The first found blocking defects in
+`v0.1.0`; the second approved `v0.2.0`.**
 
-The review is committed in full at `security-review/v0.1.0/`, including the
-reviewer's own adversarial tests, which CI runs on every commit. It is an
-AI-assisted review with a disclosed independence limitation, not a human
-penetration test or a certification, and its approval gate is bound to the
-`v0.1.0` artifacts — **`v0.2.0` has not been re-reviewed**. See DESIGN.md
-§12.1 and `NOTICE`.
+An AI-assisted reviewer outside this project examined the exact `v0.1.0`
+artifacts and returned **CHANGES_REQUIRED**: a public transport export that
+accepted an arbitrary provider tool name with no manifest check (reaching
+`place_equity_order`), and a validated-argument snapshot that `invoke`
+discarded in favour of the caller's live mapping. Four prior review rounds,
+all run under the same orchestration as the implementation, found neither.
+
+Both are fixed in `v0.2.0`, which was then re-reviewed as a fresh artifact and
+returned **APPROVED_FOR_AINVEST_INTEGRATION**.
+
+Both reviews are committed in full at `security-review/`, including the
+reviewers' own adversarial tests — 38 of them, which CI runs on every commit.
+They are AI-assisted reviews with a disclosed independence limitation, not
+human penetration tests or certifications, and each verdict is bound to the
+exact commit and artifacts it names. See DESIGN.md §12.1–12.3 and `NOTICE`.
+
+### One residual risk, and it is a requirement on you
+
+A caller that imports underscore-prefixed internals by name can still assemble
+a session that bypasses the manifest and places an order. This is accepted
+rather than fixed: DESIGN.md §3 already says importing this package into a
+privileged process is not a security boundary, so a caller able to do that
+already holds the credential.
+
+The consequence is exact, and the reviewer recorded it as a consumer
+requirement:
+
+> Use only `open_gateway` / `RobinhoodGateway.invoke` and the `rh-mcp` CLI. A
+> consumer that does cannot bypass the manifest. A consumer that imports
+> underscore-prefixed names can.
 
 ### Canonicalization and digests
 

@@ -59,6 +59,16 @@ committed at `security-review/v0.1.0/`; CI runs those tests on every commit.
   `AccessTokenProvider` was also withdrawn. Neither the reviewer nor four
   internal rounds named it; the new package-wide test found it.
 
+  `GuardedJsonClient` and `open_json_client` were withdrawn on review of this
+  fix. They are **not** a `call_tool` equivalent and do not reopen P0:
+  `open_json_client(config)` accepts no token provider and the client's three
+  verbs accept no headers, so no credential can be attached to a request made
+  through them — pointing one at the pinned MCP endpoint yields an
+  unauthenticated request. They leave because a single exported HTTP helper
+  standing beside four withdrawn ones reads as deliberately retained, and this
+  release's argument is that exported names get used. Nothing outside the
+  package implements or calls either.
+
 - **`invoke` now sends the validated argument snapshot** (reviewer finding
   P1). `preflight_read` validated a private copy of the arguments and returned
   only the `ManifestEntry`, so `invoke` forwarded the caller's original
@@ -77,16 +87,23 @@ committed at `security-review/v0.1.0/`; CI runs those tests on every commit.
   defended was about the package. The new sweep asks, of every module, what
   `from rh_mcp.<module> import *` actually binds and whether any of it — or
   anything it returns, unwrapped through `AsyncIterator` — offers a public
-  `call_tool` or `access_token`.
+  `call_tool`, `access_token`, or one of the three `GuardedJsonClient` HTTP
+  verbs. Deriving the rule is what makes it answer for the helper nobody has
+  written yet; a list of the names already found would not have caught
+  `AccessTokenProvider` or `open_json_client`.
 
 ### Changed
 
 - **BREAKING.** `open_provider_session` is now `_open_provider_session`.
-  `ProviderTransport`, `AccessTokenProvider`, `StoredTokenProvider` and
-  `open_credential_store` are no longer in their modules' `__all__`. The
-  latter four remain importable under their existing names; the first is
-  renamed. A consumer using only `GatewayConfig`, `open_gateway` and
-  `RobinhoodGateway.invoke`, as DESIGN.md §7.1 and §10 direct, is unaffected.
+  `ProviderTransport`, `AccessTokenProvider`, `GuardedJsonClient`,
+  `open_json_client`, `StoredTokenProvider` and `open_credential_store` are no
+  longer in their modules' `__all__`. Those six remain importable under their
+  existing names; only `open_provider_session` is renamed. After this,
+  `from rh_mcp.transport import *` binds exactly `PRODUCTION_EGRESS_HOSTS`,
+  `HttpJsonResponse`, `PayloadSource` and `ToolPayload` — four value types and
+  a constant, and nothing that talks to the network. A consumer using only
+  `GatewayConfig`, `open_gateway` and `RobinhoodGateway.invoke`, as DESIGN.md
+  §7.1 and §10 direct, is unaffected.
 - **BREAKING.** `manifest.preflight_read` returns `PreflightResult` rather
   than `ManifestEntry`. Callers read `.entry`, and must send `.arguments`.
 - `ProviderTransport.call_tool`'s first parameter is `reviewed_tool_name`, not

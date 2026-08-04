@@ -13,6 +13,18 @@ Two operational details matter and have both cost time before:
 * Each mutation names the test it must break. Running the whole suite would
   also pass if some *other* test happened to fail, which is not the claim.
 
+**This takes about five and a half minutes and prints nothing for the first
+several seconds of each mutation.** It is not hung. Every mutation edits a
+source file, shells out to a fresh `pytest` subprocess, and restores the file,
+so the cost is one interpreter start-up plus one test collection per mutation
+— currently 88 of them, ~3.7s each. It is deliberately not parallel: two
+mutations in flight would be editing the same working tree.
+
+Because it edits files in place and restores them in a `finally`, do not run
+it concurrently with anything else that reads `src/rh_mcp`, and do not
+interrupt it with SIGKILL — a `git status` afterwards is a cheap way to
+confirm the tree came back clean.
+
 Usage: `uv run python scripts/mutate.py [--verbose]`
 """
 
@@ -64,16 +76,32 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         "P0: ProviderTransport stays out of the published surface",
         "transport.py",
-        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"GuardedJsonClient\",",
-        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"ProviderTransport\",\n    \"GuardedJsonClient\",",
+        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"HttpJsonResponse\",",
+        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"ProviderTransport\",\n    \"HttpJsonResponse\",",
         "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
         "[rh_mcp.transport]",
     ),
     Mutation(
         "P0: no published name hands back a raw session",
         "transport.py",
-        "    \"open_json_client\",\n]",
-        "    \"open_json_client\",\n    \"open_provider_session\",\n]\n\nopen_provider_session = _open_provider_session",
+        "    \"ToolPayload\",\n]",
+        "    \"ToolPayload\",\n    \"open_provider_session\",\n]\n\nopen_provider_session = _open_provider_session",
+        "tests/test_public_surface.py::test_no_star_imported_callable_returns_a_raw_call_surface"
+        "[rh_mcp.transport]",
+    ),
+    Mutation(
+        "P0: the HTTP seam's shape stays out of the published surface",
+        "transport.py",
+        "    \"PayloadSource\",\n    \"ToolPayload\",",
+        "    \"PayloadSource\",\n    \"GuardedJsonClient\",\n    \"ToolPayload\",",
+        "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
+        "[rh_mcp.transport]",
+    ),
+    Mutation(
+        "P0: no published name hands back an HTTP client either",
+        "transport.py",
+        "    \"HttpJsonResponse\",\n    \"PayloadSource\",",
+        "    \"HttpJsonResponse\",\n    \"open_json_client\",\n    \"PayloadSource\",",
         "tests/test_public_surface.py::test_no_star_imported_callable_returns_a_raw_call_surface"
         "[rh_mcp.transport]",
     ),
@@ -109,6 +137,18 @@ MUTATIONS: list[Mutation] = [
         "transport.py",
         "    async def discover(self) -> ObservedSurface: ...\n\n    async def call_tool(",
         "    async def discover(self) -> ObservedSurface: ...\n\n    async def call_tool_renamed(",
+        "tests/test_public_surface.py::test_the_package_still_contains_raw_call_surfaces_to_find",
+    ),
+    # The same canary, for the HTTP half of the detector. The MCP half above
+    # would still pass with the three HTTP verbs missing from the frozenset,
+    # so one mutation cannot hold both — and a frozenset that had silently
+    # lost the verbs would report a clean package while `open_json_client` sat
+    # back in `__all__`.
+    Mutation(
+        "the detector still detects the HTTP seam, not only the MCP one",
+        "transport.py",
+        "    async def get_json(self, url: str) -> HttpJsonResponse: ...",
+        "    async def get_json_renamed(self, url: str) -> HttpJsonResponse: ...",
         "tests/test_public_surface.py::test_the_package_still_contains_raw_call_surfaces_to_find",
     ),
     # -- credentials.py: file adapter --------------------------------------
@@ -734,6 +774,14 @@ def run_test(test: str, verbose: bool) -> tuple[bool, str]:
 def main() -> int:
     verbose = "--verbose" in sys.argv
     survivors: list[str] = []
+    # Announced up front rather than left to the module docstring: the first
+    # sign of trouble is a reviewer watching a silent terminal and deciding the
+    # script has hung. Each line below appears only after its subprocess exits.
+    print(
+        f"{len(MUTATIONS)} mutations, one pytest subprocess each — expect roughly "
+        f"{len(MUTATIONS) * 3.7 / 60:.0f} minutes.",
+        flush=True,
+    )
     for mutation in MUTATIONS:
         original = apply(mutation)
         try:

@@ -62,14 +62,32 @@ import pytest
 import rh_mcp
 
 # A method named here makes its owner a "raw call surface": an object that can
-# reach the provider without a manifest anywhere in the path.
+# reach the network, or authorize a request to it, below the layer that knows
+# what a capability is.
 #
 # `call_tool` sends an arbitrary tool name. `access_token` mints the
 # `Authorization: Bearer` header for a write-capable `internal` credential —
 # on its own it sends nothing, but the reviewer's P0 chain was exactly
 # credential store -> token provider -> session, and a package that publishes
 # a token factory is publishing two thirds of it.
-RAW_CALL_SURFACE_METHODS = frozenset({"call_tool", "access_token"})
+#
+# The three HTTP verbs are `GuardedJsonClient`, the seam `auth.py` reaches the
+# network through. They are here after a deliberate check rather than by
+# analogy: `open_json_client(config)` accepts no token provider and the verbs
+# accept no headers, so nothing reachable this way can carry a credential, and
+# pointing one at the pinned MCP endpoint yields an unauthenticated request.
+# They are **not** a `call_tool` equivalent.
+#
+# Listing them is a judgement about the export surface, not about exploitability.
+# Four names were withdrawn from `__all__` for P0; a fifth HTTP helper left
+# standing beside them reads as deliberately retained, and this release's whole
+# argument is that exported names get used. Deriving the rule — "no published
+# name is, or hands back, something that talks to the network" — is what makes
+# the sweep answer for the helper nobody has written yet, which is the same
+# reason it is not a list of the names already found.
+RAW_CALL_SURFACE_METHODS = frozenset(
+    {"call_tool", "access_token", "get_json", "post_json", "post_form"}
+)
 
 # The published names allowed to *accept* a transport: the two context
 # managers and the two classes they construct. All four are injection seams
@@ -175,9 +193,13 @@ def test_the_package_still_contains_raw_call_surfaces_to_find() -> None:
     recognising them — a rename of `call_tool`, a typo in the frozenset — the
     sweep would report a clean package for the wrong reason.
     """
-    from rh_mcp.transport import ProviderTransport
+    from rh_mcp.transport import GuardedJsonClient, ProviderTransport
 
     assert _has_raw_call_surface(ProviderTransport) == "call_tool"
+    # The HTTP seam, checked separately: it is detected by a different method
+    # name, so a frozenset that had lost the verbs would still pass the line
+    # above and report a clean package.
+    assert _has_raw_call_surface(GuardedJsonClient) == "get_json"
 
     from rh_mcp.auth import StoredTokenProvider
 

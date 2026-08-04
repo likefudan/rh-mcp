@@ -1684,11 +1684,24 @@ async def _close_quietly(stack: AsyncExitStack) -> None:
 #   internal rounds named it. It is the shape of the seam between `auth.py`
 #   and this module, it mints the `Authorization: Bearer` header for a
 #   write-capable `internal` credential, and no consumer implements it.
+# * `GuardedJsonClient` and `open_json_client` are gone on review of the P0
+#   fix itself, and the reasoning is worth recording because it is *not* the
+#   reasoning above. They are not a `call_tool` equivalent and they do not
+#   reopen P0: `open_json_client(config)` takes no token provider, and
+#   `GuardedJsonClient`'s three verbs have no header parameter, so no
+#   credential can be attached to a request made through them. Pointing one at
+#   the pinned MCP endpoint gets an unauthenticated request.
+#
+#   They leave anyway, because leaving a single exported HTTP helper standing
+#   while four others were withdrawn tells the next reader that this one was
+#   kept on purpose — and this whole release argues that exported names get
+#   used. `GuardedJsonClient` is the shape of the seam between `auth.py` and
+#   this module and `open_json_client` is its only factory; nothing outside
+#   the package implements or calls either. Both stay importable, and
+#   `auth.py` still imports them by name.
 __all__ = [
     "PRODUCTION_EGRESS_HOSTS",
-    "GuardedJsonClient",
     "HttpJsonResponse",
     "PayloadSource",
     "ToolPayload",
-    "open_json_client",
 ]

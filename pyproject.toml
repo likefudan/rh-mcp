@@ -1,6 +1,9 @@
 [project]
 name = "rh-mcp"
-version = "0.1.0"
+# 0.2.0, not 0.1.1: withdrawing four names from the public export surface is a
+# breaking change, and SemVer for a 0.x package makes the minor the breaking
+# position. See CHANGELOG.md.
+version = "0.2.0"
 description = "A default-deny Python Read Gateway for Robinhood's official MCP server"
 readme = "README.md"
 license = "Apache-2.0"
@@ -41,9 +44,52 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/rh_mcp"]
 
+# An allowlist, and it has to be one. Hatchling's default sdist is "everything
+# in the directory that git does not ignore", which is a blocklist whose
+# entries live in `.gitignore` — so any file a contributor's tooling drops into
+# the tree and nobody thought to ignore ships to PyPI. That is not theoretical:
+# the released `rh_mcp-0.1.0.tar.gz` contains `.claude/settings.local.json`,
+# a developer's local editor permissions including a filesystem path, which is
+# in no commit at the tagged revision. The wheel was clean and byte-identical
+# to a rebuild; the sdist was not, which means the release was cut from a dirty
+# working tree.
+#
+# No credential was in that file. The reason to fix it anyway is
+# reproducibility: an sdist that is not a function of the commit cannot be
+# verified against the commit, and "rebuild it yourself and compare" is the
+# only check a consumer can run without trusting us. §11.
+#
+# Adding a pattern here is a supply-chain change. `scripts/check_sdist.py`
+# re-derives the same allowlist independently and CI runs it against the built
+# artifact, so a widened glob has to be widened in two places by someone who
+# meant it.
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src/rh_mcp",
+  "/tests",
+  "/scripts",
+  "/security-review",
+  "/.github/workflows",
+  "/AGENTS.md",
+  "/CHANGELOG.md",
+  "/DESIGN.md",
+  "/INDEPENDENT_SECURITY_REVIEW.md",
+  "/LICENSE",
+  "/NOTICE",
+  "/README.md",
+  "/pyproject.toml",
+  "/uv.lock",
+]
+
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+# `security-review/` holds an outside reviewer's deliverables, kept as they
+# wrote them so the repository records what was actually submitted. Two of
+# their imports are unused and their import block is unsorted; reformatting
+# someone else's evidence to satisfy our linter would make the artifact ours.
+# The file is still executed as an acceptance gate — see CI and CHANGELOG.
+exclude = ["security-review"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

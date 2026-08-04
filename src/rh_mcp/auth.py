@@ -1474,7 +1474,6 @@ __all__ = [
     "AuthorizationServerMetadata",
     "AuthorizationTransaction",
     "LoginOutcome",
-    "StoredTokenProvider",
     "allowed_endpoint_origins",
     "auth_status",
     "authorization_server_metadata_urls",
@@ -1496,3 +1495,9 @@ __all__ = [
     "register_client",
     "verify_discovery_metadata",
 ]
+
+# `StoredTokenProvider` is deliberately absent, for the reason recorded at the
+# foot of `credentials.py`. It is the piece that turns a credential store into
+# an `Authorization: Bearer` header on a write-capable `internal` token, and
+# v0.1.0 published it beside a public session factory that would accept it.
+# The gateway imports it lazily by name; nothing outside this package should.

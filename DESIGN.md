@@ -1,11 +1,14 @@
 # rh-mcp — Design
 
-Status: **implemented, and the first manifest is reviewed and committed.**
-Owner-assisted discovery ran against the live server on 2026-08-03; a human
-reviewed all 53 tools and committed 45 allowed / 8 denied (§2.1). What remains
-before a release is the §12 acceptance list — license, changelog, tagged
-artifact, published digest, compatibility policy, and independent security
-review.
+Status: **released.** `v0.1.0` shipped on 2026-08-03. Owner-assisted discovery
+ran against the live server the same day; a human reviewed all 53 tools and
+committed 45 allowed / 8 denied (§2.1).
+
+The §12 acceptance list is satisfied apart from one item: license, changelog,
+tagged artifact with published digests, and the independent security review
+have all landed. The published **compatibility policy** has not. `v0.2.0`
+responds to the independent review, which returned CHANGES_REQUIRED against
+`v0.1.0` — see §12.1 and `security-review/v0.1.0/`.
 
 ## 1. Purpose
 
@@ -18,21 +21,36 @@ tools behind the gateway boundary.
 first reviewed manifest allows a set of non-trading mutations — watchlist and
 saved-scan management — alongside its reads. That was a deliberate reviewer
 decision, and §2 states the resulting rule precisely. Say it plainly here
-because the type is still named `RobinhoodGateway` and its method is still
-`read()`: those names are narrower than what the manifest now permits, and a
-name that overstates a guarantee is how a reader ends up trusting one that
-does not exist.
+because the type is still named `RobinhoodGateway`: that name is narrower than
+what the manifest now permits, and a name that overstates a guarantee is how a
+reader ends up trusting one that does not exist. The method was renamed from
+`read()` to `invoke()` in `v0.1.0` for exactly that reason; the type name is
+the remaining half of the wart.
 
 It has two supported public surfaces:
 
-- **Library** — `RobinhoodGateway`, an async context manager for a trusted
-  read-broker process.
+- **Library** — `open_gateway(config)`, an async context manager yielding a
+  `RobinhoodGateway` for a trusted read-broker process. `RobinhoodGateway` is
+  not itself a context manager and is not constructed directly by a consumer:
+  it requires a loaded `ReviewedManifest` and an open transport, both of which
+  `open_gateway` supplies. Import it as
+  `from rh_mcp.gateway import open_gateway` — the top-level `rh_mcp` package
+  re-exports nothing.
 - **CLI** — `rh-mcp`, for login, readiness diagnostics, and invoking only
   capabilities present in the reviewed read manifest.
 
 The CLI is a thin shell over the same gateway. Neither surface exposes an MCP
 `ClientSession`, raw MCP result types, arbitrary tool names, or a generic
 `call_tool` operation.
+
+That last sentence was **false in `v0.1.0`** and is stated here as a corrected
+claim rather than an unbroken one. `rh_mcp.transport.__all__` exported
+`open_provider_session` and `ProviderTransport`, whose `call_tool` took any
+provider tool name with no manifest lookup; the independent reviewer reached
+`place_equity_order` through it. `v0.2.0` withdraws those names, and
+`tests/test_public_surface.py` now checks the claim across every module rather
+than only against `RobinhoodGateway` — which is how it stayed false through
+four internal review rounds. See §12.1.
 
 ## 2. Security model and non-goals
 
@@ -88,29 +106,35 @@ trading surface:
 | `review_equity_order`, `review_option_order` | "simulate an order without placing it" — denied anyway. Simulation is not a read of account state, it takes a complete order as its argument, and the meaning of "simulate" is defined entirely on Robinhood's side. If that meaning ever shifts, what we handed over was an order. |
 
 The allowed set is 34 reads plus **11 non-trading mutations**: watchlist
-create/update/add/remove/follow/unfollow, and saved-scan create/update. These
-write to Robinhood, and calling them through a method named `read()` is a wart
-the reviewer accepted knowingly. They move no money and touch no order.
+create/update/add/remove/follow/unfollow, and saved-scan create/update. They
+write to Robinhood; they move no money and touch no order.
 
 Two consequences a consumer must not discover by surprise:
 
-- `RobinhoodGateway.read()` can mutate. Renaming the type and method to
-  match is deferred, not rejected — nothing has shipped, so the cost is low
-  and the reason to wait is that a rename should follow the §12 release gate
-  rather than ride along with a manifest change.
+- `RobinhoodGateway.invoke()` can mutate. The method was named `read()` when
+  this manifest was reviewed, which was a wart the reviewer accepted knowingly;
+  it was renamed to `invoke()` before `v0.1.0` shipped. The *type* is still
+  `RobinhoodGateway`, and renaming it is deferred rather than rejected — that
+  is now a breaking change to a released API, so it belongs to a deliberate
+  major-version decision rather than riding along with a manifest change.
 - §10 tells `ainvest` this surface is safe to call unattended. That remains
   true for the trading boundary, which is what its approval and paper/live
   gates exist for — but an unattended call can now create a watchlist. If
   `ainvest` gates mutations separately, it must gate these too.
 
   It does not have to infer which ones. Every manifest entry carries a
-  reviewed `mutates` boolean, reported alongside `read_allowed` in
-  `capabilities` output. That field is why the manifest format is **1.1** and
-  not 1.0: a 1.0 manifest cannot say whether a capability writes, and a loader
-  that guessed would be guessing about precisely the thing the field exists to
-  state, so 1.0 is refused rather than migrated in place. Adding it after a
-  consumer had pinned a digest would have cost a coordinated migration; adding
-  it now costs one regenerated file.
+  reviewed `mutates` boolean, reported alongside `allowed` in `capabilities`
+  output. That field is why the manifest format left 1.0 behind: a 1.0
+  manifest cannot say whether a capability writes, and a loader that guessed
+  would be guessing about precisely the thing the field exists to state, so
+  1.0 is refused rather than migrated in place.
+
+  The current format is **1.2**, and 1.1 is refused too. 1.1 introduced
+  `mutates` but spelled the allowed disposition `read_allowed`, which read as
+  a promise the manifest had stopped making — 11 of its allowed entries write.
+  1.2 spells it `allowed`. `read_allowed` survives only as a Python attribute
+  on `ManifestEntry` and `CapabilityDescription`; it is not a manifest value
+  and not a JSON key.
 
 Also out of scope for v0:
 
@@ -154,12 +178,19 @@ That mode:
 config.py       Validated production or development configuration. No I/O.
 credentials.py  CredentialStore protocol and explicit adapters.
 auth.py         OAuth provider, DCR, browser redirect, loopback callback.
-manifest.py     Manifest loading, canonicalization, digests, drift checks.
+canonical.py    The rh-canon-1 canonicalization algorithm and digests.
+schema.py       The strict JSON Schema subset the pinned schemas validate under.
+validation.py   Shared field validators and deep JSON freezing.
+errors.py       The nine stable ErrorCodes and their exit-code buckets.
+manifest.py     Manifest loading, digests, drift checks, per-call preflight.
 transport.py    Private MCP SDK v2 session and bounded pagination.
-gateway.py      RobinhoodGateway; preflight deny and result sanitization.
-models.py       SDK-neutral result envelope, readiness report, stable errors.
+gateway.py      open_gateway/RobinhoodGateway; preflight deny and sanitization.
+models.py       SDK-neutral result envelope and readiness report.
 cli.py          Thin CLI over gateway/auth/admin workflows.
 ```
+
+The table lists every module in `src/rh_mcp/`; `__init__.py` is deliberately
+empty, so there is no top-level re-export surface to keep in step with it.
 
 The MCP Python SDK v2 and `httpx2` are private implementation dependencies.
 No public signature, exception, serialized result, or type annotation may
@@ -260,12 +291,12 @@ tool in the observed provider surface:
 - complete input schema, output schema when supplied, and relevant
   annotations;
 - deterministic canonical schema and metadata digests;
-- review disposition (`read_allowed` or `denied`) and review rationale;
+- review disposition (`allowed` or `denied`) and review rationale;
 - a required `mutates` boolean stating whether invoking the capability changes
   provider state. It is a reviewer's assertion, not a derived value — the live
   surface carries no annotations to derive it from — and it has no default: a
   manifest that omits it has not answered the question, which is not the same
-  as answering "no". Format 1.0 predates it and is refused rather than
+  as answering "no". Formats 1.0 and 1.1 are both refused rather than
   migrated, because every value a migration could supply would be a guess
   about precisely the field that exists to record a human judgement.
 - manifest format version, provider-surface digest, observation timestamp,
@@ -282,7 +313,7 @@ The **full-manifest digest** is SHA-256 over the canonical form of the complete
 manifest except the self-referential `full_manifest_digest` field. It therefore
 covers the manifest/digest format versions, provider-surface digest,
 observation and reviewer metadata, every public capability-to-provider-tool
-mapping, exact descriptions/schemas/annotations, every `read_allowed` or
+mapping, exact descriptions/schemas/annotations, every `allowed` or
 `denied` disposition and rationale, and every other manifest field. Entries
 have a defined canonical order. A capability remap, permission change,
 same-version replacement, or metadata/schema edit necessarily produces a new
@@ -364,9 +395,11 @@ checks: a consumer must deliberately accept a new full-manifest digest even if
 the package version or human-readable manifest version did not change.
 
 For each request, the gateway resolves a public capability identifier through
-the active manifest, verifies its `read_allowed` disposition and exact digest,
+the active manifest, verifies its `allowed` disposition and exact digest,
 validates the input against the pinned schema, and only then calls the private
-transport. Callers cannot supply an arbitrary provider tool name.
+transport with **the frozen arguments that validation ran against** — not with
+the mapping the caller passed in, which the caller may still mutate. Callers
+cannot supply an arbitrary provider tool name.
 
 ## 7. Public interfaces
 
@@ -375,16 +408,25 @@ transport. Callers cannot supply an arbitrary provider tool name.
 The conceptual interface is:
 
 ```python
+from rh_mcp.config import GatewayConfig
+from rh_mcp.gateway import open_gateway
+
 config = GatewayConfig(expected_manifest_digest="sha256:...")
-async with RobinhoodGateway(config, credential_store) as gateway:
+async with open_gateway(config) as gateway:
     readiness = await gateway.readiness()
-    result = await gateway.read(capability, arguments)
+    result = await gateway.invoke(capability, arguments)
 ```
 
-Every gateway instance that can invoke reads requires the expected digest as a
-trusted constructor/configuration input. A separate discovery-only
-administrative context may create a candidate manifest but cannot invoke a
-read capability or become ready.
+`open_gateway` is the entry point; `RobinhoodGateway` is what it yields, and a
+consumer does not construct it. Its `store=`, `manifest=` and `transport=`
+keywords exist for tests and for `admin discover` — a production caller passes
+none of them, and none of them can disable manifest enforcement. There is no
+`credential_store` positional parameter; the keyword is `store`.
+
+Every gateway that can invoke reads requires the expected digest as a trusted
+configuration input, carried on `GatewayConfig` rather than passed per call. A
+separate discovery-only administrative context may create a candidate manifest
+but cannot invoke a capability or become ready.
 
 Readiness is an immutable, SDK-neutral object whose JSON form includes at
 least:
@@ -439,7 +481,7 @@ call.
 
 Supported command groups are:
 
-- `login`, `logout`, and `auth status`;
+- `login`, `logout`, and `auth-status`;
 - `status` and `capabilities` for safe readiness/manifest diagnostics;
 - `read <capability> --input <json>` for reviewed capabilities only —
   34 reads and 11 non-trading mutations, never a trading tool (§2.1);
@@ -610,26 +652,65 @@ a reviewed manifest, all drift/deny tests pass, the credential adapter for the
 target environment is validated, and an offline consumer contract test passes
 against the built artifact.
 
-### 12.1 Independent security review — WAIVED, not satisfied
+### 12.1 Independent security review — PERFORMED against v0.1.0
 
-The last item above has been **deliberately waived by the project owner**. It
-is recorded here as an exemption rather than quietly dropped, because a reader
-scanning §12 for what was done would otherwise reasonably assume it was.
+This item was **waived** through `v0.1.0`. It has since been **performed**, and
+this section records the outcome rather than the exemption.
 
-Every review this project has had was performed by agents operating under the
-same orchestration as the implementation. Those reviews were adversarial and
-productive — they found, among others, a fail-open argument-validation bypass
-that forwarded caller-chosen keys to a write-capable tool, a non-ASCII `state`
-that defeated the OAuth callback's abort, a credential record printed by a
-`__repr__`, an account identifier reaching consumer-visible JSON, and four
-separate documentation claims the code did not support. Each was fixed and
-pinned by a test.
+An independent AI-assisted reviewer outside this project examined the exact
+`v0.1.0` artifacts — tag `a81464f6`, the released wheel and sdist, re-hashed
+from the GitHub release — between 2026-08-03 and 2026-08-04. Their report and
+their own adversarial tests are committed verbatim at
+`security-review/v0.1.0/`. Disposition: **CHANGES_REQUIRED**.
 
-None of that makes them independent in the sense this section means. **No
-party outside the development of this software has examined it.** A reviewer
-sharing an orchestrator with the implementer shares its blind spots, and the
-three defects that reached `main` were all caught by CI running somewhere
-else — not by review.
+They found two blocking defects:
+
+- **P0.** `rh_mcp.transport.__all__` exported `open_provider_session` and
+  `ProviderTransport`, whose `call_tool` accepted an arbitrary provider tool
+  name with no manifest lookup, alongside the credential and token helpers
+  needed to attach a write-capable bearer token. §1 of this document, the
+  README and the CHANGELOG all claimed no public surface did that. They
+  reached `place_equity_order` through the published API.
+- **P1.** `preflight_read` validated a private copy of the arguments and
+  returned only the entry; `invoke` then forwarded the caller's original
+  mapping to the transport. A `MutableMapping` that changed after validation
+  put `side` and `quantity` on the wire.
+
+Both are fixed in `v0.2.0`, together with three P2 items: a released sdist
+built from a dirty working tree, stale API and release-status claims in this
+document and the README, and absent build provenance.
+
+**The argument for the requirement is what happened, not what was found.**
+Every earlier review this project had was performed by agents operating under
+the same orchestration as the implementation. Four such rounds ran over the
+code that shipped as `v0.1.0`. They were adversarial and productive — they
+found a fail-open argument-validation bypass, a non-ASCII `state` that
+defeated the OAuth callback's abort, a credential record printed by a
+`__repr__`, an account identifier reaching consumer-visible JSON, and several
+documentation claims the code did not support. None of the four found P0 or
+P1.
+
+P0 is the sharper lesson of the two. The repository *had* a test for exactly
+that claim — `tests/test_gateway.py::TestNoEscapeHatch` — and it passed, every
+run, for the whole life of `v0.1.0`. It asked whether `RobinhoodGateway` had
+an escape hatch while the claim it defended was about the package. An outside
+reviewer, reading the claim rather than the test, went straight to the module
+the test never mentioned. A reviewer who shares an orchestrator with the
+implementer inherits the implementer's idea of where to look, and that is not
+a failure of diligence that more diligence would have fixed.
+
+`tests/test_public_surface.py` now asks the question of every module, derived
+from the claim rather than from the list of names already found.
+
+Scope and honesty about the review itself. It is an **AI-assisted independent
+review, with a disclosed limitation** — it ran in the same cloud-agent
+environment that had previously done development-environment setup for this
+repository, though not production code for `v0.1.0`, and it used a detached
+worktree at the pinned commit. It is not a human penetration test, not a
+third-party certification, and it performed no live authenticated calls
+against Robinhood. Its approval gate is bound to the exact commit and
+artifacts it names; `v0.2.0` is a new artifact and is **not** covered by it.
+Re-review of `v0.2.0` is required before this section can say more.
 
 Anyone evaluating this software for use against a real brokerage account
 should weigh that directly. The same statement appears in `NOTICE`, so it
@@ -663,7 +744,8 @@ Two provider behaviours observed and deliberately not worked around:
   because suppressing another library's warning hides a signal that is not
   ours to hide.
 
-What remains is the §12 release-acceptance list, not further observation.
+What remains of §12 is the published compatibility policy, and re-review of
+`v0.2.0` by the independent reviewer — not further observation of the provider.
 
 ## 14. Build order
 
@@ -679,3 +761,8 @@ What remains is the §12 release-acceptance list, not further observation.
    manifest, and publication of its full-manifest digest.
 7. Independent security/compatibility review, tagged release, and consumer
    contract integration.
+
+Steps 1–6 are complete. Step 7 is partly complete: `v0.1.0` was tagged and
+released, and the independent security review was performed and returned
+CHANGES_REQUIRED (§12.1). Outstanding within step 7: re-review of `v0.2.0`,
+the published compatibility policy, and consumer contract integration.

@@ -83,12 +83,14 @@ MANIFEST_FORMAT_VERSION: Final = "1.2"
 # one mechanically and safely — unlike `mutates`, nothing would be guessed —
 # but it would leave manifests in circulation whose own disposition field
 # asserts the thing this rename exists to stop asserting, and the migration
-# code would be the only place recording that they disagree. Nothing has been
-# published, so refusing costs one regenerated file.
+# code would be the only place recording that they disagree. Refusing costs one
+# regenerated file; the shipped manifest has been format 1.2 since v0.1.0, so
+# no 1.0 or 1.1 manifest was ever published by this project.
 SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_FORMAT_VERSION})
 
-# When to bump MANIFEST_FORMAT_VERSION — the rule, before there is a shipped
-# manifest to get it wrong on.
+# When to bump MANIFEST_FORMAT_VERSION. There *is* now a shipped manifest to
+# get this wrong on — 2026.08.03.1, pinned by consumers — so the rule below is
+# no longer free to apply.
 #
 # Bump it for any change that alters what `compute_full_manifest_digest` hashes
 # or how: a new or removed document field, a change to entry ordering, a change
@@ -117,7 +119,7 @@ SUPPORTED_MANIFEST_FORMAT_VERSIONS: Final[frozenset[str]] = frozenset({MANIFEST_
 # JSON value — and is published for non-Python implementers. Changing what gets
 # fed into that form is a format change, not a canonicalization change.
 #
-# Known limitation, carried into format 1.1 rather than fixed. An entry stores
+# Known limitation, carried into format 1.2 rather than fixed. An entry stores
 # `description` as a string and `annotations` as an object, so the format
 # cannot represent the difference between a provider that *omitted* either
 # field and one that sent `""` or `{}`. MCP makes both optional, so step 3's
@@ -1207,19 +1209,48 @@ async def establish_readiness(
 # --------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class PreflightResult:
+    """The pinned entry *and* the exact arguments that were validated (§6.2).
+
+    Both halves, returned together, because returning only the entry was a
+    real defect: the caller then had nothing to send but the mapping it was
+    handed, and an independent security reviewer proved that a caller-supplied
+    `MutableMapping` could grow `side` and `quantity` between validation and
+    the transport call. The argument walk below is exhaustive to every depth
+    and every declared name — and the wiring above it threw the walk's result
+    away and forwarded the live mapping instead. A validated copy that the
+    caller cannot send is not a validation.
+
+    `arguments` is deep-frozen (`MappingProxyType` and tuples all the way
+    down), so it is not merely a snapshot taken at the right moment but one
+    that stays true afterwards: nothing downstream, and nothing that still
+    holds a reference to the caller's original, can edit what the transport
+    will send.
+    """
+
+    entry: ManifestEntry
+    arguments: Mapping[str, Any]
+
+
 def preflight_read(
     manifest: ReviewedManifest,
     assessment: ReadinessAssessment,
     capability: object,
     arguments: Mapping[str, Any],
-) -> ManifestEntry:
+) -> PreflightResult:
     """Resolve a capability and validate its arguments, as one event (§6.2).
 
-    Returns the pinned entry only when the gateway is ready, the assessment
-    describes *this* manifest, the capability is declared, its review
-    disposition is `read_allowed`, its stored digests still match its own
-    stored schemas and metadata, **and `arguments` validates against the
-    pinned input schema**.
+    Returns the pinned entry *and the frozen arguments that were validated*,
+    and only when the gateway is ready, the assessment describes *this*
+    manifest, the capability is declared, its review disposition is
+    `read_allowed`, its stored digests still match its own stored schemas and
+    metadata, **and `arguments` validates against the pinned input schema**.
+
+    The caller must send `PreflightResult.arguments`, never the mapping it
+    passed in. That is not a style preference: the mapping a caller passes in
+    is a value this package does not control, and every check below runs
+    against a private copy of it.
 
     An unknown capability and a denied one produce the identical error, so the
     failure never discloses whether a name exists in the manifest.
@@ -1261,6 +1292,11 @@ def preflight_read(
 
     if not isinstance(arguments, Mapping):
         invalid("arguments must be a JSON object", ErrorCode.INPUT_INVALID)
+    # One read of the caller's mapping, and everything after this line works on
+    # the copy. A caller's `Mapping` is arbitrary code: `__getitem__`, `keys`
+    # and `__iter__` may return different answers on every call, so re-reading
+    # the original after validating is re-asking a witness that is free to
+    # change its story.
     safe_arguments = json_safe(arguments)
     validate_instance(
         safe_arguments,
@@ -1270,7 +1306,14 @@ def preflight_read(
         label="arguments",
     )
     _refuse_undeclared_arguments(entry, safe_arguments)
-    return entry
+    # Frozen *after* the checks and over the very object they ran against, so
+    # the value the caller may send is the value that was proved. Freezing a
+    # third copy, or re-deriving one from `arguments`, would reopen the gap
+    # this return value exists to close.
+    return PreflightResult(
+        entry=entry,
+        arguments=freeze_json(safe_arguments, ErrorCode.INPUT_INVALID, label="arguments"),
+    )
 
 
 def _refuse_undeclared_arguments(entry: ManifestEntry, arguments: Mapping[str, Any]) -> None:
@@ -1444,6 +1487,7 @@ __all__ = [
     "ManifestEntry",
     "ObservedSurface",
     "ObservedTool",
+    "PreflightResult",
     "ReadinessAssessment",
     "ReviewedManifest",
     "SurfaceDiscovery",

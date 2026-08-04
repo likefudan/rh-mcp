@@ -197,21 +197,45 @@ class AccessTokenProvider(Protocol):
 
 
 class ProviderTransport(Protocol):
-    """What step 5 needs from an open session. `SurfaceDiscovery` plus a call.
+    """The private seam between `gateway.py` and an open session — not public.
 
     Structural rather than concrete so the gateway can be tested against a
-    fake without either side importing the other's implementation.
+    fake without either side importing the other's implementation. Kept out of
+    `__all__`: this is a shape, and a shape whose `call_tool` authorizes
+    nothing.
+
+    That last part is the correction v0.2.0 makes. This protocol is a *pipe*.
+    It performs no manifest lookup, no disposition check and no schema
+    validation, and it must never be mistaken for a place where those could
+    happen — it sits below the layer that knows what a capability is. All of
+    the authorization lives in `manifest.preflight_read`, and the single
+    caller allowed to reach this method is `RobinhoodGateway.invoke`, after
+    that preflight returns.
     """
 
     async def discover(self) -> ObservedSurface: ...
 
     async def call_tool(
         self,
-        provider_tool_name: str,
+        reviewed_tool_name: str,
         arguments: Mapping[str, Any],
         *,
         output_schema: Mapping[str, Any] | None,
-    ) -> ToolPayload: ...
+    ) -> ToolPayload:
+        """Send one call for an already-reviewed tool.
+
+        `reviewed_tool_name` is named for its only legal provenance: a
+        `ManifestEntry.provider_tool_name` carried out of a successful
+        `preflight_read`. It was `provider_tool_name` in v0.1.0, and the
+        rename is not cosmetic — while this protocol was exported, that
+        parameter read as an invitation to pass whatever string you had, and a
+        reviewer accepted it: `call_tool("place_equity_order", ...)` went
+        through against a synthetic server.
+
+        `arguments` is likewise the frozen `PreflightResult.arguments`, not
+        anything the original caller still holds a reference to.
+        """
+        ...
 
 
 def _fail(code: ErrorCode, message: str, *, retryable: bool = False) -> NoReturn:
@@ -770,7 +794,7 @@ def _build_http_client(
 def _new_base_transport() -> _httpx2.AsyncBaseTransport:
     """The real network transport, isolated so the suite can replace it.
 
-    A separate function purely so `open_provider_session` needs no injection
+    A separate function purely so `_open_provider_session` needs no injection
     parameter: an `httpx2` type in that signature would breach §4, and a
     public "give me your own transport" hook is a hole in the pinning this
     module exists to enforce. The offline suite patches this name, which means
@@ -1159,7 +1183,7 @@ class _PrivateSession:
 
     async def call_tool(
         self,
-        provider_tool_name: str,
+        reviewed_tool_name: str,
         arguments: Mapping[str, Any],
         *,
         output_schema: Mapping[str, Any] | None,
@@ -1169,8 +1193,12 @@ class _PrivateSession:
         Exactly one: there is no retry here for any reason, including a
         provider `idempotentHint` (§8). A failed read returns a stable error
         and the consumer decides deliberately whether to ask again.
+
+        This method trusts `reviewed_tool_name` completely, and that is by
+        design — see `ProviderTransport.call_tool`. The trust is only sound
+        because the class holding it is unreachable from any exported name.
         """
-        if not isinstance(provider_tool_name, str) or not provider_tool_name:
+        if not isinstance(reviewed_tool_name, str) or not reviewed_tool_name:
             _fail(ErrorCode.INPUT_INVALID, "a provider tool name is required")
         if not isinstance(arguments, Mapping):
             _fail(ErrorCode.INPUT_INVALID, "tool arguments must be a JSON object")
@@ -1196,7 +1224,7 @@ class _PrivateSession:
                     raw = await self.__session.send_request(
                         _mcp_types.CallToolRequest(
                             params=_mcp_types.CallToolRequestParams(
-                                name=provider_tool_name, arguments=payload
+                                name=reviewed_tool_name, arguments=payload
                             )
                         ),
                         _RawResult,
@@ -1476,12 +1504,34 @@ constructs one — `_open_over_connector` is private for exactly that reason.
 
 
 @asynccontextmanager
-async def open_provider_session(
+async def _open_provider_session(
     config: GatewayConfig,
     *,
     token_provider: AccessTokenProvider | None = None,
 ) -> AsyncIterator[ProviderTransport]:
     """Open the one private MCP session, choosing its transport once (§4).
+
+    Underscored, and it is the underscore that carries the security claim §1
+    and the README make: *no public surface accepts an arbitrary provider tool
+    name*. This function hands back an object whose `call_tool` takes any name
+    the caller likes, with no manifest anywhere in the path — it is the raw
+    pipe the gateway wraps, not a smaller gateway. While it was exported as
+    `open_provider_session`, that claim was simply false, and an independent
+    security reviewer demonstrated `call_tool("place_equity_order", ...)`
+    succeeding against a synthetic server through the published API.
+
+    Be precise about what the underscore does and does not buy. §3 already
+    says in-process separation is not a security boundary: code that can call
+    this is inside the broker process and can read the credential store
+    directly, so nothing here stops an attacker who is already there. What it
+    stops is the realistic failure — the reviewer's own phrasing, "a buggy
+    `ainvest` adapter that imports transport helpers". Exported names get
+    imported, and an import that compiles reads as an endorsement. The defect
+    being fixed is a documented public contract that was untrue, which is
+    worth fixing on its own terms and is not a privilege escalation.
+
+    `rh_mcp.gateway` reaches it through the deliberate module-private seam
+    below; nothing else in the package, and nothing outside it, should.
 
     Production is Streamable HTTP against the pinned resource URL and nothing
     else: the URL comes from `config.effective_resource_url`, which returns the
@@ -1612,14 +1662,46 @@ async def _close_quietly(stack: AsyncExitStack) -> None:
 # Every name here is SDK-neutral. The guarded transport, the egress policy and
 # the client factory are private precisely because their signatures mention
 # `httpx2` types, and §4 forbids that on a public one.
+#
+# Two names that were here in v0.1.0 are deliberately gone, and this list is
+# the security-relevant half of that removal:
+#
+# * `open_provider_session` is now `_open_provider_session`. It returns an
+#   object with an unrestricted `call_tool`; publishing it published a
+#   manifest-free path to every tool Robinhood serves, trading included.
+# * `ProviderTransport` stays importable under its own name because it is a
+#   structural `Protocol` — a type, not a capability. Importing it grants
+#   nothing: you still need an object that implements it, and the only
+#   implementation in this package is now behind the underscore above. It is
+#   out of `__all__` because it is the *shape* of the private seam between
+#   `gateway.py` and this module, and `tests/test_public_surface.py` treats
+#   anything in any `__all__` whose `call_tool` takes a free-form tool name as
+#   a released escape hatch. Keeping it here would keep failing that test, and
+#   the test is right: `__all__` is this package's statement of what it
+#   supports.
+# * `AccessTokenProvider` is gone for the same reason as `ProviderTransport`,
+#   and the new package sweep is what found it — neither the reviewer nor four
+#   internal rounds named it. It is the shape of the seam between `auth.py`
+#   and this module, it mints the `Authorization: Bearer` header for a
+#   write-capable `internal` credential, and no consumer implements it.
+# * `GuardedJsonClient` and `open_json_client` are gone on review of the P0
+#   fix itself, and the reasoning is worth recording because it is *not* the
+#   reasoning above. They are not a `call_tool` equivalent and they do not
+#   reopen P0: `open_json_client(config)` takes no token provider, and
+#   `GuardedJsonClient`'s three verbs have no header parameter, so no
+#   credential can be attached to a request made through them. Pointing one at
+#   the pinned MCP endpoint gets an unauthenticated request.
+#
+#   They leave anyway, because leaving a single exported HTTP helper standing
+#   while four others were withdrawn tells the next reader that this one was
+#   kept on purpose — and this whole release argues that exported names get
+#   used. `GuardedJsonClient` is the shape of the seam between `auth.py` and
+#   this module and `open_json_client` is its only factory; nothing outside
+#   the package implements or calls either. Both stay importable, and
+#   `auth.py` still imports them by name.
 __all__ = [
     "PRODUCTION_EGRESS_HOSTS",
-    "AccessTokenProvider",
-    "GuardedJsonClient",
     "HttpJsonResponse",
     "PayloadSource",
-    "ProviderTransport",
     "ToolPayload",
-    "open_json_client",
-    "open_provider_session",
 ]

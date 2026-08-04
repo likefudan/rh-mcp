@@ -50,6 +50,17 @@ jobs:
       - run: uv run mypy src
       - run: uv run pytest
 
+      # The independent reviewer's own adversarial tests, run as an acceptance
+      # gate rather than as a historical document. Four of these failed against
+      # v0.1.0 and those four failures were findings P0 and P1; running them on
+      # every commit is what stops either finding returning quietly. They are
+      # deliberately outside `testpaths`, so `uv run pytest` above does not
+      # reach them — this line is not redundant.
+      - name: Independent security review — adversarial tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: uv run pytest security-review/v0.1.0/test_adversarial_review.py -v
+
   # Everything above tests the source tree. This tests the artifact a consumer
   # actually installs, which is not the same thing: package data can be missing
   # from a wheel while every source-tree test passes, and the manifest *is*
@@ -62,6 +73,15 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv build
+
+      # The sdist must be a function of the commit, not of whoever's working
+      # tree it was built in. The released v0.1.0 sdist was not: it carried
+      # `.claude/settings.local.json`, absent from the tagged commit, and the
+      # published checksum matched that dirty artifact — so the thing consumers
+      # could verify against was itself the wrong thing. An allowlist, so that
+      # the next unexpected path fails here whether or not anyone predicted it.
+      - name: The sdist contains only allowlisted paths
+        run: uv run python scripts/check_sdist.py dist/*.tar.gz
 
       - name: Install the wheel into a clean environment
         run: |

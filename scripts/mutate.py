@@ -13,6 +13,18 @@ Two operational details matter and have both cost time before:
 * Each mutation names the test it must break. Running the whole suite would
   also pass if some *other* test happened to fail, which is not the claim.
 
+**This takes about five and a half minutes and prints nothing for the first
+several seconds of each mutation.** It is not hung. Every mutation edits a
+source file, shells out to a fresh `pytest` subprocess, and restores the file,
+so the cost is one interpreter start-up plus one test collection per mutation
+— currently 88 of them, ~3.7s each. It is deliberately not parallel: two
+mutations in flight would be editing the same working tree.
+
+Because it edits files in place and restores them in a `finally`, do not run
+it concurrently with anything else that reads `src/rh_mcp`, and do not
+interrupt it with SIGKILL — a `git status` afterwards is a cheap way to
+confirm the tree came back clean.
+
 Usage: `uv run python scripts/mutate.py [--verbose]`
 """
 
@@ -40,6 +52,105 @@ class Mutation:
 
 
 MUTATIONS: list[Mutation] = [
+    # -- v0.2.0: the independent review's findings -------------------------
+    #
+    # Every one of these reverts the shipped v0.1.0 defect exactly. If any
+    # survives, the fix for that finding is held by no test and would ship
+    # again the next time someone tidied the line.
+    Mutation(
+        "P1: invoke sends the validated snapshot, not the caller's mapping",
+        "gateway.py",
+        "        payload = await self.__transport.call_tool(\n            entry.provider_tool_name,\n            preflight.arguments,",
+        "        payload = await self.__transport.call_tool(\n            entry.provider_tool_name,\n            arguments or {},",
+        "tests/test_gateway.py::TestValidatedSnapshotReachesTheTransport"
+        "::test_a_mapping_that_flips_after_preflight_cannot_smuggle_keys",
+    ),
+    Mutation(
+        "P1: the returned snapshot is deep-frozen, not a mutable copy",
+        "manifest.py",
+        "        arguments=freeze_json(safe_arguments, ErrorCode.INPUT_INVALID, label=\"arguments\"),",
+        "        arguments=safe_arguments,",
+        "tests/test_gateway.py::TestValidatedSnapshotReachesTheTransport"
+        "::test_the_snapshot_the_transport_receives_cannot_be_edited",
+    ),
+    Mutation(
+        "P0: ProviderTransport stays out of the published surface",
+        "transport.py",
+        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"HttpJsonResponse\",",
+        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"ProviderTransport\",\n    \"HttpJsonResponse\",",
+        "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
+        "[rh_mcp.transport]",
+    ),
+    Mutation(
+        "P0: no published name hands back a raw session",
+        "transport.py",
+        "    \"ToolPayload\",\n]",
+        "    \"ToolPayload\",\n    \"open_provider_session\",\n]\n\nopen_provider_session = _open_provider_session",
+        "tests/test_public_surface.py::test_no_star_imported_callable_returns_a_raw_call_surface"
+        "[rh_mcp.transport]",
+    ),
+    Mutation(
+        "P0: the HTTP seam's shape stays out of the published surface",
+        "transport.py",
+        "    \"PayloadSource\",\n    \"ToolPayload\",",
+        "    \"PayloadSource\",\n    \"GuardedJsonClient\",\n    \"ToolPayload\",",
+        "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
+        "[rh_mcp.transport]",
+    ),
+    Mutation(
+        "P0: no published name hands back an HTTP client either",
+        "transport.py",
+        "    \"HttpJsonResponse\",\n    \"PayloadSource\",",
+        "    \"HttpJsonResponse\",\n    \"open_json_client\",\n    \"PayloadSource\",",
+        "tests/test_public_surface.py::test_no_star_imported_callable_returns_a_raw_call_surface"
+        "[rh_mcp.transport]",
+    ),
+    Mutation(
+        "P0: StoredTokenProvider stays out of the published surface",
+        "auth.py",
+        "    \"LoginOutcome\",\n    \"allowed_endpoint_origins\",",
+        "    \"LoginOutcome\",\n    \"StoredTokenProvider\",\n    \"allowed_endpoint_origins\",",
+        "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
+        "[rh_mcp.auth]",
+    ),
+    Mutation(
+        "P0: the credential store factory stays out of the published surface",
+        "credentials.py",
+        "    \"default_credential_directory\",\n]",
+        "    \"default_credential_directory\",\n    \"open_credential_store\",\n]",
+        "tests/test_public_surface.py::test_the_credential_store_factory_is_not_advertised",
+    ),
+    Mutation(
+        "P0: the transport's call takes a reviewed name, not a free-form one",
+        "transport.py",
+        "    async def call_tool(\n        self,\n        reviewed_tool_name: str,\n        arguments: Mapping[str, Any],\n        *,\n        output_schema: Mapping[str, Any] | None,\n    ) -> ToolPayload:\n        \"\"\"Send one call for an already-reviewed tool.",
+        "    async def call_tool(\n        self,\n        provider_tool_name: str,\n        arguments: Mapping[str, Any],\n        *,\n        output_schema: Mapping[str, Any] | None,\n    ) -> ToolPayload:\n        \"\"\"Send one call for an already-reviewed tool.",
+        "tests/test_public_surface.py::test_the_capability_argument_is_not_a_provider_tool_name",
+    ),
+    # A mutation of the *detector*, not of a guard. `_has_raw_call_surface`
+    # is what every sweep above depends on, and a sweep that silently stopped
+    # detecting anything would report a clean package on a broken one. This is
+    # the failure mode `TestNoEscapeHatch` had for the whole of v0.1.0, in a
+    # different form, so it gets its own mutation.
+    Mutation(
+        "the escape-hatch detector itself still detects",
+        "transport.py",
+        "    async def discover(self) -> ObservedSurface: ...\n\n    async def call_tool(",
+        "    async def discover(self) -> ObservedSurface: ...\n\n    async def call_tool_renamed(",
+        "tests/test_public_surface.py::test_the_package_still_contains_raw_call_surfaces_to_find",
+    ),
+    # The same canary, for the HTTP half of the detector. The MCP half above
+    # would still pass with the three HTTP verbs missing from the frozenset,
+    # so one mutation cannot hold both — and a frozenset that had silently
+    # lost the verbs would report a clean package while `open_json_client` sat
+    # back in `__all__`.
+    Mutation(
+        "the detector still detects the HTTP seam, not only the MCP one",
+        "transport.py",
+        "    async def get_json(self, url: str) -> HttpJsonResponse: ...",
+        "    async def get_json_renamed(self, url: str) -> HttpJsonResponse: ...",
+        "tests/test_public_surface.py::test_the_package_still_contains_raw_call_surfaces_to_find",
+    ),
     # -- credentials.py: file adapter --------------------------------------
     Mutation(
         "file mode 0600 is enforced on read",
@@ -663,6 +774,14 @@ def run_test(test: str, verbose: bool) -> tuple[bool, str]:
 def main() -> int:
     verbose = "--verbose" in sys.argv
     survivors: list[str] = []
+    # Announced up front rather than left to the module docstring: the first
+    # sign of trouble is a reviewer watching a silent terminal and deciding the
+    # script has hung. Each line below appears only after its subprocess exits.
+    print(
+        f"{len(MUTATIONS)} mutations, one pytest subprocess each — expect roughly "
+        f"{len(MUTATIONS) * 3.7 / 60:.0f} minutes.",
+        flush=True,
+    )
     for mutation in MUTATIONS:
         original = apply(mutation)
         try:

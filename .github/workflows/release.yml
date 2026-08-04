@@ -1,0 +1,104 @@
+# Build and publish release artifacts from a tag, with verifiable provenance.
+#
+# v0.1.0 was published by hand. Two things followed from that, and an
+# independent reviewer found both:
+#
+#   * The sdist was built from a dirty working tree and shipped a file that is
+#     in no commit. The published checksum matched the dirty artifact, so the
+#     one integrity check a consumer can run without trusting us was checking
+#     the wrong bytes.
+#   * `gh attestation verify` returned 404. Checksums prove that the file you
+#     downloaded is the file whose hash was published; they say nothing about
+#     which source and which workflow produced it. For a package whose whole
+#     purpose is restraining a write-capable trading credential, "trust that
+#     the maintainer's laptop built this" is a weaker claim than the package
+#     makes about everything else.
+#
+# So releases are built here, from the tagged commit, in a clean checkout, and
+# each artifact gets a signed provenance attestation bound to this workflow and
+# that commit via GitHub's OIDC identity. A consumer can then run:
+#
+#     gh attestation verify rh_mcp-<version>-py3-none-any.whl \
+#         --repo likefudan/rh-mcp
+#
+# and get an answer about *origin*, not just about bytes. §11 asks exactly
+# this question and v0.1.0 could not answer it.
+#
+# What this does not do: publish to PyPI, and not by omission. The release is
+# still attached to a GitHub release by a human who has read the diff, because
+# §12 makes a release a reviewed event rather than an automated consequence of
+# pushing a tag.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      # `id-token: write` is what lets the runner obtain the OIDC token that
+      # signs the attestation; `attestations: write` records it. Both are
+      # scoped to this job alone — the workflow default above stays read-only,
+      # so nothing else in this file inherits the ability to sign anything.
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The tag, and nothing else. A release must be reproducible from the
+          # commit it claims, which is precisely the property v0.1.0's sdist
+          # lacked.
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.13"
+
+      - run: uv sync --frozen
+
+      # The full gate, again, on the exact commit being released. CI having
+      # passed on the branch is not the same statement as this tag being sound.
+      - run: uv run ruff check .
+      - run: uv run mypy src
+      - run: uv run pytest
+      - name: Independent security review — adversarial tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: uv run pytest security-review/v0.1.0/test_adversarial_review.py -v
+
+      - run: uv build
+
+      - name: The sdist contains only allowlisted paths
+        run: uv run python scripts/check_sdist.py dist/*.tar.gz
+
+      - name: The tag matches the packaged version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          built=$(ls dist/rh_mcp-*.tar.gz | sed -E 's#.*/rh_mcp-(.*)\.tar\.gz#\1#')
+          test "$tag" = "$built" || {
+            echo "tag $GITHUB_REF_NAME does not match built version $built"
+            exit 1
+          }
+          echo "tag and packaged version agree: $built"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/*"
+
+      - name: Checksums
+        run: cd dist && sha256sum * | tee SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: dist/

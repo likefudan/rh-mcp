@@ -1231,5 +1231,16 @@ __all__ = [
     "TokenCredential",
     "check_namespace",
     "default_credential_directory",
-    "open_credential_store",
 ]
+
+# `open_credential_store` is deliberately absent. It is still importable — the
+# CLI and the gateway both call it, and renaming it would be churn without
+# safety, since an underscore stops nobody who has already typed the module
+# name. What the removal ends is the *advertisement*.
+#
+# On its own this factory yields a store, not a session, and a store is not a
+# trading path. It became one in combination: paired with the exported
+# `StoredTokenProvider` and the exported `open_provider_session`, the three
+# published names assembled a write-capable MCP session with no manifest in it,
+# and an independent reviewer walked exactly that chain. The chain is broken at
+# `_open_provider_session`; this line removes the signpost.

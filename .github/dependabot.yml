@@ -55,3 +55,22 @@ updates:
     labels:
       - dependencies
       - ci
+    ignore:
+      # The one action whose major belongs with `mcp` and `httpx2` rather than
+      # with the other actions.
+      #
+      # It produces the signed provenance that is a consumer's only independent
+      # evidence of where an artifact came from. It also appears *only* in
+      # `release.yml`, which no pull-request CI run executes — so a bump to it
+      # arrives with three green checks that exercised something else entirely.
+      # That is the shape of the v0.1.0 findings: a check passed, and it was
+      # not checking the thing that mattered.
+      #
+      # Verifying one costs a throwaway tag, a full release run, and a
+      # `gh attestation verify` against the produced artifact. That is a
+      # deliberate act, so it should not arrive as a routine PR. v4 also
+      # announced that this action is now a thin wrapper over `actions/attest`
+      # and that new implementations should use that instead — a migration
+      # decision, not an update.
+      - dependency-name: actions/attest-build-provenance
+        update-types: ["version-update:semver-major"]

@@ -53,6 +53,38 @@ def test_each_runtime_dependency_is_capped_below_the_next_major(name: str) -> No
     )
 
 
+# The provenance action is the one GitHub Action whose major belongs with the
+# runtime dependencies rather than with the other actions: it produces the
+# signed attestation that is a consumer's only independent evidence of an
+# artifact's origin, and it appears only in `release.yml`, which no
+# pull-request CI run executes.
+ATTESTATION_ACTION = "actions/attest-build-provenance"
+
+
+def test_the_provenance_action_is_used_only_where_ci_cannot_exercise_it() -> None:
+    """The premise behind pinning its major, asserted rather than assumed.
+
+    If it ever appears in `ci.yml`, a bump to it would be genuinely exercised
+    by pull-request CI and the reason for the pin weakens. This fails if that
+    changes, so the pin is revisited rather than cargo-culted.
+    """
+    workflows = PYPROJECT.parent / ".github" / "workflows"
+    ci = (workflows / "ci.yml").read_text(encoding="utf-8")
+    release = (workflows / "release.yml").read_text(encoding="utf-8")
+    assert ATTESTATION_ACTION in release, "release.yml must attest the artifacts it builds"
+    assert ATTESTATION_ACTION not in ci, (
+        "the provenance action now runs in pull-request CI; revisit the major-version "
+        "pin in dependabot.yml, whose stated reason is that CI cannot exercise it"
+    )
+
+
+def test_dependabot_refuses_a_major_bump_of_the_provenance_action() -> None:
+    config = (PYPROJECT.parent / ".github" / "dependabot.yml").read_text(encoding="utf-8")
+    block = config.split(f"dependency-name: {ATTESTATION_ACTION}")
+    assert len(block) == 2, f"dependabot.yml does not ignore major bumps for {ATTESTATION_ACTION}"
+    assert "semver-major" in block[1].split("- dependency-name")[0].split("- package-ecosystem")[0]
+
+
 def test_dependabot_refuses_to_propose_a_major_bump() -> None:
     """The robot's instructions and the cap have to agree.
 

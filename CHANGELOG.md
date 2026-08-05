@@ -30,6 +30,12 @@ that carries them.
 
 ### Added
 
+- `actions/attest-build-provenance` majors are now refused by Dependabot, and
+  `tests/test_dependency_bounds.py` asserts both the refusal and the premise
+  behind it — that the action appears only in `release.yml`, which no
+  pull-request CI run executes. If it ever moves into `ci.yml` the test fails,
+  so the pin gets revisited rather than cargo-culted.
+
 - Automated dependency review (`.github/dependabot.yml`), the last §12
   acceptance item outstanding besides the compatibility policy. Runtime
   dependencies are ungrouped so `mcp` and `httpx2` each get their own PR and CI

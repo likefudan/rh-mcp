@@ -293,7 +293,14 @@ description changed. No disposition moved.
   an unmasked account number in a URL. They are provider-controlled text; a
   consumer feeding them into a model context is accepting instructions
   Robinhood can change at will.
-- No injected secret-manager adapter ships for non-macOS production.
+- **Production runs on macOS.** The only adapter accepted in production mode is
+  `keychain`, which shells out to the macOS `security` tool; `file_dev` and
+  `in_memory` are refused there by `GatewayConfig`. Deploying the broker on
+  another platform fails closed at start-up with `configuration_error: the
+  macOS security tool was not found; the keychain adapter needs macOS`, which
+  is the intended behaviour rather than a gap to route around. §5.2 anticipates
+  an injected secret-manager adapter (Vault, AWS/GCP secret managers) for other
+  platforms; none ships, because the first deployment target is macOS.
 - The `stdio` development transport bounds payload size after decoding rather
   than during, unlike the HTTP path.
 

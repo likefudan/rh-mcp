@@ -76,6 +76,28 @@ They are AI-assisted reviews with a disclosed independence limitation, not
 human penetration tests or certifications, and each verdict is bound to the
 exact commit and artifacts it names. See DESIGN.md §12.1–12.3 and `NOTICE`.
 
+### Production runs on macOS
+
+The only credential adapter accepted in production mode is `keychain`, backed
+by the macOS `security` tool. `file_dev` stores a trading-capable credential as
+plaintext JSON, so `GatewayConfig` refuses it in production rather than letting
+a deployment degrade into it.
+
+A broker started on another platform fails closed at start-up:
+
+```
+configuration_error: the macOS `security` tool was not found;
+                     the keychain adapter needs macOS
+```
+
+That is the intended behaviour, not a gap to route around. DESIGN.md §5.2
+anticipates an injected secret-manager adapter — Vault, AWS or GCP secret
+managers — for other platforms; none ships, because the first deployment target
+is macOS. `CredentialStore` is a narrow protocol, so adding one is a small
+piece of work when a deployment needs it, and it also solves moving a
+credential between machines, which matters because the first login must open a
+browser.
+
 ### One residual risk, and it is a requirement on you
 
 A caller that imports underscore-prefixed internals by name can still assemble

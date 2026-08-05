@@ -267,8 +267,16 @@ delete without exposing serialized secrets to callers.
 
 Required adapters and policy:
 
-- a platform secret store (macOS Keychain for the first local deployment) or
-  an injected production secret-manager adapter is the normal choice;
+- a platform secret store or an injected production secret-manager adapter is
+  the normal choice. **The first deployment target is macOS, and the macOS
+  Keychain adapter is the only one this package accepts in production mode.**
+  That is a decision, not an omission: `file_dev` stores a trading-capable
+  credential as plaintext JSON, so refusing to start beats degrading to it. A
+  broker on another platform fails closed at start-up naming the reason, and
+  adding a `CredentialStore` implementation over Vault or a cloud secret
+  manager is the supported way to move — the protocol is narrow enough that it
+  is a small piece of work, and doing it also solves moving a credential
+  between machines, which matters because the first login must open a browser;
 - an in-memory adapter supports tests;
 - `FileCredentialStore` is an explicit local-development option only. It uses
   a distinct dev namespace, directory mode `0700`, file mode `0600`, atomic

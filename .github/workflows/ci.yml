@@ -37,7 +37,7 @@ jobs:
       # otherwise. UV_PYTHON applies to every uv command in the job.
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --frozen
       # Assert, don't just print. If UV_PYTHON ever stops constraining uv, every
@@ -78,7 +78,7 @@ jobs:
   package:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v3
         with:
           python-version: "3.13"

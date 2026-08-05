@@ -772,6 +772,53 @@ Anyone evaluating this software for use against a real brokerage account
 should weigh that directly. The same statement appears in `NOTICE`, so it
 travels with any redistribution under Apache-2.0 §4(d).
 
+### 12.4 When a manifest change needs a new external review
+
+The reviewers bind each verdict to the exact artifact they examined, and by
+their own wording a changed artifact is not covered. Taken literally that would
+put every manifest refresh behind an external review — and the provider drifted
+twice in three days, so "literally" is not a policy anyone would follow. This
+section says what actually triggers one, so the answer is decided once rather
+than argued each time.
+
+**A refresh does not need a new review.** `scripts/refresh_manifest.py` carries
+every `capability`, `disposition`, `mutates` and `rationale` forward verbatim
+and refreshes only provider-derived fields and the digests over them. It
+*cannot* grant a permission: it never writes a disposition it did not read from
+the previous manifest, a post-write assertion proves none moved, and the script
+has no flag to change one — with a test asserting none is ever added. What
+moves is a description or a schema the provider changed.
+
+**These do need one**, and the refresh tool already refuses all but the last,
+so refusing is the normal way they surface:
+
+- a tool appearing or disappearing — no prior decision exists to carry forward,
+  and §6.1 requires a human to make it;
+- any disposition, `mutates` value or capability mapping changing;
+- a change to the manifest format, the canonicalization, or the digest
+  derivation;
+- any change to code on the enforcement path.
+
+**What is given up by saying this.** A refresh can carry a reviewed `allowed`
+disposition onto a tool whose schema has changed underneath it — the tool is
+the same name doing something new. The refresh report names every entry whose
+digests moved precisely so a human reads what changed there, and the two
+refreshes so far were read that way: an additive `unsettled_funds` field on two
+reads, and a `direction` field on two order tools that are denied anyway. That
+reading is the control, and it is a human one. It is weaker than an external
+review and stronger than nothing, and calling it what it is beats pretending
+the digest check covers it.
+
+**One consequence in the reviewers' own tests.** Their
+`test_exact_8_trading_denied_and_11_mutations_allowed` opens by pinning the
+manifest version and digest, so after a refresh it fails on the first line and
+never reaches the assertions its name is about. Their file is not edited for
+this — editing an auditor's evidence to make it pass is only defensible when
+the file contradicts itself, which this does not. CI deselects that one test by
+name and records why, and the property it was guarding is held independently by
+`TestTheShippedManifest`, which asserts the same 8 denials, the same 11 flagged
+mutations, and the same 45/8 split against whatever manifest ships.
+
 ## 13. Open items
 
 All six owner-assisted observations are **closed**, on 2026-08-03:

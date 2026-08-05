@@ -97,3 +97,50 @@ def test_dependabot_refuses_to_propose_a_major_bump() -> None:
         block = config.split(f"dependency-name: {name}")
         assert len(block) == 2, f"dependabot.yml does not ignore major bumps for {name}"
         assert "semver-major" in block[1].split("- dependency-name")[0]
+
+
+# ---------------------------------------------------------------------------
+# The reviewer-suite deselection (DESIGN §12.4)
+# ---------------------------------------------------------------------------
+
+DESELECTED = (
+    "test_exact_8_trading_denied_and_11_mutations_allowed"
+)
+WORKFLOWS = PYPROJECT.parent / ".github" / "workflows"
+
+
+@pytest.mark.parametrize("workflow", ["ci.yml", "release.yml"])
+def test_exactly_one_reviewer_test_is_deselected(workflow: str) -> None:
+    """A deselection is a hole in an auditor's suite, so it is counted.
+
+    The one that exists is justified in §12.4: the test pins the manifest
+    version and digest on its first line, so any refresh stops it before the
+    assertions its name is about. Widening this is how a suite quietly stops
+    guarding what it was written to guard, which is the failure mode that let
+    the v0.1.0 findings survive four internal rounds.
+    """
+    text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
+    assert text.count("--deselect") == 1, (
+        f"{workflow} deselects more than one reviewer test; each hole in an "
+        "auditor's suite needs its own entry in DESIGN §12.4"
+    )
+    assert DESELECTED in text
+    assert "-k " not in text.split("suites=")[1].split("uv run pytest")[1][:400], (
+        "the reviewer suites must not be filtered with -k; deselect by full "
+        "node id so what is skipped is named rather than matched"
+    )
+
+
+def test_the_deselected_property_is_guarded_elsewhere() -> None:
+    """Deselecting is only acceptable because our own suite holds the property."""
+    ours = (PYPROJECT.parent / "tests" / "test_manifest.py").read_text(encoding="utf-8")
+    assert "class TestTheShippedManifest" in ours
+    for guard in (
+        "test_no_trading_capability_is_allowed",
+        "test_every_allowed_mutation_is_flagged",
+        "test_the_allowed_set_is_the_size_the_reviewer_approved",
+    ):
+        assert guard in ours, (
+            f"{guard} is what makes deselecting the reviewer's test defensible; "
+            "removing it means the property is guarded nowhere"
+        )

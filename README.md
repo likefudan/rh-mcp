@@ -50,7 +50,7 @@ so a consumer gating writes never has to infer which is which.
 The full-manifest digest a consumer pins:
 
 ```
-sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b
+sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
 ```
 
 Of the DESIGN.md §12 acceptance list, the changelog, the tagged artifact with

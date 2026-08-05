@@ -30,6 +30,26 @@ that carries them.
 
 ### Added
 
+- DESIGN §12.4 states when a manifest change needs a new external review and
+  when it does not. The reviewers bind each verdict to the exact artifact they
+  examined, and the provider drifted twice in three days — taken literally that
+  puts every refresh behind an external review, which is not a policy anyone
+  would follow. A refresh carrying dispositions forward does not need one; a
+  disposition change, a tool-set change, a format change, or any change to
+  enforcement code does. What is given up is stated rather than glossed: a
+  refresh can carry an `allowed` disposition onto a tool whose schema changed
+  underneath it, and the human reading of the refresh report is the control.
+
+### Fixed
+
+- `scripts/refresh_manifest.py` restamped `reviewer.reviewed_at` with `now()`
+  on every run, so two consecutive `--dry-run`s reported two different digests
+  and neither matched what the real run wrote. A dry run exists to show the
+  value you are about to accept and pin; one that cannot be trusted is worse
+  than none. The fix is not a frozen clock — the reviewer block is carried
+  forward like every other decision, because a refresh reviews nothing and
+  stamping a new date claimed a review that did not happen.
+
 - `actions/attest-build-provenance` majors are now refused by Dependabot, and
   `tests/test_dependency_bounds.py` asserts both the refusal and the premise
   behind it — that the action appears only in `release.yml`, which no
@@ -202,7 +222,7 @@ committed at `security-review/v0.1.0/`; CI runs those tests on every commit.
 ### Manifest
 
 Unchanged. `2026.08.03.1`,
-`sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`.
+`sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a`.
 Nothing in this release touches a disposition, a rationale, or a digest, so a
 consumer's pinned manifest digest does not move.
 
@@ -259,7 +279,7 @@ never has to infer which is which.
 `2026.08.03.1` — 53 tools, 45 allowed, 8 denied.
 
 ```
-sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b
+sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
 ```
 
 Produced by owner-assisted discovery on 2026-08-03 and reviewed by hand. The

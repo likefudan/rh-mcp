@@ -51,7 +51,7 @@ jobs:
       id-token: write
       attestations: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The tag, and nothing else. A release must be reproducible from the
           # commit it claims, which is precisely the property v0.1.0's sdist

@@ -635,7 +635,10 @@ Before another repository depends on `rh-mcp`, it must have:
 
 - a `pyproject.toml`, supported Python range, reproducible lock file, package
   metadata, command entry point, and an explicit license;
-- pinned compatible MCP SDK v2 constraints and automated dependency review;
+- pinned compatible MCP SDK v2 constraints and automated dependency review
+  (`.github/dependabot.yml`; the caps and the robot's agreement with them are
+  asserted by `tests/test_dependency_bounds.py`, because a comment and a
+  config are both edited by the PR that would widen them);
 - formatting, linting, type checking, unit/contract/security tests, build and
   package-install smoke tests in CI;
 - semantic versioning, changelog, tagged release, immutable artifact, and

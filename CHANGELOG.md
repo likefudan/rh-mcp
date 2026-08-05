@@ -28,6 +28,20 @@ that carries them.
 
 ## [Unreleased]
 
+### Added
+
+- Automated dependency review (`.github/dependabot.yml`), the last §12
+  acceptance item outstanding besides the compatibility policy. Runtime
+  dependencies are ungrouped so `mcp` and `httpx2` each get their own PR and CI
+  run; dev tooling is grouped into one. Major bumps are refused rather than
+  proposed — widening either cap is a §12 security-boundary change, and a PR
+  that cannot merge still asks a reviewer to think in a dependency-update
+  frame, which is the wrong frame for it.
+- `tests/test_dependency_bounds.py` asserts the caps, that the runtime
+  dependency set is exactly the two reviewed packages, and that dependabot's
+  ignore rules agree with `pyproject.toml`. Both a comment and a robot config
+  are edited by the same PR that would widen them, so neither is a check.
+
 ### Changed
 
 - `v0.2.0` was re-reviewed as a fresh artifact by the independent reviewer and

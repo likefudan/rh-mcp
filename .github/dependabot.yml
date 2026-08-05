@@ -1,0 +1,57 @@
+version: 2
+
+# Why this exists, and why it is deliberately noisy in one place and quiet in
+# another (DESIGN.md §12).
+#
+# Two runtime dependencies sit on the credential path: `mcp` (~27,000 lines)
+# and `httpx2` (~11,000). Both are pinned below their next major version,
+# because §4's dependency boundary exists so a consumer holding its own MCP SDK
+# does not inherit a conflict from this package, and because a v3 SDK could
+# change the wire contract this gateway's fail-closed checks are written
+# against. Nothing here may widen those bounds: Dependabot proposes versions
+# inside the existing range, and a major bump is a §12 security-boundary change
+# that needs the release gate, not a dependency PR.
+#
+# The value is the security-update path. Without automation, a CVE in either
+# package is found whenever someone happens to look — which for a package whose
+# whole purpose is restraining a write-capable trading credential is not a
+# schedule.
+
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      # Dev tooling churns and none of it ships in the wheel, so one PR a week
+      # rather than three. Runtime dependencies are deliberately left ungrouped:
+      # `mcp` and `httpx2` each deserve their own PR, their own CI run, and
+      # their own read of what changed.
+      dev-tooling:
+        dependency-type: development
+        patterns:
+          - "*"
+    ignore:
+      # Refuse major bumps rather than letting one arrive as an ordinary PR.
+      # `pyproject.toml` already caps both, so such a PR could not merge — but
+      # it would still ask a reviewer to think about it in a dependency-update
+      # frame, which is the wrong frame for a change that alters what this
+      # package's checks are written against.
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
+      - dependency-name: httpx2
+        update-types: ["version-update:semver-major"]
+
+  # The workflows build and publish the artifacts a consumer verifies by
+  # attestation, so a compromised or abandoned action is a supply-chain
+  # concern, not housekeeping.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - ci

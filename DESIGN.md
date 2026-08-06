@@ -4,11 +4,11 @@ Status: **released.** `v0.1.0` shipped on 2026-08-03. Owner-assisted discovery
 ran against the live server the same day; a human reviewed all 53 tools and
 committed 45 allowed / 8 denied (§2.1).
 
-The §12 acceptance list is satisfied apart from one item: license, changelog,
-tagged artifact with published digests, and the independent security review
-have all landed. The published **compatibility policy** has not. `v0.2.0`
-responds to the independent review, which returned CHANGES_REQUIRED against
-`v0.1.0` — see §12.1 and `security-review/v0.1.0/`.
+The §12 acceptance list is now satisfied: license, changelog, tagged artifact
+with published digests, the independent security review, and — as of §12.5 —
+the published **compatibility policy** have all landed. `v0.2.0` responds to the
+independent review, which returned CHANGES_REQUIRED against `v0.1.0` — see §12.1
+and `security-review/v0.1.0/`.
 
 ## 1. Purpose
 
@@ -819,6 +819,347 @@ name and records why, and the property it was guarding is held independently by
 `TestTheShippedManifest`, which asserts the same 8 denials, the same 11 flagged
 mutations, and the same 45/8 split against whatever manifest ships.
 
+### 12.5 Published compatibility policy
+
+This is the §12 acceptance item that was outstanding: "documented public API and
+compatibility policy for envelope, errors, manifest format, and
+credential-store protocol". `ainvest` is about to pin `v0.2.0`, so the promise
+has to be written down before it is relied on rather than after.
+
+Everything below is checked against the code, not against the prose that
+preceded it. Where a surface is under-specified, or where the tests did not
+actually defend a claim this document makes, it says so — a compatibility
+policy that overstates its own guarantees is the same defect as §1's original
+"no public surface exposes a generic `call_tool`", which was false for the whole
+life of `v0.1.0`.
+
+**Two things a consumer pins, and they move independently.** The package
+version covers the code — the surfaces below. The full-manifest digest covers
+what the gateway is permitted to do. `CHANGELOG.md` opens with this and §6.2 and
+§9 enforce it; it is not restated here beyond the one consequence that matters
+for versioning: a new digest is never inferred from a version bump, and a
+version bump is never inferred from a new digest.
+
+#### The result envelope
+
+`rh_mcp.models.ResultEnvelope` is what `RobinhoodGateway.invoke()` returns and
+what `rh-mcp read` prints. Its `to_json_dict()` emits exactly nine keys:
+
+`envelope_version`, `manifest_version`, `manifest_digest`, `capability`,
+`schema_digest`, `result_digest`, `observed_at`, `data`, `warnings`.
+
+`envelope_version` is `"1.0"`. It is a `field(init=False)` class default, so a
+caller cannot pass one in and an envelope cannot claim a version it was not
+built under. `manifest_digest` is always the locally recomputed full-manifest
+digest that made the gateway ready (§7.1), never a value read from the manifest
+file. `data` is the bounded provider JSON, deep-frozen at construction so
+`result_digest` keeps binding exactly the payload it was computed over.
+`warnings` is a JSON array of strings and may be empty.
+
+**Stable, within `envelope_version` `1.x`:** those nine key names, their JSON
+types, and their meanings. A consumer reading an envelope whose
+`envelope_version` starts with `1.` is entitled to assume all nine are present.
+
+**What may be added:** a new top-level key, in a minor release, with
+`envelope_version` moving to `1.1`. A consumer must therefore ignore keys it
+does not recognise rather than reject the envelope. **What may never change
+meaning:** an existing key. Removing one, renaming one, or changing what one
+means moves `envelope_version` to `2.0` and is a breaking release.
+
+**Not promised:** the contents of `data`. That is provider JSON shaped by
+Robinhood's output schema, and §6.1.1 records the provider changing schemas
+twice in three days. Mapping it into domain contracts is `ainvest`'s job (§10).
+`observed_at` is this gateway's clock at the moment the envelope was built, not
+a provider timestamp.
+
+**Honest about the enforcement.** Nothing in the code makes adding a key
+*require* bumping `envelope_version`; the rule above is a rule for humans. What
+CI holds is `tests/test_models.py::TestResultEnvelope::test_to_json_dict_shape`
+and `::test_envelope_version_is_fixed`, which compare the whole rendered
+dictionary against a literal, so any added, removed or renamed key fails the
+suite and a reviewer then has to decide the version. That was verified by
+mutation rather than assumed: renaming `envelope_version`, renaming
+`expected_manifest_digest` on `Readiness`, renaming `warnings`, and changing the
+version constant to `"1.1"` each fail `pytest`. No new fixture was added for
+this surface, because a second one would assert what those already do.
+
+#### Errors
+
+**The nine wire strings are the contract, not the Python member names.**
+`ErrorCode` is a `StrEnum`, so a member formats and JSON-serializes as its
+value. The nine values are:
+
+`auth_required`, `not_ready`, `capability_denied`, `input_invalid`,
+`provider_error`, `timeout`, `response_too_large`, `protocol_error`,
+`configuration_error`.
+
+They are observable in two places a consumer actually reads: the CLI's stderr
+line, `rh-mcp: <code>: <message>`, and the `error_code` field of each finding in
+`rh-mcp status` JSON, which `DriftFinding.to_json_dict()` emits as
+`str(self.error_code)`. Renaming `ErrorCode.CAPABILITY_DENIED` in Python while
+keeping the value `"capability_denied"` is not a breaking change; keeping the
+member name and changing the value is.
+
+The set is closed at nine for now. A tenth code may be added in a minor
+release, so a consumer switching on the code must have a default branch.
+
+**`GatewayError` carries four public fields:** `code` (`ErrorCode`), `message`
+(`str`), `retryable` (`bool`), `correlation_id` (`str | None`). That set is
+stable. There is deliberately **no** `to_json_dict()` on `GatewayError` and none
+is planned here: §7.2 rule 3 says a failure writes nothing to stdout, so nothing
+in this package needs to serialize an error, and adding a method to an
+enforcement-path module is a §12.4 trigger for a convenience nobody has asked
+for.
+
+**`message` is explicitly not stable.** It is human-facing text and may change
+in any release, including a patch, with no changelog entry. A consumer must
+branch on `code` and `retryable`, never on message text, and must never parse a
+message for a value. §7.3 already constrains what a message may *contain* —
+never a raw provider response, a URL with a query, a header, a token, an account
+identifier, or a stack trace — and that constraint is stable even though the
+wording is not.
+
+**`retryable` is per-error and is not a function of `code`.** Exactly three
+raise sites set it today: contention on the credential `flock` and a
+non-answering macOS `security` tool, both `timeout`, and a failed provider
+connection, `provider_error`. Everything else carries the default `False` —
+including a provider request timeout, which is also `timeout`. So the same code
+appears both ways, and a consumer that derives retryability from the code will
+be wrong. Read `retryable=True` as "the gateway asserts a retry is safe" and
+`False` as the absence of that assertion, not as "a retry will fail". Which
+sites set it may change in a minor release.
+
+**`correlation_id` exists and is never populated.** §7.3 calls it optional and
+§8 lists a correlation identifier among what logs may contain, but no code in
+`src/rh_mcp/` passes the argument: every `GatewayError` this package raises has
+`correlation_id is None`. The field is public and a consumer constructing its
+own `GatewayError` may set it; a consumer *reading* one must not depend on it
+being there. This is recorded rather than fixed — populating it means touching
+enforcement-path modules, which §12.4 says triggers a new external review, and
+that is not a trade worth making for a field nothing currently reads.
+
+**The five CLI exit-code buckets, and the integers are part of the contract:**
+
+| exit | bucket | codes |
+|---|---|---|
+| 0 | success | — |
+| 1 | safe runtime/provider failure | `provider_error`, `protocol_error`, `timeout`, `response_too_large` |
+| 2 | usage error | `input_invalid`, `capability_denied` |
+| 3 | configuration / not ready | `configuration_error`, `not_ready` |
+| 4 | authentication required | `auth_required` |
+
+`EXIT_CODE_MAP` is the single mapping and `cli.py` has no second one. Two
+honest footnotes. `main()` returns **130** on `KeyboardInterrupt`, which is a
+sixth value outside the five buckets and is the conventional SIGINT code rather
+than an oversight. And an argparse usage failure returns `2` directly, landing
+in the usage bucket by construction rather than through the map.
+
+**This surface was the one the tests did not defend, and now they do.** Before
+this section was written, the golden table in `tests/test_errors.py` was keyed
+by enum *member*, so it asserted that `ErrorCode.CAPABILITY_DENIED` maps to exit
+2 without ever asserting what string that member carries. Verified by mutation
+on the tree at `b6d6a35`: changing the value to `"capability_refused"` left all
+1176 tests passing. The exit integers had the same shape of gap — changing
+`EXIT_CODE_PROVIDER_FAILURE` from `1` to `8`, or `EXIT_CODE_AUTH_REQUIRED` from
+`4` to `9`, also left the suite green. `tests/test_errors.py` now pins the nine
+literal strings and the five literal integers, and asserts the string set is
+exactly those nine, so the promise made above fails CI when it stops being true.
+It is the same lesson as §12.1's `TestNoEscapeHatch`: a test that passes while
+asserting something adjacent to the claim is worse than no test, because it
+reads like coverage.
+
+#### Manifest format
+
+Three version fields in every manifest document are checked exactly by the
+loader, and a mismatch on any of them refuses the manifest rather than
+migrating it:
+
+- `manifest_format_version` — `"1.2"`. `SUPPORTED_MANIFEST_FORMAT_VERSIONS` is
+  exactly `{"1.2"}`. 1.0 and 1.1 are refused, not migrated, for the reasons in
+  §2.1 and §6: 1.0 cannot state `mutates`, and 1.1 spelled the allowed
+  disposition `read_allowed` while 11 allowed entries write.
+- `canonicalization_version` — `"rh-canon-1"`. The algorithm is specified in
+  `src/rh_mcp/canonical.py`'s module docstring and pinned by golden vectors in
+  `tests/test_canonical.py`. It is deliberately **not** RFC 8785/JCS — it sorts
+  object keys by Unicode code point, not UTF-16 code unit — and no
+  interoperability with JCS is claimed.
+- `digest_algorithm` — `"sha256"`.
+
+Every digest this package publishes or accepts is the string `"sha256:"`
+followed by exactly 64 lowercase hex characters. `DIGEST_PATTERN` is anchored
+with `\Z` rather than `$`, so a trailing newline picked up from a file or a CI
+variable is rejected instead of silently never comparing equal. That shape is
+stable and is what a consumer writes into `expected_manifest_digest` and
+`RH_MCP_EXPECTED_MANIFEST_DIGEST`.
+
+**Stable:** those three literal version strings and the digest string shape.
+Changing any of them is, by §12.4's own list, "a change to the manifest format,
+the canonicalization, or the digest derivation" — it triggers a new independent
+external review, ships with a stated migration, and moves the package version in
+its breaking position.
+
+**Deliberately not a compatibility surface: the manifest's content.** Which
+capabilities exist, which are `allowed` or `denied`, which set `mutates`, the
+rationales, the human-readable `manifest_version` string, the
+`provider_surface_digest`, and the `full_manifest_digest` itself are all
+expected to move, and §6.1.1 shows how routinely. That movement is not a
+compatibility break — it is the mechanism working. The pinned
+`expected_manifest_digest` is exactly what turns a moved digest into a
+deliberate human decision instead of a silent one (§6.2, §9), and **§12.4** says
+which of those movements additionally need an external review: a refresh does
+not, a disposition or tool-set change does.
+
+So the two pins answer different questions, and a consumer needs both: *"is this
+the code I reviewed?"* is the package version, and *"is this the permission set
+I reviewed?"* is the digest.
+
+**Under-specified, and stated rather than fixed.** The manifest is read only by
+this package's loader; there is no published JSON Schema for it, so an outside
+tool reading a manifest is reading a format defined by §6's prose and
+`manifest.py`'s field sets. And format 1.2 still cannot distinguish a provider
+that omitted `description`/`annotations` from one that sent `""`/`{}` — the
+known limitation recorded in `manifest.py` and in the `0.1.0` changelog entry,
+carried forward here rather than quietly dropped.
+
+**One discrepancy this policy surfaces rather than hides.** `CHANGELOG.md`'s
+`[0.1.0]` and `[0.2.0]` entries both print
+`sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a`
+beside manifest version `2026.08.03.1`. Those two values do not go together.
+`git show v0.1.0:src/rh_mcp/manifests/read-manifest.json` and the same at
+`v0.2.0` both carry `2026.08.03.1` with
+`sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`;
+`49b7218…` is the digest of `2026.08.05`, which is what `main` ships and what
+the README correctly publishes. Commit `b6d6a35` rewrote the digest inside the
+two historical entries while refreshing the manifest. A consumer pinning the
+`v0.2.0` *artifact* and taking its digest from that changelog entry would pin a
+digest the artifact refuses readiness against. The lines are left as they are in
+this change — correcting a published digest is a decision for the human who
+owns the release record, not a side effect of writing a policy — and the
+`[Unreleased]` changelog entry states the correction. Beyond the specific
+error, this is the general rule the policy asserts: **the digest a consumer
+pins comes from the artifact it is pinning**, verified against the release
+notes and the manifest inside it, never from a changelog line describing a
+different release.
+
+#### The credential-store protocol
+
+`rh_mcp.credentials.CredentialStore` is a `typing.Protocol` with eight members,
+and the set is the contract:
+
+- `namespace: str` — a read-only property naming the credential namespace.
+- `exclusive() -> AbstractAsyncContextManager[None]` — the cross-process mutex.
+- `load_token() -> TokenCredential | None`
+- `store_token(token: TokenCredential) -> None`
+- `delete_token() -> bool` — `True` if something was removed.
+- `load_registration() -> ClientRegistration | None`
+- `store_registration(registration: ClientRegistration) -> None`
+- `delete_registration() -> bool`
+
+The six record operations are async. Each is individually atomic: a reader
+never sees a half-written credential. What that does *not* give an implementer
+is a safe read-modify-write across processes, which is what `exclusive()` is
+for. The individual methods deliberately do not take the lock, so a sequence
+inside `exclusive()` cannot deadlock against itself — an implementer must
+therefore make `exclusive()` work for the sharing model its backend actually
+has, and callers must hold it around any read-modify-write. `auth.py`'s
+coordinated refresh is the one such sequence today.
+
+`TokenCredential` and `ClientRegistration` are part of this surface: an
+implementer accepts and returns them and does not reach for a serialized form,
+because §5.2 requires read/update/delete "without exposing serialized secrets to
+callers" and the encoders are module-private for that reason. Both refuse
+`pickle` and redact `__repr__`/`__str__`; `dataclasses.asdict` remains an open
+channel, which the module docstring states and a test pins.
+
+**What is deliberately absent is also the contract.** There is no `list`, no
+read-raw, no export, and no way to obtain the serialized form. A future member
+may be added in a minor release — that breaks existing implementers, which is
+why it is a minor and not a patch.
+
+Two properties an implementer should know. The protocol is **not**
+`@runtime_checkable`, so `isinstance(store, CredentialStore)` raises
+`TypeError`; conformance is checked statically by `mypy` at the call sites that
+accept one. And §5.2's production policy is separate from this protocol: in
+production mode this package accepts only the macOS Keychain adapter, and
+supplying another store means injecting an implementation of this protocol.
+
+**No golden fixture was added here, because the gap does not exist.** That was
+checked rather than assumed. Deleting any one of the seven method declarations
+from the protocol fails `mypy src` — each has an in-package call site through a
+`CredentialStore`-typed reference — and renaming any member consistently across
+the protocol and the adapters fails `pytest`, because the adapter tests call
+them by name. Both directions already break the gate this PR runs, so a third
+assertion would be noise.
+
+#### The versioning rule
+
+The package is `0.2.0` and follows SemVer with the 0.x convention `pyproject.toml`
+already states: **for a 0.x package the minor is the breaking position.**
+
+- **Patch** (`0.2.0` → `0.2.1`): no change to any surface above. Error `message`
+  text, log lines, stderr wording, and internal behaviour may change.
+- **Minor** (`0.2.0` → `0.3.0`): may break. Adding an envelope key (and moving
+  `envelope_version` to `1.1`), adding a tenth `ErrorCode`, adding a
+  `CredentialStore` member, or withdrawing a public name all live here. `v0.2.0`
+  itself was such a release: it withdrew four names from the export surface.
+- **Major** (`1.0.0`): reserved. Renaming `RobinhoodGateway` — §1 and §2.1 both
+  call that out as deferred rather than rejected — belongs to that decision.
+  Once it happens the breaking position moves to major.
+
+A consumer pins an exact package version **and** an exact
+`expected_manifest_digest`, and neither is derivable from the other.
+
+**How this interacts with §12.4's external-review trigger.** They are different
+axes and both apply. §12.4 asks "does this change need a new independent
+review?"; this section asks "what may a consumer's code assume across this
+version change?". A manifest refresh moves the digest, needs no review, and
+needs no version bump at all. A format, canonicalization, digest-derivation or
+enforcement-path change needs a review *and* a minor bump.
+
+The consequence for a consumer is sharper than it looks, because §12.3 binds
+each verdict to the exact artifact it examined and says a future release
+inherits nothing. `v0.2.0` carries **APPROVED_FOR_AINVEST_INTEGRATION** bound to
+commit `46128a62` and to the wheel and sdist re-hashed from GitHub. A later
+release that is compatible under this section is still an unreviewed artifact.
+**Compatibility is not a security verdict**, and a consumer upgrading for
+security reasons should pin the reviewed version rather than the newest
+compatible one, or arrange for its own review.
+
+#### What this policy does not promise
+
+- **Anything about the provider.** Robinhood's tool set, schemas, descriptions,
+  and payload shapes are theirs, and §6.1.1 shows them moving within a day.
+- **`data` contents**, per the envelope section.
+- **Anything private.** No underscore-prefixed name, and nothing outside a
+  module's `__all__`, is covered — including `_open_provider_session`,
+  `StoredTokenProvider` and `open_credential_store`, whose importability §12.2
+  records as an accepted residual risk. A consumer relying on one has left this
+  policy and, per that section, the security boundary too.
+- **`DriftReason`'s strings.** Its nine values appear in `rh-mcp status` JSON,
+  and its own docstring calls them "diagnostic detail, not part of §7.3's nine
+  codes". New members may appear in a minor release; do not switch on them
+  exhaustively.
+- **`rh-mcp status` and `rh-mcp capabilities` JSON, beyond a floor.**
+  `ReadinessAssessment.to_json_dict()` and `CapabilityDescription.to_json_dict()`
+  carry **no version field of their own** — only the envelope does. §7.1 pins
+  `Readiness`'s four keys as a floor with "includes at least", and the
+  assessment adds `findings`; `capabilities` output adds `allowed`, `mutates`,
+  `description`, `schema_digest`, `rationale` and `input_schema` per entry. Both
+  key sets are pinned by tests, so they cannot move silently, but neither
+  announces its own version the way the envelope does. That asymmetry is
+  under-specified and is stated rather than closed: adding a version field to
+  either means editing enforcement-path code, so it waits for a release already
+  going through §12.4's review.
+- **Python beyond `requires-python = ">=3.12"`**, or any behaviour of the
+  private `mcp` and `httpx2` dependencies, whose major bounds §12 treats as a
+  security-boundary change to widen.
+- **That the policy is self-enforcing.** The fixtures named above are what CI
+  actually holds: the envelope and readiness key sets, the nine error strings,
+  the five exit integers, the code-to-bucket map, the canonicalization vectors,
+  and the shipped manifest's dispositions. Everything else in this section is a
+  commitment a human can break in a single commit, and saying which is which is
+  the point of writing it down.
+
 ## 13. Open items
 
 All six owner-assisted observations are **closed**, on 2026-08-03:
@@ -847,8 +1188,9 @@ Two provider behaviours observed and deliberately not worked around:
   because suppressing another library's warning hides a signal that is not
   ours to hide.
 
-What remains of §12 is the published compatibility policy, and re-review of
-`v0.2.0` by the independent reviewer — not further observation of the provider.
+What remains of §12 is re-review of `v0.2.0` by the independent reviewer — not
+further observation of the provider, and no longer the published compatibility
+policy, which is §12.5.
 
 ## 14. Build order
 
@@ -867,5 +1209,6 @@ What remains of §12 is the published compatibility policy, and re-review of
 
 Steps 1–6 are complete. Step 7 is partly complete: `v0.1.0` was tagged and
 released, and the independent security review was performed and returned
-CHANGES_REQUIRED (§12.1). Outstanding within step 7: re-review of `v0.2.0`,
-the published compatibility policy, and consumer contract integration.
+CHANGES_REQUIRED (§12.1), and the compatibility policy §12 asked for is
+published as §12.5. Outstanding within step 7: re-review of `v0.2.0` and
+consumer contract integration.

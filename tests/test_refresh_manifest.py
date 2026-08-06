@@ -98,13 +98,13 @@ class TestItRefuses:
             }
         )
         with pytest.raises(RefusedError, match="review and not a refresh"):
-            refresh(write(candidate_path, candidate), manifest_path, reviewer="t")
+            refresh(write(candidate_path, candidate), manifest_path)
 
     def test_a_tool_that_disappeared(self, manifest_path: Path, candidate_path: Path) -> None:
         candidate = drifted(build_manifest())
         candidate["tools"].pop()
         with pytest.raises(RefusedError, match="disappeared"):
-            refresh(write(candidate_path, candidate), manifest_path, reviewer="t")
+            refresh(write(candidate_path, candidate), manifest_path)
 
     def test_a_surface_identical_to_the_manifest(
         self, manifest_path: Path, candidate_path: Path
@@ -117,21 +117,20 @@ class TestItRefuses:
         """
         candidate = candidate_from(build_manifest())
         with pytest.raises(RefusedError, match="identical to the committed manifest"):
-            refresh(write(candidate_path, candidate), manifest_path, reviewer="t")
+            refresh(write(candidate_path, candidate), manifest_path)
 
     def test_a_document_that_is_not_a_candidate(
         self, manifest_path: Path, candidate_path: Path
     ) -> None:
         """A manifest passed by mistake must not be treated as an observation."""
         with pytest.raises(RefusedError, match="not an `admin discover` candidate"):
-            refresh(write(candidate_path, build_manifest()), manifest_path, reviewer="t")
+            refresh(write(candidate_path, build_manifest()), manifest_path)
 
     def test_a_candidate_with_no_tools(self, manifest_path: Path, candidate_path: Path) -> None:
         with pytest.raises(RefusedError, match="no observed tools"):
             refresh(
                 write(candidate_path, {"candidate": True, "observed_at": "x", "tools": []}),
                 manifest_path,
-                reviewer="t",
             )
 
     def test_a_manifest_that_does_not_load(self, tmp_path: Path, candidate_path: Path) -> None:
@@ -139,7 +138,7 @@ class TestItRefuses:
         broken.write_text('{"manifest_format_version": "9.9"}', encoding="utf-8")
         with pytest.raises(RefusedError, match="does not load"):
             refresh(
-                write(candidate_path, candidate_from(build_manifest())), broken, reviewer="t"
+                write(candidate_path, candidate_from(build_manifest())), broken
             )
 
     def test_it_offers_no_flag_to_change_a_disposition(self) -> None:
@@ -162,7 +161,7 @@ class TestItCarriesDecisionsForward:
         document = build_manifest()
         before = {e["provider_tool_name"]: e for e in document["entries"]}
         refreshed = refresh(
-            write(candidate_path, drifted(document)), manifest_path, reviewer="t"
+            write(candidate_path, drifted(document)), manifest_path
         )
         assert refreshed["entries"]
         for entry in refreshed["entries"]:
@@ -176,7 +175,7 @@ class TestItCarriesDecisionsForward:
         document = build_manifest()
         before = {e["provider_tool_name"]: e for e in document["entries"]}
         refreshed = refresh(
-            write(candidate_path, drifted(document)), manifest_path, reviewer="t"
+            write(candidate_path, drifted(document)), manifest_path
         )
         moved = [
             e["provider_tool_name"]
@@ -189,7 +188,7 @@ class TestItCarriesDecisionsForward:
         self, manifest_path: Path, candidate_path: Path
     ) -> None:
         refreshed = refresh(
-            write(candidate_path, drifted(build_manifest())), manifest_path, reviewer="t"
+            write(candidate_path, drifted(build_manifest())), manifest_path
         )
         loaded = load_manifest_text(json.dumps(refreshed))
         assert loaded.digest == refreshed[FULL_MANIFEST_DIGEST_FIELD]
@@ -198,7 +197,7 @@ class TestItCarriesDecisionsForward:
         """Drift the consumer must accept has to be visible as a new pin."""
         document = build_manifest()
         refreshed = refresh(
-            write(candidate_path, drifted(document)), manifest_path, reviewer="t"
+            write(candidate_path, drifted(document)), manifest_path
         )
         assert refreshed[FULL_MANIFEST_DIGEST_FIELD] != document[FULL_MANIFEST_DIGEST_FIELD]
 
@@ -211,7 +210,6 @@ class TestItCarriesDecisionsForward:
         refreshed = refresh(
             write(candidate_path, drifted(document, denied["provider_tool_name"])),
             manifest_path,
-            reviewer="t",
         )
         entry = next(
             e
@@ -220,6 +218,43 @@ class TestItCarriesDecisionsForward:
         )
         assert entry["disposition"] == "denied"
         assert entry["capability"] == denied["capability"]
+
+
+class TestTheReportIsTrue:
+    """A dry run must print the digest the real run writes.
+
+    It did not. `reviewed_at` was stamped with `now()` on every invocation, so
+    two consecutive dry runs reported two different digests and neither matched
+    the file that was then written. The whole point of the dry run is to show
+    the value you are about to accept and pin, so a report that cannot be
+    trusted is worse than no report.
+
+    The fix was not to freeze a clock: it was to stop restamping. A refresh
+    carries the reviewer's decisions forward verbatim, so nobody reviewed
+    anything, and writing a fresh `reviewed_at` claimed a review that did not
+    happen. Carrying the reviewer block forward makes the tool honest and
+    deterministic at once.
+    """
+
+    def test_two_refreshes_of_the_same_input_agree(
+        self, manifest_path: Path, candidate_path: Path
+    ) -> None:
+        candidate = write(candidate_path, drifted(build_manifest()))
+        first = refresh(candidate, manifest_path)
+        second = refresh(candidate, manifest_path)
+        assert first[FULL_MANIFEST_DIGEST_FIELD] == second[FULL_MANIFEST_DIGEST_FIELD]
+        assert first == second
+
+    def test_the_reviewer_block_is_carried_forward_not_restamped(
+        self, manifest_path: Path, candidate_path: Path
+    ) -> None:
+        before = load_manifest_text(manifest_path.read_text(encoding="utf-8"))
+        refreshed = refresh(
+            write(candidate_path, drifted(build_manifest())), manifest_path
+        )
+        assert refreshed["reviewer"] == dict(before.reviewer), (
+            "a refresh reviews nothing, so it must not claim a new review date"
+        )
 
 
 class TestVersioning:
@@ -263,6 +298,6 @@ def test_the_shipped_manifest_is_refreshable(tmp_path: Path) -> None:
     }
     path = tmp_path / "candidate.json"
     path.write_text(json.dumps(candidate), encoding="utf-8")
-    refreshed = refresh(path, PACKAGED_MANIFEST_PATH, reviewer="t")
+    refreshed = refresh(path, PACKAGED_MANIFEST_PATH)
     assert len(refreshed["entries"]) == len(real.entries)
     assert sum(1 for e in refreshed["entries"] if e["disposition"] == "denied") == 8

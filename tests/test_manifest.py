@@ -826,7 +826,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b"
+    SHIPPED_DIGEST = "sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,

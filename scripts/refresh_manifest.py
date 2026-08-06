@@ -46,7 +46,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import datetime
 import json
 import sys
 from pathlib import Path
@@ -67,6 +66,7 @@ from rh_mcp.manifest import (  # noqa: E402
     load_manifest_text,
     provider_surface_digest,
 )
+from rh_mcp.validation import json_safe  # noqa: E402
 
 
 class RefusedError(RuntimeError):
@@ -106,7 +106,7 @@ def _refuse_on_set_change(prior: dict[str, Any], observed: dict[str, Any]) -> No
     raise RefusedError("\n".join(lines))
 
 
-def refresh(candidate_path: Path, manifest_path: Path, *, reviewer: str) -> dict[str, Any]:
+def refresh(candidate_path: Path, manifest_path: Path) -> dict[str, Any]:
     """Return the refreshed manifest document. Raises `RefusedError` if it must not."""
     try:
         previous = load_manifest_file(manifest_path)
@@ -169,10 +169,16 @@ def refresh(candidate_path: Path, manifest_path: Path, *, reviewer: str) -> dict
         "manifest_version": _next_version(previous.manifest_version, candidate["observed_at"]),
         "provider_surface_digest": provider_surface_digest(surface),
         "observed_at": candidate["observed_at"],
-        "reviewer": {
-            "name": reviewer,
-            "reviewed_at": datetime.datetime.now(datetime.UTC).isoformat(),
-        },
+        # Carried forward, not restamped. Nobody reviewed anything here — the
+        # dispositions came from the previous manifest — so writing a fresh
+        # `reviewed_at` would claim a review that did not happen.
+        #
+        # It also made the tool lie. `reviewed_at` was `now()` per invocation,
+        # so two consecutive `--dry-run`s reported two different digests and
+        # neither matched what the real run wrote. A dry run whose whole
+        # purpose is to tell you the digest you are about to accept must be
+        # deterministic, and the digest it prints must be the one written.
+        "reviewer": json_safe(previous.reviewer),
         "entries": entries,
     }
     document[FULL_MANIFEST_DIGEST_FIELD] = compute_full_manifest_digest(document)
@@ -282,14 +288,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("candidate", type=Path, help="output of `rh-mcp admin discover`")
     parser.add_argument("--manifest", type=Path, default=PACKAGED_MANIFEST_PATH)
-    parser.add_argument("--reviewer", default="Ke Li")
     parser.add_argument(
         "--dry-run", action="store_true", help="report what would change; write nothing"
     )
     args = parser.parse_args(argv)
 
     try:
-        document = refresh(args.candidate, args.manifest, reviewer=args.reviewer)
+        document = refresh(args.candidate, args.manifest)
     except RefusedError as exc:
         print(f"refused: {exc}", file=sys.stderr)
         return 1

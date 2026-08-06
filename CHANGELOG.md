@@ -45,31 +45,53 @@ that carries them.
   What it declines to promise is the load-bearing half. Error `message` text is
   human-facing and may change in a patch with no entry here — branch on `code`
   and `retryable`, never on prose. `retryable` is per-error and not a function
-  of `code`: three raise sites set it today and a provider request timeout is
-  not one of them, so `timeout` appears both ways. `correlation_id` is public
-  and **never populated** by anything in this package. The manifest's *content*
-  is deliberately not a compatibility surface — it is expected to move, which is
-  exactly what the pinned `expected_manifest_digest` is for. And `rh-mcp status`
-  / `rh-mcp capabilities` JSON carries no version field of its own, unlike the
-  envelope; that asymmetry is recorded rather than closed, because closing it
-  means editing enforcement-path code, which §12.4 puts behind a review.
+  of `code`: five raise sites can set it, two of them conditional on a 5xx
+  status class, so a provider 5xx is retryable while a provider *request
+  timeout* is not — `timeout` and `provider_error` each appear on both sides.
+  `correlation_id` is public and **never populated** by anything in this
+  package. The manifest's *content* is deliberately not a compatibility surface
+  — it is expected to move, which is exactly what the pinned
+  `expected_manifest_digest` is for. And `rh-mcp status` / `rh-mcp capabilities`
+  JSON carries no version field of its own, unlike the envelope; that asymmetry
+  is recorded rather than closed, because closing it means editing
+  enforcement-path code, which §12.4 puts behind a review.
 
-- `tests/test_errors.py` pins the nine literal error wire strings and the five
-  literal exit integers. The existing golden table is keyed by enum *member*, so
-  it asserted which bucket a member lands in without asserting the string that
-  member carries — and the string is what a consumer meets, on stderr and in the
-  `error_code` field of `status` output. Measured on `b6d6a35` rather than
-  assumed: renaming `capability_denied` to `capability_refused`, or moving
-  `EXIT_CODE_PROVIDER_FAILURE` from 1 to 8, each left all 1176 tests green. Six
-  mutations now fail, including adding a tenth code.
+- **Fixtures for every surface §12.5 promises**, because a policy CI does not
+  hold is worse than none:
 
-  Nothing was added for the envelope, `Readiness`, or `CredentialStore`. The
-  same mutations were run against those and the existing gate already catches
-  them: `test_to_json_dict_shape` compares whole rendered dictionaries against
-  literals, and every `CredentialStore` member has an in-package call site that
-  fails `mypy src` when the declaration is removed and `pytest` when it is
-  renamed across protocol and adapters. A redundant fixture is not free — it
-  reads like coverage.
+  - `tests/test_errors.py` pins the nine literal error wire strings and the five
+    literal exit integers. The existing golden table is keyed by enum *member*,
+    so it asserted which bucket a member lands in without asserting the string
+    that member carries. Measured on `b6d6a35` rather than assumed: renaming
+    `capability_denied` to `capability_refused`, or moving
+    `EXIT_CODE_PROVIDER_FAILURE` from 1 to 8, each left all 1176 tests green.
+  - `tests/test_cli.py` pins the CLI's stderr error line, `rh-mcp: <code>:
+    <message>`, for all nine codes. §12.5 names that line as one of the two
+    places a consumer meets a wire string, and nothing asserted it: rewriting it
+    to `rh-mcp error [CAPABILITY_DENIED]: …` left the suite green. The
+    `test_errors.py` fixture asserts `str(ErrorCode.X) == "x"`, which is a
+    property of `StrEnum`, not of `cli.py` — asserting the adjacent thing is the
+    defect this whole change exists to retire.
+  - `tests/test_credentials.py` pins the eight `CredentialStore` member names as
+    a set. Seven are methods with in-package call sites, so `mypy` catches their
+    removal; `namespace` has no reader anywhere in `src/` or `tests/`, and both
+    deleting and renaming it left `mypy src` clean and the suite green. The
+    member with no consumer is the one a refactor drops unnoticed.
+  - `tests/test_manifest.py` and `tests/test_gateway.py` pin the whole key sets
+    of `ReadinessAssessment`, `DriftFinding` and `CapabilityDescription` JSON.
+    Renames were already caught, because every key is read by name; *additions*
+    were not, and an added key is how an unversioned payload changes shape under
+    a consumer. This is the mitigation §12.5 leans on when it accepts that
+    `status` and `capabilities` carry no version field.
+
+  Nothing was added for the envelope or `Readiness`: `test_to_json_dict_shape`
+  already compares whole rendered dictionaries against literals, in both
+  directions, and a redundant fixture is not free — it reads like coverage.
+
+  The four bullets above other than the first exist because an independent
+  review disproved by mutation three "already defended, no fixture needed"
+  claims in this change's first draft. The standing rule is now that no such
+  claim enters DESIGN §12.5 without the mutation that demonstrates it.
 
 - DESIGN §12.4 states when a manifest change needs a new external review and
   when it does not. The reviewers bind each verdict to the exact artifact they
@@ -82,6 +104,20 @@ that carries them.
   underneath it, and the human reading of the refresh report is the control.
 
 ### Fixed
+
+- **DESIGN §13 and §14 said the `v0.2.0` re-review was still outstanding.** It
+  is not: §12.2 records **APPROVED_FOR_AINVEST_INTEGRATION** on 2026-08-04 bound
+  to commit `46128a62`, and `security-review/v0.2.0/` is committed. Both "what
+  remains" enumerations were written before the approval landed and edited
+  afterwards without being re-read, so the document contradicted itself in three
+  places. §12 has nothing outstanding; §14 step 7 has consumer contract
+  integration and nothing else.
+
+- **`## [0.2.0] — unreleased`** was never true. The tag, the GitHub release and
+  its `SHA256SUMS` all exist, published 2026-08-04. Unlike the digest lines
+  below it, this is not a published record being corrected — it is a heading
+  that never matched reality, seven lines above the first wrong digest in the
+  entry §12.5 now points consumers at.
 
 - `scripts/refresh_manifest.py` restamped `reviewer.reviewed_at` with `now()`
   on every run, so two consecutive `--dry-run`s reported two different digests
@@ -150,30 +186,38 @@ disposition moved, both affected tools denied either way.
 sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
 ```
 
-The preamble above says manifest changes are recorded under `### Manifest`
-within the release that carries them, and this one had no entry — the refresh
-landed with its own changelog entries under **Fixed** and **Added** but not
-here. Recorded now, because DESIGN §12.5 makes the digest something a consumer
-is told to read out of this file.
+Recorded here because the preamble above requires it: manifest changes go under
+`### Manifest` within the release that carries them, and this one had no entry —
+the refresh landed with entries under **Fixed** and **Added** but not this one.
 
 **And a correction that goes with it.** The `[0.1.0]` and `[0.2.0]` entries
 below both print `sha256:49b7218…` beside manifest version `2026.08.03.1`.
 Those two values do not go together. Both tags ship `2026.08.03.1` with
 `sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b` —
 check with `git show v0.2.0:src/rh_mcp/manifests/read-manifest.json`.
-`49b7218…` is `2026.08.05`, which is what `main` ships and what the README
-publishes. The refresh commit rewrote the digest inside those two historical
-entries, so `[0.2.0]`'s "Unchanged … so a consumer's pinned manifest digest
-does not move" now names a digest that did move.
+`49b7218…` is `2026.08.05`, which is what `main` ships, what the README
+publishes, and what this entry records. The refresh commit `b6d6a35` rewrote the
+digest inside those two historical entries, so `[0.2.0]`'s "Unchanged … so a
+consumer's pinned manifest digest does not move" now names a digest that did
+move. The `v0.2.0` GitHub release notes publish the correct value; this file is
+the only place carrying the wrong one, and it carries it under the two headings
+a consumer pinning a tag jumps straight to.
 
-The lines are left as they stand rather than edited here: correcting a
-published digest in a released artifact's changelog entry is a decision for
-whoever owns the release record, not a side effect of writing a compatibility
-policy. **A consumer pinning `v0.2.0` should take its digest from that
-artifact's own manifest, not from the entry below** — which is the general rule
-§12.5 states, arrived at from this specific instance.
+Both wrong values are **left in place and marked in line**, which is the whole
+of the fix. Silently substituting the right digest would rewrite a published
+release record, and that is not a side effect a compatibility-policy change gets
+to have. Leaving the line unmarked is a different act with a different cost — a
+reader who jumps to their version's heading, which is how a changelog is read,
+meets a wrong digest and no warning. A note 125 lines above it is not a warning.
+So the record is preserved and the hazard is removed, and whoever owns the
+release record can still decide to substitute.
 
-## [0.2.0] — unreleased
+By this file's own standard, borrowed from the tests: a line stating a wrong
+digest under the right heading is worse than no line, for the same reason a
+passing test that asserts something adjacent is worse than no test — it reads
+like the thing it is not.
+
+## [0.2.0] — 2026-08-04
 
 The response to the independent security review of `v0.1.0`, which returned
 **CHANGES_REQUIRED**. The reviewer's report and their own adversarial tests are
@@ -300,6 +344,15 @@ Unchanged. `2026.08.03.1`,
 Nothing in this release touches a disposition, a rationale, or a digest, so a
 consumer's pinned manifest digest does not move.
 
+> **[Corrected — do not pin the digest on the line above.]** The `v0.2.0` tag
+> ships `2026.08.03.1` with
+> `sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`,
+> which is also what the `v0.2.0` GitHub release notes publish. Verify with
+> `git show v0.2.0:src/rh_mcp/manifests/read-manifest.json`. `49b7218…` is
+> manifest `2026.08.05`, which `main` ships; commit `b6d6a35` substituted it
+> into this entry while refreshing the manifest. The original line is preserved
+> rather than rewritten — see `[Unreleased]` → **Manifest**, and DESIGN §12.5.
+
 ## [0.1.0] — 2026-08-03
 
 First release. Nothing before this was published, so this entry describes the
@@ -355,6 +408,16 @@ never has to infer which is which.
 ```
 sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
 ```
+
+> **[Corrected — do not pin the digest in the block above.]** The `v0.1.0` tag
+> ships `2026.08.03.1` with
+> `sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`.
+> Verify with `git show v0.1.0:src/rh_mcp/manifests/read-manifest.json`.
+> `49b7218…` is manifest `2026.08.05`, which `main` ships; commit `b6d6a35`
+> substituted it into this entry while refreshing the manifest. The original
+> block is preserved rather than rewritten — see `[Unreleased]` → **Manifest**,
+> and DESIGN §12.5. (`v0.1.0` should not be used with a real credential in any
+> case; see **Known limitations** below.)
 
 Produced by owner-assisted discovery on 2026-08-03 and reviewed by hand. The
 denied set is exactly the trading surface: `place_equity_order`,

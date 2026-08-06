@@ -956,6 +956,54 @@ class TestReadiness:
         assert payload["expected_manifest_digest"] == BASE_DIGEST
         assert payload["findings"] == []
 
+    # Golden fixture (DESIGN.md §7.1, §12.5): the whole key set, not five keys
+    # read one at a time.
+    #
+    # §12.5 tolerates `rh-mcp status` carrying no version field of its own on
+    # the ground that its key set cannot move silently. That was only half true.
+    # Every key here is read by name somewhere, so a *rename* fails — but an
+    # independent review added a key to `ReadinessAssessment.to_json_dict` and
+    # to `DriftFinding.to_json_dict` and got 1179 passing, because nothing
+    # compared a whole rendered dict against a literal the way
+    # `test_models.py::TestResultEnvelope::test_to_json_dict_shape` does for the
+    # envelope. An added key is precisely how an unversioned payload changes
+    # shape under a consumer, so it is the direction the missing version field
+    # leaves exposed. Key sets rather than values: the values are digests and
+    # drift prose that the tests around this one already own.
+    _EXPECTED_ASSESSMENT_KEYS: frozenset[str] = frozenset(
+        {
+            "ready",
+            "manifest_version",
+            "manifest_digest",
+            "expected_manifest_digest",
+            "findings",
+        }
+    )
+    _EXPECTED_FINDING_KEYS: frozenset[str] = frozenset({"reason", "detail", "error_code"})
+
+    def test_the_status_payload_key_set_is_pinned_in_both_directions(
+        self, document: dict[str, Any], manifest: ReviewedManifest
+    ) -> None:
+        ready = run(
+            establish_readiness(
+                config_for(BASE_DIGEST), manifest, SpyDiscovery(matching_surface(document))
+            )
+        )
+        assert set(ready.to_json_dict()) == self._EXPECTED_ASSESSMENT_KEYS
+
+        # The not-ready shape too. It is the one an operator actually reads, and
+        # the only one that renders a finding.
+        not_ready = run(
+            establish_readiness(
+                config_for(OTHER_DIGEST), manifest, SpyDiscovery(matching_surface(document))
+            )
+        )
+        payload = not_ready.to_json_dict()
+        assert set(payload) == self._EXPECTED_ASSESSMENT_KEYS
+        assert payload["findings"]
+        for finding in payload["findings"]:
+            assert set(finding) == self._EXPECTED_FINDING_KEYS
+
     def test_a_mismatched_pin_never_reaches_discovery(
         self, document: dict[str, Any], manifest: ReviewedManifest
     ) -> None:

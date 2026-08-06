@@ -97,6 +97,48 @@ class TestFailuresEmitNothingToStdout:
         assert out == ""
         assert "a safe message" in err
 
+    # Golden fixture (DESIGN.md §7.3, §12.5). §12.5 names the CLI's stderr line
+    # as one of the two places a consumer meets an error's **wire string**, so
+    # the line has to be pinned here, in `cli.py`'s own tests, and not inferred.
+    #
+    # Nothing pinned it before. An independent review rewrote `cli.py`'s error
+    # line to `f"{PROGRAM} error [{exc.code.name}]: {exc.message}"` — changing
+    # the format *and* emitting `CAPABILITY_DENIED` where a consumer had been
+    # promised `capability_denied` — and the whole suite stayed green. The
+    # fixture in `tests/test_errors.py` asserts `str(ErrorCode.X) == "x"`, which
+    # is a property of `StrEnum`, not evidence that this module puts that string
+    # on stderr. Asserting the adjacent property is the §12.1 `TestNoEscapeHatch`
+    # defect, and it does not stop being that because the claim it defends is
+    # one paragraph away.
+    _EXPECTED_STDERR_LINES: dict[ErrorCode, str] = {
+        ErrorCode.AUTH_REQUIRED: "rh-mcp: auth_required: a safe message",
+        ErrorCode.NOT_READY: "rh-mcp: not_ready: a safe message",
+        ErrorCode.CAPABILITY_DENIED: "rh-mcp: capability_denied: a safe message",
+        ErrorCode.INPUT_INVALID: "rh-mcp: input_invalid: a safe message",
+        ErrorCode.PROVIDER_ERROR: "rh-mcp: provider_error: a safe message",
+        ErrorCode.TIMEOUT: "rh-mcp: timeout: a safe message",
+        ErrorCode.RESPONSE_TOO_LARGE: "rh-mcp: response_too_large: a safe message",
+        ErrorCode.PROTOCOL_ERROR: "rh-mcp: protocol_error: a safe message",
+        ErrorCode.CONFIGURATION_ERROR: "rh-mcp: configuration_error: a safe message",
+    }
+
+    def test_the_stderr_error_line_carries_the_wire_string_verbatim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§12.5: `rh-mcp: <code>: <message>`, with `<code>` the wire string."""
+        assert set(self._EXPECTED_STDERR_LINES) == set(ErrorCode)
+        for code, expected_line in self._EXPECTED_STDERR_LINES.items():
+
+            async def failing(*_: Any, __code: ErrorCode = code, **___: Any) -> int:
+                raise GatewayError(__code, "a safe message")
+
+            monkeypatch.setitem(cli._COMMANDS, "capabilities", failing)
+            _, out, err = invoke(["capabilities"])
+            assert out == ""
+            # The first line exactly. `auth_required` adds a second pointing at
+            # `rh-mcp login`, which the test below covers.
+            assert err.splitlines()[0] == expected_line
+
     def test_auth_required_points_at_login(self, monkeypatch: pytest.MonkeyPatch) -> None:
         async def failing(*_: Any, **__: Any) -> int:
             raise GatewayError(ErrorCode.AUTH_REQUIRED, "credential expired")

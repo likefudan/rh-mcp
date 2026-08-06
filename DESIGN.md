@@ -833,6 +833,15 @@ policy that overstates its own guarantees is the same defect as §1's original
 "no public surface exposes a generic `call_tool`", which was false for the whole
 life of `v0.1.0`.
 
+That is not a claim of having got it right first time. An independent review of
+the first draft of this section disproved four of its statements by mutation:
+an enumeration of `retryable` sites that missed the most common one, and three
+assertions that an existing test already defended a surface when it did not.
+Each is corrected below **in place, with what was wrong left visible**, because
+a policy section that quietly acquires the fixtures it claimed to already have
+teaches the reader nothing about how much to trust the next such claim. Every
+"already defended" statement now names the mutation that demonstrates it.
+
 **Two things a consumer pins, and they move independently.** The package
 version covers the code — the surfaces below. The full-manifest digest covers
 what the gateway is permitted to do. `CHANGELOG.md` opens with this and §6.2 and
@@ -893,12 +902,28 @@ value. The nine values are:
 `provider_error`, `timeout`, `response_too_large`, `protocol_error`,
 `configuration_error`.
 
-They are observable in two places a consumer actually reads: the CLI's stderr
-line, `rh-mcp: <code>: <message>`, and the `error_code` field of each finding in
-`rh-mcp status` JSON, which `DriftFinding.to_json_dict()` emits as
-`str(self.error_code)`. Renaming `ErrorCode.CAPABILITY_DENIED` in Python while
-keeping the value `"capability_denied"` is not a breaking change; keeping the
-member name and changing the value is.
+They are observable in two places a consumer actually reads, and both are
+stable:
+
+- the CLI's stderr line, exactly `rh-mcp: <code>: <message>`, pinned by
+  `tests/test_cli.py::…::test_the_stderr_error_line_carries_the_wire_string_verbatim`
+  for all nine codes;
+- the `error_code` field of each finding in `rh-mcp status` JSON, which
+  `DriftFinding.to_json_dict()` emits as `str(self.error_code)`.
+
+Renaming `ErrorCode.CAPABILITY_DENIED` in Python while keeping the value
+`"capability_denied"` is not a breaking change; keeping the member name and
+changing the value is.
+
+The stderr line needed its own fixture and did not have one when this section
+was first written. `tests/test_errors.py` asserts `str(ErrorCode.X) == "x"`,
+which is a property of `StrEnum` and says nothing about what `cli.py` writes: an
+independent review rewrote the line to `rh-mcp error [CAPABILITY_DENIED]: …`,
+changing both the format and the form of the code, and the whole suite stayed
+green. That is the §12.1 `TestNoEscapeHatch` defect — a passing test asserting
+something adjacent to the claim — reappearing inside the change written to
+retire it. The lesson generalises and is worth stating once: **a fixture must
+assert the surface the promise names, not a property of the type behind it.**
 
 The set is closed at nine for now. A tenth code may be added in a minor
 release, so a consumer switching on the code must have a default branch.
@@ -919,15 +944,42 @@ never a raw provider response, a URL with a query, a header, a token, an account
 identifier, or a stack trace — and that constraint is stable even though the
 wording is not.
 
-**`retryable` is per-error and is not a function of `code`.** Exactly three
-raise sites set it today: contention on the credential `flock` and a
-non-answering macOS `security` tool, both `timeout`, and a failed provider
-connection, `provider_error`. Everything else carries the default `False` —
-including a provider request timeout, which is also `timeout`. So the same code
-appears both ways, and a consumer that derives retryability from the code will
-be wrong. Read `retryable=True` as "the gateway asserts a retry is safe" and
-`False` as the absence of that assertion, not as "a retry will fail". Which
-sites set it may change in a minor release.
+**`retryable` is per-error and is not a function of `code`.** Five raise sites
+can produce `True` today, and the two a consumer meets most often are
+*conditional* rather than literal:
+
+- **any provider HTTP 5xx.** `transport.py` records
+  `retryable=500 <= response.status_code < 600` on every response at or above
+  400, so a 502 or 503 from Robinhood arrives as a **retryable**
+  `provider_error` while a 400 arrives as a non-retryable one.
+  `tests/test_transport.py::test_a_server_failure_becomes_a_retryable_provider_error`
+  asserts exactly this for a 503.
+- **any authorization-server 5xx** — the same expression in `auth.py`'s
+  `_require_payload`, covering the token and registration endpoints.
+- a failed connection to the provider — `provider_error`.
+- contention on the credential `flock` — `timeout`.
+- a non-answering macOS `security` tool — `timeout`.
+
+Everything else carries the default `False`, and the sharp case is that a
+provider *request* timeout is among them: it is `timeout` and it is **not**
+retryable, while `flock` contention is `timeout` and is. `provider_error`
+likewise appears on both sides, split by status class. So both of the codes a
+consumer meets most often appear both ways, and deriving retryability from the
+code is wrong in both directions.
+
+Read `retryable=True` as "the gateway asserts a retry is safe" and `False` as
+the absence of that assertion, not as "a retry will fail". The 400-versus-5xx
+split is the shape of that distinction: a 400 is not asserted retryable because
+resending the same request produces the same 400. Which sites set it, and the
+condition each uses, may change in a minor release.
+
+An earlier draft of this section said "exactly three raise sites". It was
+counted by grepping for the literal `retryable=True`, which finds neither
+conditional site — so it told a consumer that the most common retryable case
+does not occur, with a committed test in this repository asserting that it does.
+Recorded rather than quietly corrected, because it is the exact failure this
+section is about: a confident enumeration that was never checked against the
+code it enumerates.
 
 **`correlation_id` exists and is never populated.** §7.3 calls it optional and
 §8 lists a correlation identifier among what logs may contain, but no code in
@@ -1083,13 +1135,30 @@ accept one. And §5.2's production policy is separate from this protocol: in
 production mode this package accepts only the macOS Keychain adapter, and
 supplying another store means injecting an implementation of this protocol.
 
-**No golden fixture was added here, because the gap does not exist.** That was
-checked rather than assumed. Deleting any one of the seven method declarations
-from the protocol fails `mypy src` — each has an in-package call site through a
-`CredentialStore`-typed reference — and renaming any member consistently across
-the protocol and the adapters fails `pytest`, because the adapter tests call
-them by name. Both directions already break the gate this PR runs, so a third
-assertion would be noise.
+**What defends this, and the member that nothing defended.** Deleting any one of
+the seven *method* declarations from the protocol fails `mypy src` — each has an
+in-package call site through a `CredentialStore`-typed reference — and renaming
+one consistently across the protocol and the adapters fails `pytest`, because
+the adapter tests call them by name. That covers seven of the eight.
+
+It did not cover `namespace`, which is the member listed first above. Nothing in
+`src/` or `tests/` reads `.namespace` off a store, so an independent review
+deleted it from the protocol and got a clean `mypy src`, then renamed it to
+`scope_name` on both the protocol and `_BytesBackedStore` and got a clean
+`mypy src` with the full suite passing. The member with no in-package consumer
+is exactly the one a refactor drops without noticing, and it was undefended
+precisely *because* nothing here uses it — which is the general shape of this
+gap, not an accident of one name.
+
+`tests/test_credentials.py` now pins the eight member names as a set, and
+asserts every shipped adapter satisfies it. Both of the review's mutations fail
+against it. The set assertion also catches an addition, which is the direction
+that breaks an outside implementer rather than this package.
+
+The wider point is worth keeping: an argument of the form "the existing gate
+already catches this" has to be checked member by member, because the gate
+catches things through call sites and a published contract may have members
+that nothing in the package calls.
 
 #### The versioning rule
 
@@ -1142,23 +1211,48 @@ compatible one, or arrange for its own review.
 - **`rh-mcp status` and `rh-mcp capabilities` JSON, beyond a floor.**
   `ReadinessAssessment.to_json_dict()` and `CapabilityDescription.to_json_dict()`
   carry **no version field of their own** — only the envelope does. §7.1 pins
-  `Readiness`'s four keys as a floor with "includes at least", and the
-  assessment adds `findings`; `capabilities` output adds `allowed`, `mutates`,
-  `description`, `schema_digest`, `rationale` and `input_schema` per entry. Both
-  key sets are pinned by tests, so they cannot move silently, but neither
-  announces its own version the way the envelope does. That asymmetry is
-  under-specified and is stated rather than closed: adding a version field to
-  either means editing enforcement-path code, so it waits for a release already
-  going through §12.4's review.
+  `Readiness`'s four keys as a floor with "includes at least"; the assessment
+  adds `findings`, each finding rendering `reason`, `detail` and `error_code`.
+  `capabilities` output is four top-level keys — `manifest_version`,
+  `manifest_digest`, `expected_manifest_digest`, `digest_matches` — around a
+  `capabilities` list whose entries carry `capability`, `allowed`, `mutates`,
+  `description`, `schema_digest`, `rationale` and `input_schema`.
+
+  Both key sets are now pinned as whole sets, in both directions, so neither can
+  move silently — but neither announces its own version the way the envelope
+  does, so a consumer has no way to *detect* a shape change short of comparing
+  keys itself. That asymmetry is under-specified and is stated rather than
+  closed: adding a version field to either means editing enforcement-path code,
+  so it waits for a release already going through §12.4's review.
+
+  The "pinned as whole sets" half was not true when this section was first
+  written and is the reason to say it carefully now. Every key in both payloads
+  was read by name somewhere, so a *rename* failed — but nothing compared a
+  rendered dictionary against a literal the way the envelope's fixture does, so
+  an independent review **added** a key to each of the three renderers and the
+  suite stayed green. Additions are the direction that matters here: an added
+  key is how an unversioned payload changes shape under a consumer that has no
+  version field to notice it. `tests/test_manifest.py` and `tests/test_gateway.py`
+  now assert the full key sets.
 - **Python beyond `requires-python = ">=3.12"`**, or any behaviour of the
   private `mcp` and `httpx2` dependencies, whose major bounds §12 treats as a
   security-boundary change to widen.
 - **That the policy is self-enforcing.** The fixtures named above are what CI
-  actually holds: the envelope and readiness key sets, the nine error strings,
-  the five exit integers, the code-to-bucket map, the canonicalization vectors,
-  and the shipped manifest's dispositions. Everything else in this section is a
-  commitment a human can break in a single commit, and saying which is which is
-  the point of writing it down.
+  actually holds: the envelope and `Readiness` key sets, the `status` and
+  `capabilities` key sets, the nine error wire strings, the CLI's stderr error
+  line, the five exit integers, the code-to-bucket map, the `CredentialStore`
+  member set, the canonicalization vectors, and the shipped manifest's
+  dispositions. Everything else in this section is a commitment a human can
+  break in a single commit, and saying which is which is the point of writing it
+  down.
+
+  Three of the "already defended, no fixture needed" claims in the first draft
+  of this section were wrong, and an independent review found all three by
+  mutation. That is the category this section cannot afford to get wrong,
+  because it is the section arguing that a policy CI does not hold is worse than
+  none — so the rule now is that **no claim of the form "the existing gate
+  catches this" enters this section without the mutation that demonstrates it**,
+  named where the fixture lives.
 
 ## 13. Open items
 
@@ -1188,9 +1282,20 @@ Two provider behaviours observed and deliberately not worked around:
   because suppressing another library's warning hides a signal that is not
   ours to hide.
 
-What remains of §12 is re-review of `v0.2.0` by the independent reviewer — not
-further observation of the provider, and no longer the published compatibility
-policy, which is §12.5.
+Nothing in §12 now remains, and nothing that remains is further observation of
+the provider. The compatibility policy is §12.5, the last item; the `v0.2.0`
+re-review is §12.2, which records **APPROVED_FOR_AINVEST_INTEGRATION** on
+2026-08-04 bound to commit `46128a62`, with the report at
+`security-review/v0.2.0/`.
+
+This sentence had said the re-review was outstanding, which §12.2 had already
+contradicted — the text was written before the approval landed and was edited
+rather than re-read afterwards. It is corrected here rather than left, because
+§12.5 now tells a consumer to decide what to pin from these enumerations, and a
+stale "what remains" list is exactly the kind of claim §12.1 says four review
+rounds walked past.
+
+What remains outside §12 is §14's consumer contract integration.
 
 ## 14. Build order
 
@@ -1207,8 +1312,9 @@ policy, which is §12.5.
 7. Independent security/compatibility review, tagged release, and consumer
    contract integration.
 
-Steps 1–6 are complete. Step 7 is partly complete: `v0.1.0` was tagged and
-released, and the independent security review was performed and returned
-CHANGES_REQUIRED (§12.1), and the compatibility policy §12 asked for is
-published as §12.5. Outstanding within step 7: re-review of `v0.2.0` and
-consumer contract integration.
+Steps 1–6 are complete. Step 7 is nearly complete: `v0.1.0` was tagged and
+released, the independent security review was performed and returned
+CHANGES_REQUIRED (§12.1), `v0.2.0` was re-reviewed as a fresh artifact and
+returned APPROVED_FOR_AINVEST_INTEGRATION (§12.2), and the compatibility policy
+§12 asked for is published as §12.5. Outstanding within step 7: **consumer
+contract integration**, and nothing else.

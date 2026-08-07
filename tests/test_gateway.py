@@ -408,6 +408,40 @@ class TestCapabilityListingShowsMutation:
             assert isinstance(entry["mutates"], bool)
             assert entry["rationale"].strip()
 
+    # Golden fixture (DESIGN.md §7.2, §12.5): the whole per-entry key set.
+    #
+    # Same gap as the `status` payload, and for the same reason. Every key here
+    # is read by name somewhere, so a rename fails; an independent review
+    # *added* a key to `CapabilityDescription.to_json_dict` and got 1179
+    # passing. §12.5 accepts `rh-mcp capabilities` having no version field of
+    # its own only because its shape cannot move unnoticed, and that has to be
+    # true in the addition direction too.
+    #
+    # `read_allowed` is deliberately not in this set: §2.1 renamed the JSON key
+    # to `allowed` in manifest format 1.2 and kept `read_allowed` as a Python
+    # attribute only. A key of that name reappearing here would be the 1.1
+    # spelling coming back, on a listing where 11 allowed entries write.
+    _EXPECTED_CAPABILITY_KEYS: frozenset[str] = frozenset(
+        {
+            "capability",
+            "allowed",
+            "mutates",
+            "description",
+            "schema_digest",
+            "rationale",
+            "input_schema",
+        }
+    )
+
+    def test_the_capability_listing_key_set_is_pinned_in_both_directions(
+        self, document: dict[str, Any], transport: SpyTransport
+    ) -> None:
+        rendered = [c.to_json_dict() for c in gateway_for(document, transport).capabilities()]
+        assert rendered
+        for entry in rendered:
+            assert set(entry) == self._EXPECTED_CAPABILITY_KEYS
+            assert "read_allowed" not in entry
+
 
 class TestAdminDiscovery:
     """§6.1: discovery observes; it never grants."""

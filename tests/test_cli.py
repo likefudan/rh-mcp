@@ -97,6 +97,48 @@ class TestFailuresEmitNothingToStdout:
         assert out == ""
         assert "a safe message" in err
 
+    # Golden fixture (DESIGN.md §7.3, §12.5). §12.5 names the CLI's stderr line
+    # as one of the two places a consumer meets an error's **wire string**, so
+    # the line has to be pinned here, in `cli.py`'s own tests, and not inferred.
+    #
+    # Nothing pinned it before. An independent review rewrote `cli.py`'s error
+    # line to `f"{PROGRAM} error [{exc.code.name}]: {exc.message}"` — changing
+    # the format *and* emitting `CAPABILITY_DENIED` where a consumer had been
+    # promised `capability_denied` — and the whole suite stayed green. The
+    # fixture in `tests/test_errors.py` asserts `str(ErrorCode.X) == "x"`, which
+    # is a property of `StrEnum`, not evidence that this module puts that string
+    # on stderr. Asserting the adjacent property is the §12.1 `TestNoEscapeHatch`
+    # defect, and it does not stop being that because the claim it defends is
+    # one paragraph away.
+    _EXPECTED_STDERR_LINES: dict[ErrorCode, str] = {
+        ErrorCode.AUTH_REQUIRED: "rh-mcp: auth_required: a safe message",
+        ErrorCode.NOT_READY: "rh-mcp: not_ready: a safe message",
+        ErrorCode.CAPABILITY_DENIED: "rh-mcp: capability_denied: a safe message",
+        ErrorCode.INPUT_INVALID: "rh-mcp: input_invalid: a safe message",
+        ErrorCode.PROVIDER_ERROR: "rh-mcp: provider_error: a safe message",
+        ErrorCode.TIMEOUT: "rh-mcp: timeout: a safe message",
+        ErrorCode.RESPONSE_TOO_LARGE: "rh-mcp: response_too_large: a safe message",
+        ErrorCode.PROTOCOL_ERROR: "rh-mcp: protocol_error: a safe message",
+        ErrorCode.CONFIGURATION_ERROR: "rh-mcp: configuration_error: a safe message",
+    }
+
+    def test_the_stderr_error_line_carries_the_wire_string_verbatim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§12.5: `rh-mcp: <code>: <message>`, with `<code>` the wire string."""
+        assert set(self._EXPECTED_STDERR_LINES) == set(ErrorCode)
+        for code, expected_line in self._EXPECTED_STDERR_LINES.items():
+
+            async def failing(*_: Any, __code: ErrorCode = code, **___: Any) -> int:
+                raise GatewayError(__code, "a safe message")
+
+            monkeypatch.setitem(cli._COMMANDS, "capabilities", failing)
+            _, out, err = invoke(["capabilities"])
+            assert out == ""
+            # The first line exactly. `auth_required` adds a second pointing at
+            # `rh-mcp login`, which the test below covers.
+            assert err.splitlines()[0] == expected_line
+
     def test_auth_required_points_at_login(self, monkeypatch: pytest.MonkeyPatch) -> None:
         async def failing(*_: Any, **__: Any) -> int:
             raise GatewayError(ErrorCode.AUTH_REQUIRED, "credential expired")
@@ -129,6 +171,57 @@ class TestFailuresEmitNothingToStdout:
         exit_code, out, err = invoke(["capabilities"])
         assert exit_code == EXIT_CODE_CONFIGURATION_ERROR
         assert out == ""
+
+    # Golden fixture (DESIGN.md §7.2, §12.5): the JSON `rh-mcp capabilities`
+    # actually writes to stdout, read back off the stream.
+    #
+    # `tests/test_gateway.py` pins `CapabilityDescription.to_json_dict`, which
+    # is the object this command serializes — not what it emits. `_cmd_capabilities`
+    # builds its top-level dict inline, so that fixture reached the list entries
+    # and nothing reached the four keys around them. An independent review added
+    # a fifth top-level key, and renamed `manifest_version`/`manifest_digest` to
+    # `mv`/`md`, and got 1184 passing both times with the CLI demonstrably
+    # emitting the renamed keys.
+    #
+    # That is the third appearance in this change of the rule §12.5 states: pin
+    # the surface the promise names, not the type behind it. Round 1 caught it in
+    # the stderr line; fixing that one and then pinning the object the CLI
+    # serializes reproduced it one layer up. The lesson that generalises is that
+    # "the serialized type is pinned" and "the emitted payload is pinned" are
+    # different claims whenever a caller assembles a payload around the type.
+    _EXPECTED_CAPABILITIES_STDOUT_KEYS: frozenset[str] = frozenset(
+        {
+            "manifest_version",
+            "manifest_digest",
+            "expected_manifest_digest",
+            "digest_matches",
+            "capabilities",
+        }
+    )
+    _EXPECTED_CAPABILITY_ENTRY_KEYS: frozenset[str] = frozenset(
+        {
+            "capability",
+            "allowed",
+            "mutates",
+            "description",
+            "schema_digest",
+            "rationale",
+            "input_schema",
+        }
+    )
+
+    def test_the_capabilities_stdout_key_set_is_pinned_in_both_directions(self) -> None:
+        """§12.5: what the command writes, not what the dataclass renders."""
+        exit_code, out, _ = invoke(["capabilities"])
+        assert exit_code == EXIT_CODE_SUCCESS
+        payload = json.loads(out)
+        assert set(payload) == self._EXPECTED_CAPABILITIES_STDOUT_KEYS
+        assert payload["capabilities"]
+        for entry in payload["capabilities"]:
+            assert set(entry) == self._EXPECTED_CAPABILITY_ENTRY_KEYS
+            # §2.1: the 1.1 spelling must not reappear on a listing where 11
+            # allowed capabilities write.
+            assert "read_allowed" not in entry
 
 
 class TestInputParsing:
@@ -291,6 +384,82 @@ class TestStatusHonoursTheOriginatingErrorCode:
         assert code == EXIT_CODE_CONFIGURATION_ERROR
         assert "rh-mcp login" not in err
         assert json.loads(out)["ready"] is False
+
+    # Golden fixture (DESIGN.md §7.1, §7.2, §12.5): the JSON `rh-mcp status`
+    # writes to stdout, read back off the stream.
+    #
+    # `tests/test_manifest.py` pins `ReadinessAssessment.to_json_dict`, which is
+    # what this command serializes. `_cmd_status` is a one-line `_emit` today, so
+    # the two shapes coincide — but that is a property of `cli.py`, not of the
+    # assessment, and it is exactly what `_cmd_capabilities` does *not* do. An
+    # independent review added a top-level key at the `_emit` call and got 1184
+    # passing. §12.5 promises this payload's shape to a consumer, and a payload
+    # with no `envelope_version` of its own has nothing else that would notice.
+    _EXPECTED_STATUS_STDOUT_KEYS: frozenset[str] = frozenset(
+        {
+            "ready",
+            "manifest_version",
+            "manifest_digest",
+            "expected_manifest_digest",
+            "findings",
+        }
+    )
+    _EXPECTED_STATUS_FINDING_KEYS: frozenset[str] = frozenset({"reason", "detail", "error_code"})
+
+    def test_the_status_stdout_key_set_is_pinned_in_both_directions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§12.5: what the command writes, not what the dataclass renders."""
+        _, out, _ = self._run_status(monkeypatch, ErrorCode.AUTH_REQUIRED)
+        payload = json.loads(out)
+        assert set(payload) == self._EXPECTED_STATUS_STDOUT_KEYS
+        assert payload["findings"]
+        for finding in payload["findings"]:
+            assert set(finding) == self._EXPECTED_STATUS_FINDING_KEYS
+
+    def test_the_ready_status_stdout_key_set_is_pinned_too(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other branch, because `_run_status` only ever builds `ready=False`.
+
+        A third review round found this: the not-ready fixture above asserts
+        the right surface but only one of the two shapes `_cmd_status` can
+        write, and a key added under `if assessment.ready` reached stdout with
+        the suite green. §12.5 promises this payload's shape without
+        qualifying it by branch, so both branches have to be pinned.
+        """
+        import contextlib
+
+        from rh_mcp.manifest import ReadinessAssessment
+        from rh_mcp.models import Readiness
+
+        assessment = ReadinessAssessment(
+            readiness=Readiness(
+                ready=True,
+                manifest_version="v1",
+                # `Readiness.__post_init__` refuses `ready=True` unless these
+                # two agree, so a ready fixture cannot be built any other way.
+                manifest_digest=DIGEST,
+                expected_manifest_digest=DIGEST,
+            ),
+            findings=(),
+        )
+
+        class FakeGateway:
+            async def readiness(self) -> ReadinessAssessment:
+                return assessment
+
+        @contextlib.asynccontextmanager
+        async def fake_open(*_: Any, **__: Any) -> Any:
+            yield FakeGateway()
+
+        monkeypatch.setattr("rh_mcp.cli.open_gateway", fake_open)
+        exit_code, out, _ = invoke(["status", "--skip-metadata-check"])
+        assert exit_code == EXIT_CODE_SUCCESS
+        payload = json.loads(out)
+        assert set(payload) == self._EXPECTED_STATUS_STDOUT_KEYS
+        assert payload["ready"] is True
+        assert payload["findings"] == []
 
 
 class TestLogoutAsksBeforeItPrepares:

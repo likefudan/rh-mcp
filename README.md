@@ -47,15 +47,25 @@ simulators. The allowed set is 34 reads plus 11 non-trading mutations
 (watchlist and saved-scan management), each carrying a reviewed `mutates` flag
 so a consumer gating writes never has to infer which is which.
 
-The full-manifest digest a consumer pins:
+The full-manifest digest a consumer pins, for manifest `2026.08.05` as shipped
+on `main`:
 
 ```
 sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
 ```
 
-Of the DESIGN.md §12 acceptance list, the changelog, the tagged artifact with
-checksums, and the independent security review have landed. A published
-compatibility policy has not.
+The manifest version is named alongside it deliberately. A digest belongs to
+one manifest, the two move together, and a released tag ships whichever
+manifest it was cut from — so take the digest you pin from the artifact you are
+pinning, not from a document describing a different revision (DESIGN.md §12.5).
+
+The DESIGN.md §12 acceptance list is now complete: the changelog, the tagged
+artifact with checksums, the independent security review, and the published
+**compatibility policy** (DESIGN.md §12.5) have all landed. §12.5 is what a
+consumer reads before pinning — it states what the result envelope, the nine
+error wire strings, the CLI exit codes, the manifest format fields, and the
+`CredentialStore` protocol promise across a version change, and what they
+deliberately do not.
 
 **Two independent security reviews. The first found blocking defects in
 `v0.1.0`; the second approved `v0.2.0`.**

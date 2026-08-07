@@ -45,6 +45,54 @@ REFRESH = "s3cr3t-refresh-token-DO-NOT-LEAK"
 CLIENT_ID = "s3cr3t-client-id-DO-NOT-LEAK"
 
 
+# Golden fixture (DESIGN.md §5.2, §12.5): the eight members §12.5 publishes as
+# the `CredentialStore` contract, written out as literals.
+#
+# The seven *methods* are already defended without this — each has a call site
+# in `auth.py` through a `CredentialStore`-typed reference, so deleting a
+# declaration fails `mypy src`, and renaming one across the protocol and the
+# adapters fails the adapter tests below, which call them by name.
+#
+# `namespace` is the one member with no in-package reader at all. An independent
+# review deleted it from the protocol and got a clean `mypy src`; renaming it to
+# `scope_name` on the protocol *and* on `_BytesBackedStore` also left `mypy src`
+# clean and 1179 tests passing. It is the first member §12.5 lists and the one a
+# refactor drops without noticing, precisely because nothing here consumes it.
+# So the set is pinned rather than the claim narrowed: §12.5's promise is about
+# a member *set*, and this is what makes that promise something CI holds.
+_EXPECTED_STORE_MEMBERS: frozenset[str] = frozenset(
+    {
+        "namespace",
+        "exclusive",
+        "load_token",
+        "store_token",
+        "delete_token",
+        "load_registration",
+        "store_registration",
+        "delete_registration",
+    }
+)
+
+
+def test_the_credential_store_protocol_publishes_exactly_eight_members() -> None:
+    """§12.5: the member set is the contract an outside adapter implements."""
+    published = {
+        name for name in credentials.CredentialStore.__protocol_attrs__ if not name.startswith("_")
+    }
+    assert published == _EXPECTED_STORE_MEMBERS
+    # Deliberately absent, and §5.2 says the absence is load-bearing: these are
+    # the operations that turn a credential store into a credential leak.
+    for forbidden in ("list", "export", "read_raw", "serialize"):
+        assert forbidden not in published
+
+
+def test_every_shipped_adapter_satisfies_the_published_member_set() -> None:
+    """A member nothing implements is not a contract, it is a wish."""
+    for adapter in (InMemoryCredentialStore, FileCredentialStore, KeychainCredentialStore):
+        missing = sorted(name for name in _EXPECTED_STORE_MEMBERS if not hasattr(adapter, name))
+        assert missing == [], f"{adapter.__name__} is missing {missing}"
+
+
 def run[T](coro: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(coro)
 

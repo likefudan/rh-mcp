@@ -833,15 +833,24 @@ policy that overstates its own guarantees is the same defect as §1's original
 "no public surface exposes a generic `call_tool`", which was false for the whole
 life of `v0.1.0`.
 
-That is not a claim of having got it right first time. Two rounds of
-independent review disproved, by mutation, five of this section's statements —
-an enumeration of `retryable` sites that missed the most common one, and four
+That is not a claim of having got it right first time. Three rounds of
+independent review disproved, by mutation, six of this section's statements —
+an enumeration of `retryable` sites that missed the most common one, and five
 claims that an existing test already defended a surface when it did not. Each is
 corrected below with the mutation that found it named beside the fixture that
 now fails it. **Read that as the calibration for everything here that CI does
 not hold:** a section whose confident claims needed an outside reader with a
 mutation harness to falsify is a section whose remaining unfalsified claims
 deserve the same suspicion.
+
+The shape of those five matters more than the count. Three were in the first
+draft. The fourth was in round 1's own *fix* for the third: it pinned the type
+the CLI serializes and left what the CLI emits unpinned. The fifth was in round
+2's fix for the fourth: it pinned what the CLI emits in the not-ready branch and
+left the ready branch unpinned. One rule — assert the surface the promise names,
+not the type behind it — failed three times in three disguises, each time inside
+the work written to satisfy it. That is the argument for the outside reader
+rather than against the rule.
 
 **Two things a consumer pins, and they move independently.** The package
 version covers the code — the surfaces below. The full-manifest digest covers
@@ -1239,19 +1248,27 @@ compatible one, or arrange for its own review.
   closed: adding a version field to either means editing enforcement-path code,
   so it waits for a release already going through §12.4's review.
 
-  That first sentence took two rounds of external review to become true, and how
-  it failed the second time is the transferable part. The first gap was
-  additions: every key was read by name somewhere, so renames failed, but
-  nothing compared a rendered dictionary against a literal — and an added key is
-  precisely how an unversioned payload changes shape under a consumer that has
-  no version field to notice it. Closing that by pinning
-  `ReadinessAssessment.to_json_dict` and `CapabilityDescription.to_json_dict`
-  then reproduced the same defect one layer up: `rh-mcp capabilities` assembles
-  its four top-level keys inline in `cli.py` and serializes the pinned type only
-  inside the list, so renaming `manifest_version` and `manifest_digest` in the
-  emitted JSON still left the suite green. **Pinning the type a caller
-  serializes is not pinning the payload that caller emits**, and the two claims
-  come apart the moment anything is assembled around the type.
+  That first sentence took three rounds of external review to become true, and
+  how it kept failing is the transferable part. The first gap was additions:
+  every key was read by name somewhere, so renames failed, but nothing compared
+  a rendered dictionary against a literal — and an added key is precisely how an
+  unversioned payload changes shape under a consumer that has no version field
+  to notice it. Closing that by pinning `ReadinessAssessment.to_json_dict` and
+  `CapabilityDescription.to_json_dict` then reproduced the same defect one layer
+  up: `rh-mcp capabilities` assembles its four top-level keys inline in `cli.py`
+  and serializes the pinned type only inside the list, so renaming
+  `manifest_version` and `manifest_digest` in the emitted JSON still left the
+  suite green. **Pinning the type a caller serializes is not pinning the payload
+  that caller emits**, and the two claims come apart the moment anything is
+  assembled around the type.
+
+  Closing *that* by parsing stdout then left one branch: the fixture drove only
+  the not-ready path, because the helper it reused could not build a ready
+  assessment, so a key added under `if assessment.ready` reached stdout with the
+  suite green. **A payload pinned in one branch is not a payload pinned**, and a
+  command that renders two shapes needs both. Three rounds, three disguises of
+  one rule — assert the surface the promise names, not the type behind it, and
+  not one path through it.
 - **Python beyond `requires-python = ">=3.12"`**, or any behaviour of the
   private `mcp` and `httpx2` dependencies, whose major bounds §12 treats as a
   security-boundary change to widen.

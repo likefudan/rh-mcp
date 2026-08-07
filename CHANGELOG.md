@@ -97,8 +97,14 @@ that carries them.
 
   The bullets above other than the first exist because an independent review
   disproved by mutation five "already defended, no fixture needed" claims in
-  this change, across two rounds — three in the first draft, then two more
-  after the first round's own fixes reproduced the same defect one layer up.
+  this change, across three rounds — three in the first draft, one more after
+  round 1's own fix reproduced the same defect one layer up, and one more after
+  round 2's fix left the ready branch of `status` unpinned. A sixth statement
+  was disproved too, but it belongs in a different column: an enumeration of
+  `retryable` raise sites that missed the two conditional ones, which is a
+  miscount rather than an undefended surface. DESIGN §12.5 keeps the two
+  separate and this entry follows it.
+
   The standing rule is now that no such claim enters DESIGN §12.5 without the
   mutation that demonstrates it.
 

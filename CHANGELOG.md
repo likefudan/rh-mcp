@@ -81,17 +81,26 @@ that carries them.
     of `ReadinessAssessment`, `DriftFinding` and `CapabilityDescription` JSON.
     Renames were already caught, because every key is read by name; *additions*
     were not, and an added key is how an unversioned payload changes shape under
-    a consumer. This is the mitigation §12.5 leans on when it accepts that
-    `status` and `capabilities` carry no version field.
+    a consumer.
+  - `tests/test_cli.py` parses what `rh-mcp status` and `rh-mcp capabilities`
+    actually write to stdout and pins those key sets, top level and per entry,
+    in both directions. **This** is the mitigation §12.5 leans on when it
+    accepts that the two payloads carry no version field. Pinning the objects
+    above is not the same claim: `_cmd_capabilities` assembles its four
+    top-level keys inline in `cli.py` and serializes the pinned type only for
+    the list inside, so renaming `manifest_version` to `mv` left the suite
+    green while the CLI demonstrably emitted the renamed key.
 
   Nothing was added for the envelope or `Readiness`: `test_to_json_dict_shape`
   already compares whole rendered dictionaries against literals, in both
   directions, and a redundant fixture is not free — it reads like coverage.
 
-  The four bullets above other than the first exist because an independent
-  review disproved by mutation three "already defended, no fixture needed"
-  claims in this change's first draft. The standing rule is now that no such
-  claim enters DESIGN §12.5 without the mutation that demonstrates it.
+  The bullets above other than the first exist because an independent review
+  disproved by mutation five "already defended, no fixture needed" claims in
+  this change, across two rounds — three in the first draft, then two more
+  after the first round's own fixes reproduced the same defect one layer up.
+  The standing rule is now that no such claim enters DESIGN §12.5 without the
+  mutation that demonstrates it.
 
 - DESIGN §12.4 states when a manifest change needs a new external review and
   when it does not. The reviewers bind each verdict to the exact artifact they

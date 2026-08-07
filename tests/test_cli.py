@@ -417,6 +417,50 @@ class TestStatusHonoursTheOriginatingErrorCode:
         for finding in payload["findings"]:
             assert set(finding) == self._EXPECTED_STATUS_FINDING_KEYS
 
+    def test_the_ready_status_stdout_key_set_is_pinned_too(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other branch, because `_run_status` only ever builds `ready=False`.
+
+        A third review round found this: the not-ready fixture above asserts
+        the right surface but only one of the two shapes `_cmd_status` can
+        write, and a key added under `if assessment.ready` reached stdout with
+        the suite green. §12.5 promises this payload's shape without
+        qualifying it by branch, so both branches have to be pinned.
+        """
+        import contextlib
+
+        from rh_mcp.manifest import ReadinessAssessment
+        from rh_mcp.models import Readiness
+
+        assessment = ReadinessAssessment(
+            readiness=Readiness(
+                ready=True,
+                manifest_version="v1",
+                # `Readiness.__post_init__` refuses `ready=True` unless these
+                # two agree, so a ready fixture cannot be built any other way.
+                manifest_digest=DIGEST,
+                expected_manifest_digest=DIGEST,
+            ),
+            findings=(),
+        )
+
+        class FakeGateway:
+            async def readiness(self) -> ReadinessAssessment:
+                return assessment
+
+        @contextlib.asynccontextmanager
+        async def fake_open(*_: Any, **__: Any) -> Any:
+            yield FakeGateway()
+
+        monkeypatch.setattr("rh_mcp.cli.open_gateway", fake_open)
+        exit_code, out, _ = invoke(["status", "--skip-metadata-check"])
+        assert exit_code == EXIT_CODE_SUCCESS
+        payload = json.loads(out)
+        assert set(payload) == self._EXPECTED_STATUS_STDOUT_KEYS
+        assert payload["ready"] is True
+        assert payload["findings"] == []
+
 
 class TestLogoutAsksBeforeItPrepares:
     """Consent comes before any setup that can fail for unrelated reasons.

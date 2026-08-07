@@ -172,6 +172,57 @@ class TestFailuresEmitNothingToStdout:
         assert exit_code == EXIT_CODE_CONFIGURATION_ERROR
         assert out == ""
 
+    # Golden fixture (DESIGN.md §7.2, §12.5): the JSON `rh-mcp capabilities`
+    # actually writes to stdout, read back off the stream.
+    #
+    # `tests/test_gateway.py` pins `CapabilityDescription.to_json_dict`, which
+    # is the object this command serializes — not what it emits. `_cmd_capabilities`
+    # builds its top-level dict inline, so that fixture reached the list entries
+    # and nothing reached the four keys around them. An independent review added
+    # a fifth top-level key, and renamed `manifest_version`/`manifest_digest` to
+    # `mv`/`md`, and got 1184 passing both times with the CLI demonstrably
+    # emitting the renamed keys.
+    #
+    # That is the third appearance in this change of the rule §12.5 states: pin
+    # the surface the promise names, not the type behind it. Round 1 caught it in
+    # the stderr line; fixing that one and then pinning the object the CLI
+    # serializes reproduced it one layer up. The lesson that generalises is that
+    # "the serialized type is pinned" and "the emitted payload is pinned" are
+    # different claims whenever a caller assembles a payload around the type.
+    _EXPECTED_CAPABILITIES_STDOUT_KEYS: frozenset[str] = frozenset(
+        {
+            "manifest_version",
+            "manifest_digest",
+            "expected_manifest_digest",
+            "digest_matches",
+            "capabilities",
+        }
+    )
+    _EXPECTED_CAPABILITY_ENTRY_KEYS: frozenset[str] = frozenset(
+        {
+            "capability",
+            "allowed",
+            "mutates",
+            "description",
+            "schema_digest",
+            "rationale",
+            "input_schema",
+        }
+    )
+
+    def test_the_capabilities_stdout_key_set_is_pinned_in_both_directions(self) -> None:
+        """§12.5: what the command writes, not what the dataclass renders."""
+        exit_code, out, _ = invoke(["capabilities"])
+        assert exit_code == EXIT_CODE_SUCCESS
+        payload = json.loads(out)
+        assert set(payload) == self._EXPECTED_CAPABILITIES_STDOUT_KEYS
+        assert payload["capabilities"]
+        for entry in payload["capabilities"]:
+            assert set(entry) == self._EXPECTED_CAPABILITY_ENTRY_KEYS
+            # §2.1: the 1.1 spelling must not reappear on a listing where 11
+            # allowed capabilities write.
+            assert "read_allowed" not in entry
+
 
 class TestInputParsing:
     @pytest.mark.parametrize("raw", ["not json", "[1,2]", '"a string"', "7"])
@@ -333,6 +384,38 @@ class TestStatusHonoursTheOriginatingErrorCode:
         assert code == EXIT_CODE_CONFIGURATION_ERROR
         assert "rh-mcp login" not in err
         assert json.loads(out)["ready"] is False
+
+    # Golden fixture (DESIGN.md §7.1, §7.2, §12.5): the JSON `rh-mcp status`
+    # writes to stdout, read back off the stream.
+    #
+    # `tests/test_manifest.py` pins `ReadinessAssessment.to_json_dict`, which is
+    # what this command serializes. `_cmd_status` is a one-line `_emit` today, so
+    # the two shapes coincide — but that is a property of `cli.py`, not of the
+    # assessment, and it is exactly what `_cmd_capabilities` does *not* do. An
+    # independent review added a top-level key at the `_emit` call and got 1184
+    # passing. §12.5 promises this payload's shape to a consumer, and a payload
+    # with no `envelope_version` of its own has nothing else that would notice.
+    _EXPECTED_STATUS_STDOUT_KEYS: frozenset[str] = frozenset(
+        {
+            "ready",
+            "manifest_version",
+            "manifest_digest",
+            "expected_manifest_digest",
+            "findings",
+        }
+    )
+    _EXPECTED_STATUS_FINDING_KEYS: frozenset[str] = frozenset({"reason", "detail", "error_code"})
+
+    def test_the_status_stdout_key_set_is_pinned_in_both_directions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """§12.5: what the command writes, not what the dataclass renders."""
+        _, out, _ = self._run_status(monkeypatch, ErrorCode.AUTH_REQUIRED)
+        payload = json.loads(out)
+        assert set(payload) == self._EXPECTED_STATUS_STDOUT_KEYS
+        assert payload["findings"]
+        for finding in payload["findings"]:
+            assert set(finding) == self._EXPECTED_STATUS_FINDING_KEYS
 
 
 class TestLogoutAsksBeforeItPrepares:

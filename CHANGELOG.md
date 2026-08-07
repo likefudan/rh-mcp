@@ -323,7 +323,12 @@ committed at `security-review/v0.1.0/`; CI runs those tests on every commit.
   `NOTICE` travels with any redistribution under Apache-2.0 §4(d), so the
   correction travels too. Both now also state plainly that the review's
   approval gate is bound to the `v0.1.0` artifacts and that **`v0.2.0` has not
-  been re-reviewed**.
+  been re-reviewed**. *(Superseded: `v0.2.0` was re-reviewed as a fresh artifact
+  and APPROVED on 2026-08-04, bound to commit `46128a62` — see DESIGN §12.2 and
+  `security-review/v0.2.0/`. The sentence is true of what `v0.2.0` shipped and
+  is left standing as that record, not rewritten. It is marked because §12.5 now
+  sends a consumer to their own version's heading, where an unmarked line reads
+  as current.)*
 - Swept DESIGN.md, README.md, AGENTS.md and source docstrings for the whole
   class of stale-claim defect the reviewer found two instances of, rather than
   the two lines (reviewer finding P2). Corrected: `RobinhoodGateway(config,

@@ -833,14 +833,15 @@ policy that overstates its own guarantees is the same defect as §1's original
 "no public surface exposes a generic `call_tool`", which was false for the whole
 life of `v0.1.0`.
 
-That is not a claim of having got it right first time. An independent review of
-the first draft of this section disproved four of its statements by mutation:
-an enumeration of `retryable` sites that missed the most common one, and three
-assertions that an existing test already defended a surface when it did not.
-Each is corrected below **in place, with what was wrong left visible**, because
-a policy section that quietly acquires the fixtures it claimed to already have
-teaches the reader nothing about how much to trust the next such claim. Every
-"already defended" statement now names the mutation that demonstrates it.
+That is not a claim of having got it right first time. Two rounds of
+independent review disproved, by mutation, five of this section's statements —
+an enumeration of `retryable` sites that missed the most common one, and four
+claims that an existing test already defended a surface when it did not. Each is
+corrected below with the mutation that found it named beside the fixture that
+now fails it. **Read that as the calibration for everything here that CI does
+not hold:** a section whose confident claims needed an outside reader with a
+mutation harness to falsify is a section whose remaining unfalsified claims
+deserve the same suspicion.
 
 **Two things a consumer pins, and they move independently.** The package
 version covers the code — the surfaces below. The full-manifest digest covers
@@ -948,14 +949,16 @@ wording is not.
 can produce `True` today, and the two a consumer meets most often are
 *conditional* rather than literal:
 
-- **any provider HTTP 5xx.** `transport.py` records
-  `retryable=500 <= response.status_code < 600` on every response at or above
-  400, so a 502 or 503 from Robinhood arrives as a **retryable**
-  `provider_error` while a 400 arrives as a non-retryable one.
+- **any provider HTTP 5xx.** `transport.py` peels 401 and 403 off first as
+  `auth_required`, and records `retryable=500 <= response.status_code < 600` on
+  every *remaining* response at or above 400 — so a 502 or 503 from Robinhood
+  arrives as a **retryable** `provider_error` while a 400 or 429 arrives as a
+  non-retryable one, and a 401 never reaches the expression at all.
   `tests/test_transport.py::test_a_server_failure_becomes_a_retryable_provider_error`
-  asserts exactly this for a 503.
-- **any authorization-server 5xx** — the same expression in `auth.py`'s
-  `_require_payload`, covering the token and registration endpoints.
+  asserts this for a 503.
+- **any authorization-server 5xx** — the same expression, behind the same
+  401/403 peel, in `auth.py`'s `_require_payload`, covering the token and
+  registration endpoints.
 - a failed connection to the provider — `provider_error`.
 - contention on the credential `flock` — `timeout`.
 - a non-answering macOS `security` tool — `timeout`.
@@ -1084,14 +1087,22 @@ beside manifest version `2026.08.03.1`. Those two values do not go together.
 the README correctly publishes. Commit `b6d6a35` rewrote the digest inside the
 two historical entries while refreshing the manifest. A consumer pinning the
 `v0.2.0` *artifact* and taking its digest from that changelog entry would pin a
-digest the artifact refuses readiness against. The lines are left as they are in
-this change — correcting a published digest is a decision for the human who
-owns the release record, not a side effect of writing a policy — and the
-`[Unreleased]` changelog entry states the correction. Beyond the specific
-error, this is the general rule the policy asserts: **the digest a consumer
-pins comes from the artifact it is pinning**, verified against the release
-notes and the manifest inside it, never from a changelog line describing a
-different release.
+digest the artifact refuses readiness against.
+
+Both wrong values are **left in place with a bracketed correction beside each**,
+naming the tag, the correct digest, and the `git show` that produces it.
+Substituting the right string silently would rewrite a published release record,
+which is the release owner's decision and not a side effect of writing a policy;
+leaving the line unmarked is a different act with a different cost, because a
+changelog is read by jumping to your version's heading, and that reader is
+exactly the one who would take the wrong digest. So the record is preserved and
+the hazard is removed. The `v0.2.0` GitHub release notes carry the correct
+value, and this file is the only place that does not.
+
+Beyond the specific error, this is the general rule the policy asserts: **the
+digest a consumer pins comes from the artifact it is pinning**, verified against
+the release notes and the manifest inside it, never from a changelog line
+describing a different release.
 
 #### The credential-store protocol
 
@@ -1218,41 +1229,44 @@ compatible one, or arrange for its own review.
   `capabilities` list whose entries carry `capability`, `allowed`, `mutates`,
   `description`, `schema_digest`, `rationale` and `input_schema`.
 
-  Both key sets are now pinned as whole sets, in both directions, so neither can
-  move silently — but neither announces its own version the way the envelope
+  Both payloads are pinned **as the CLI emits them**: `tests/test_cli.py` parses
+  each command's stdout and asserts the whole key set, top level and per entry,
+  in both directions, and `tests/test_manifest.py` and `tests/test_gateway.py`
+  pin the objects underneath. So neither shape can move silently. What remains
+  open is that neither payload announces its own version the way the envelope
   does, so a consumer has no way to *detect* a shape change short of comparing
   keys itself. That asymmetry is under-specified and is stated rather than
   closed: adding a version field to either means editing enforcement-path code,
   so it waits for a release already going through §12.4's review.
 
-  The "pinned as whole sets" half was not true when this section was first
-  written and is the reason to say it carefully now. Every key in both payloads
-  was read by name somewhere, so a *rename* failed — but nothing compared a
-  rendered dictionary against a literal the way the envelope's fixture does, so
-  an independent review **added** a key to each of the three renderers and the
-  suite stayed green. Additions are the direction that matters here: an added
-  key is how an unversioned payload changes shape under a consumer that has no
-  version field to notice it. `tests/test_manifest.py` and `tests/test_gateway.py`
-  now assert the full key sets.
+  That first sentence took two rounds of external review to become true, and how
+  it failed the second time is the transferable part. The first gap was
+  additions: every key was read by name somewhere, so renames failed, but
+  nothing compared a rendered dictionary against a literal — and an added key is
+  precisely how an unversioned payload changes shape under a consumer that has
+  no version field to notice it. Closing that by pinning
+  `ReadinessAssessment.to_json_dict` and `CapabilityDescription.to_json_dict`
+  then reproduced the same defect one layer up: `rh-mcp capabilities` assembles
+  its four top-level keys inline in `cli.py` and serializes the pinned type only
+  inside the list, so renaming `manifest_version` and `manifest_digest` in the
+  emitted JSON still left the suite green. **Pinning the type a caller
+  serializes is not pinning the payload that caller emits**, and the two claims
+  come apart the moment anything is assembled around the type.
 - **Python beyond `requires-python = ">=3.12"`**, or any behaviour of the
   private `mcp` and `httpx2` dependencies, whose major bounds §12 treats as a
   security-boundary change to widen.
 - **That the policy is self-enforcing.** The fixtures named above are what CI
   actually holds: the envelope and `Readiness` key sets, the `status` and
-  `capabilities` key sets, the nine error wire strings, the CLI's stderr error
-  line, the five exit integers, the code-to-bucket map, the `CredentialStore`
-  member set, the canonicalization vectors, and the shipped manifest's
-  dispositions. Everything else in this section is a commitment a human can
-  break in a single commit, and saying which is which is the point of writing it
-  down.
+  `capabilities` payloads as the CLI emits them, the nine error wire strings,
+  the CLI's stderr error line, the five exit integers, the code-to-bucket map,
+  the `CredentialStore` member set, the canonicalization vectors, and the
+  shipped manifest's dispositions. Everything else here is a commitment a human
+  can break in a single commit, and saying which is which is the point of
+  writing it down.
 
-  Three of the "already defended, no fixture needed" claims in the first draft
-  of this section were wrong, and an independent review found all three by
-  mutation. That is the category this section cannot afford to get wrong,
-  because it is the section arguing that a policy CI does not hold is worse than
-  none — so the rule now is that **no claim of the form "the existing gate
-  catches this" enters this section without the mutation that demonstrates it**,
-  named where the fixture lives.
+  The standing rule that follows from how this section was written: **no claim
+  of the form "the existing gate already catches this" enters it without the
+  mutation that demonstrates it**, named beside the fixture that fails.
 
 ## 13. Open items
 

@@ -193,6 +193,69 @@ that carries them.
 
 ### Manifest
 
+Newest first. Each block describes one manifest and is not amended by a later
+one — see the note at the end of this section.
+
+#### `2026.08.09` — a tool appeared, and was reviewed and denied
+
+```
+sha256:a6725f9c797c6040aab8ec0bc17776b586e78677d260057d21aa61768686443d
+```
+
+**54 tools, 45 allowed, 9 denied.** The allowed set did not change: 34 reads
+plus the same 11 non-trading mutations, and the same 8 trading denials. The
+54th tool is `get_limited_margin_upgrade_info`, **denied**.
+
+It takes only `account_number` and returns eligibility plus the web and mobile
+links that start the limited-margin upgrade flow. Read-shaped, so nothing in
+its schema would have stopped it being waved through; its output is a route to
+an account state change and no reviewed ainvest read path needs it. Denied
+until a use case exists.
+
+`mutates` is **false**, which is the answer to the question §6 says the field
+asks — whether *invoking* the capability changes provider state. Invoking it
+reads eligibility and returns URLs. The account changes only if a human opens
+one of those links and completes identity verification and agreement acceptance
+in Robinhood's own flow, which no call from this gateway reaches. The order
+simulators are flagged `true` on the opposite reasoning and the difference is
+deliberate: there the denial rests on distrusting the provider's "does not
+place" claim, so `false` would endorse the evidence the denial rejects, while
+here the denial does not depend on the provider's word at all. The flag is also
+what the `v0.2.0` review's consumer requirement 6 has ainvest gating writes on,
+so overloading it to mean "dangerous" rather than "writes" would degrade the
+one signal that consumer reads.
+
+Two tools also drifted, neither disposition affected:
+
+- **`get_accounts`** — one nested schema description. Account `type` gained a
+  third value: `'cash'`, `'margin'`, `'limited_margin'`. Previously a retirement
+  account reported `'margin'` and the description explained that this meant
+  limited margin; now `limited_margin` is its own value, and the description
+  extends it to managed and agentic accounts. Structure unchanged, so this is a
+  value-domain change rather than a shape change — a consumer branching on
+  `type` can now meet a string it has never seen. Flagged for consumers; not
+  actionable inside this package, which does not interpret the field.
+- **`get_equity_orders`** — description only, and it now instructs callers to
+  call `get_advanced_orders` in parallel. **The provider does not offer that
+  tool.** Nothing here acts on a description, so no enforcement is affected, but
+  it is the first observed case of provider prose directing a tool call, which
+  makes consumer requirement 5 (discard provider descriptions from model
+  context) load-bearing rather than precautionary. Recorded in DESIGN §6.1.1.
+
+Procedure, because it is not the usual one: `scripts/refresh_manifest.py`
+refuses when a tool appears, by design and with no override. So the disposition
+was authored by hand into the committed manifest first (commit `7f1a54c`,
+loading and digesting cleanly), and only then did the refresh run and carry it
+forward verbatim, restamp the two drifted tools, and recompute the digests.
+Both steps are separate commits so the human decision and the mechanical part
+are separately reviewable.
+
+**This manifest has not had a new independent external security review.** §12.4
+lists "a tool appearing or disappearing" among the changes that need one. See
+the PR that carried this change.
+
+#### `2026.08.05` — refreshed for the `direction` field
+
 `2026.08.05`, refreshed for the observed `direction` field on
 `place_option_order` and `review_option_order`. 53 tools in and out, no
 disposition moved, both affected tools denied either way.
@@ -231,6 +294,22 @@ By this file's own standard, borrowed from the tests: a line stating a wrong
 digest under the right heading is worse than no line, for the same reason a
 passing test that asserts something adjacent is worse than no test — it reads
 like the thing it is not.
+
+**One clause in the block above has since gone out of date, and is left as
+written.** It says `49b7218…` "is what `main` ships, what the README publishes,
+and what this entry records". The third is still true and is what the sentence
+was for. The first two stopped being true when `main` moved to `2026.08.09` —
+`a6725f9c…` — one block up. Editing it would be doing to a `2026.08.05` record
+exactly what `b6d6a35` did to the `[0.1.0]` and `[0.2.0]` records, which is the
+error the block is about; so each block describes its own manifest and is read
+that way, and this note is the marker rather than a rewrite.
+
+**Nothing here resolves the `[0.1.0]` / `[0.2.0]` corrections.** Those two
+entries still print `49b7218…` beside manifest `2026.08.03.1`; both tags still
+ship `70f88615…`; the bracketed corrections beside them are still the whole of
+the remedy, and substituting the right string is still the release owner's
+decision and nobody else's. A newer digest on `main` changes none of that — it
+only adds a third value to keep distinct from the other two.
 
 ## [0.2.0] — 2026-08-04
 

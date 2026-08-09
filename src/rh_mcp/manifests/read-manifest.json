@@ -2,9 +2,9 @@
   "manifest_format_version": "1.2",
   "canonicalization_version": "rh-canon-1",
   "digest_algorithm": "sha256",
-  "manifest_version": "2026.08.05",
-  "provider_surface_digest": "sha256:cc095f9715c16caa4997e0a9a923bdea0f959cc0436c0b2cb334abe291abdb86",
-  "observed_at": "2026-08-05T22:58:31.272121+00:00",
+  "manifest_version": "2026.08.09",
+  "provider_surface_digest": "sha256:192f519c73d2f0600c6fa68c664279536393084c3e0e388ee3fb6244ef0a6c6c",
+  "observed_at": "2026-08-09T19:16:54.666229+00:00",
   "reviewer": {
     "name": "Ke Li",
     "reviewed_at": "2026-08-03T11:42:53.775001+00:00"
@@ -1123,7 +1123,7 @@
                     },
                     "type": {
                       "type": "string",
-                      "description": "'cash' or 'margin' — the trading-permissions classification for the brokerage account. Crypto accounts are never marginable, so a linked crypto account has no equivalent. On retirement (IRA) accounts 'margin' means limited margin; full margin is not available there."
+                      "description": "'cash', 'margin', or 'limited_margin' — the trading-permissions classification for the brokerage account. 'limited_margin' (instant settlement without full margin leverage) applies to accounts where full margin is unavailable, such as retirement (IRA), managed, and agentic accounts. Crypto accounts are never marginable, so a linked crypto account has no equivalent."
                     },
                     "unsettled_funds": {
                       "type": "string",
@@ -1205,7 +1205,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:6bc2edfdd4398048c09c9d0ec1737d05b4a6db261c1c895c364c0e8ccf8e0944",
+      "schema_digest": "sha256:cff243bfc06af5658ee531abffed02d177be9bf17067532695610e13710658e8",
       "metadata_digest": "sha256:4885d350880c068cef634a8d188285419e001920a969e6a7d2b4e96cedcbaedb"
     },
     {
@@ -2041,7 +2041,7 @@
       "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_orders",
-      "description": "Fetch equity orders for an account — list mode (newest first; open and closed, including fills, cancellations, rejections) or single-order mode by passing order_id. When the user asks for \"orders\" without specifying equity or options, call both get_equity_orders and get_option_orders in parallel.\n\nFiltering tips:\n- Prefer narrow queries: combine state, symbol, and/or created_at_gte for specific questions (e.g. \"my filled AAPL orders this week\") — the per-page cap is fixed.\n- created_at_gte: interpret relative times in the user's timezone, convert to UTC before sending.\n- symbol forces a symbol→instrument lookup; omit it if you don't need it.",
+      "description": "Fetch equity orders for an account — list mode (newest first; open and closed, including fills, cancellations, rejections) or single-order mode by passing order_id. When the user asks for \"orders\" without specifying an asset class, call get_equity_orders, get_option_orders, and get_advanced_orders (OCO / multi-leg contingency orders) in parallel.\n\nFiltering tips:\n- Prefer narrow queries: combine state, symbol, and/or created_at_gte for specific questions (e.g. \"my filled AAPL orders this week\") — the per-page cap is fixed.\n- created_at_gte: interpret relative times in the user's timezone, convert to UTC before sending.\n- symbol forces a symbol→instrument lookup; omit it if you don't need it.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -2300,7 +2300,7 @@
       },
       "annotations": {},
       "schema_digest": "sha256:b7b93d6c79ddfcca51f6573e46b5a0896fe158f6f529907ba3019b76106befef",
-      "metadata_digest": "sha256:ffea4ae46dc8b3f258489354cd3d4f906d8acdf6134d9e198d97e93b7bb57279"
+      "metadata_digest": "sha256:f892862b998179a986238a161fafa32a96af2b9cc1c683b5cfa5cbd97d61faa3"
     },
     {
       "capability": "get_equity_positions",
@@ -9222,5 +9222,5 @@
       "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191"
     }
   ],
-  "full_manifest_digest": "sha256:d1bfea44189bf53cb44f620e97f183e1b2371766ea39ba6e48fe8f2386c56609"
+  "full_manifest_digest": "sha256:a6725f9c797c6040aab8ec0bc17776b586e78677d260057d21aa61768686443d"
 }

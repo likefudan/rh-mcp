@@ -826,7 +826,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a"
+    SHIPPED_DIGEST = "sha256:a6725f9c797c6040aab8ec0bc17776b586e78677d260057d21aa61768686443d"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -921,8 +921,41 @@ class TestTheShippedManifest:
     def test_the_allowed_set_is_the_size_the_reviewer_approved(self) -> None:
         """A bare count, so an entry appearing or vanishing cannot pass quietly."""
         manifest = load_active_manifest()
-        assert len(manifest.entries) == 53
+        assert len(manifest.entries) == 54
         assert len(manifest.read_capabilities) == 45
+
+        # The denied count was implied by the other two and asserted by
+        # neither, which is a gap the 2026.08.09 review found the hard way: an
+        # entry appearing moves the total, and 45 allowed stays true whether
+        # the 54th entry is denied or was never added. CI's deselection comment
+        # cites the "45/9 split" as a property held here, so it is held here.
+        assert sum(1 for e in manifest.entries if not e.read_allowed) == 9
+
+    def test_the_limited_margin_upgrade_tool_stays_denied(self) -> None:
+        """§6.1: the tool that appeared on 2026-08-09, and why it is not a read.
+
+        It takes only `account_number` and returns eligibility plus the web and
+        mobile links that *start* the limited-margin upgrade flow. Read-shaped,
+        so nothing about its schema would stop it being waved through — which
+        is why the decision is pinned here rather than left to the digest.
+
+        `mutates` is false and that is the honest answer to the question the
+        field asks (§6: "whether invoking the capability changes provider
+        state"). Invoking it reads eligibility and returns URLs. The account
+        changes only if a human opens one and completes identity verification
+        and agreement acceptance in Robinhood's own flow, which no call from
+        this gateway can reach. The order simulators next door are flagged
+        `true` on the opposite reasoning — there the denial rests on
+        distrusting the provider's "does not place" claim, so signing `false`
+        would endorse the evidence the denial rejects. Here the denial does not
+        depend on that claim at all: the output being a route to a state change
+        is visible in the schema and is the whole reason for the refusal.
+        """
+        entry = load_active_manifest().capabilities["get_limited_margin_upgrade_info"]
+        assert entry.disposition == "denied"
+        assert not entry.read_allowed
+        assert entry.mutates is False
+        assert "route to an account state change" in entry.rationale
 
 
 # --------------------------------------------------------------------------

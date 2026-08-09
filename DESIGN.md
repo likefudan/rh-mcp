@@ -382,6 +382,23 @@ decision §9's expected-digest mechanism exists to make explicit.
 changed in those tools — a tool that gained a write capability would still
 carry its previous `allowed` disposition through a refresh.
 
+**What reading it caught on 2026-08-09.** `get_equity_orders`'s description
+changed only to tell a caller to invoke `get_equity_orders`, `get_option_orders`
+and `get_advanced_orders` "in parallel". The provider does not offer a
+`get_advanced_orders`; it is the one dangling tool reference the surface has
+acquired since the manifest was first committed. Nothing in this package acts on
+a description, so no enforcement here is affected and readiness noticed it only
+as a metadata digest moving. The exposure is entirely downstream: a consumer
+that forwards provider prose into a model's context is handing the provider a
+channel for instructions addressed to that model, which is what the `v0.2.0`
+review's consumer requirement 5 — discard provider `guide`, tool descriptions
+and schema descriptions from model, Telegram, CLI and log context — already
+requires be closed. That requirement was written as a precaution; this is the
+first observed instance of the provider's prose actually directing a tool call,
+so it is now load-bearing rather than hypothetical. Recorded here because the
+control §6.1.1 relies on is a human reading what moved, and this is what that
+reading is for.
+
 ### 6.2 Startup and call preflight
 
 Before becoming ready, the gateway discovers the complete provider surface
@@ -1092,11 +1109,20 @@ beside manifest version `2026.08.03.1`. Those two values do not go together.
 `git show v0.1.0:src/rh_mcp/manifests/read-manifest.json` and the same at
 `v0.2.0` both carry `2026.08.03.1` with
 `sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`;
-`49b7218…` is the digest of `2026.08.05`, which is what `main` ships and what
-the README correctly publishes. Commit `b6d6a35` rewrote the digest inside the
-two historical entries while refreshing the manifest. A consumer pinning the
+`49b7218…` is the digest of `2026.08.05`, which was what `main` shipped when
+this section was written. Commit `b6d6a35` rewrote the digest inside the two
+historical entries while refreshing the manifest. A consumer pinning the
 `v0.2.0` *artifact* and taking its digest from that changelog entry would pin a
 digest the artifact refuses readiness against.
+
+`main` has since moved to `2026.08.09` / `a6725f9c…`, which is what the README
+publishes. That does not fix anything above and is not meant to read as though
+it did: both changelog entries still print `49b7218…` beside `2026.08.03.1`,
+both tags still ship `70f88615…`, and the bracketed corrections beside them are
+still the whole of the remedy. The digest `main` ships has now been wrong in
+those entries twice over, which is the argument for the rule below rather than
+against it — a changelog line describing one release cannot be kept true by a
+later one.
 
 Both wrong values are **left in place with a bracketed correction beside each**,
 naming the tag, the correct digest, and the `git show` that produces it.

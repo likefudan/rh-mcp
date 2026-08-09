@@ -91,9 +91,17 @@ jobs:
           # evidence to make it pass is only defensible when the file
           # contradicts itself, and this does not. The property it guards is
           # held by `TestTheShippedManifest`, which asserts the same 8
-          # denials, 11 flagged mutations and 45/8 split against whatever
-          # manifest ships. If that deselection ever hides more than it should,
-          # the fix is a re-review, not a wider `-k`.
+          # trading denials, 11 flagged mutations and 45/9 split against
+          # whatever manifest ships. If that deselection ever hides more than
+          # it should, the fix is a re-review, not a wider `-k`.
+          #
+          # It now hides one assertion more than it did. Manifest 2026.08.09
+          # added a ninth denial, `get_limited_margin_upgrade_info`, so their
+          # `denied == set(DENIED_TRADING)` would fail too if execution ever
+          # reached it. That direction is strictly stricter — an extra denial,
+          # no allowance moved — and `TestTheShippedManifest` pins the new
+          # entry by name. It is still a widening of what this line covers,
+          # and DESIGN §12.4 puts a tool appearing behind a re-review.
           uv run pytest $suites -v \
             --deselect 'security-review/v0.1.0/test_adversarial_review.py::TestPackagedManifestBoundary::test_exact_8_trading_denied_and_11_mutations_allowed'
 

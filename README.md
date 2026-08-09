@@ -40,18 +40,21 @@ independent security review below. All seven DESIGN.md §14 build-order steps
 have landed except the remainder of step 7, and the first reviewed manifest is
 committed. `DESIGN.md` is the authoritative spec.
 
-Owner-assisted discovery ran against the live Robinhood server on 2026-08-03.
-A human reviewed all 53 discovered tools: **45 allowed, 8 denied**. The denied
-set is exactly the trading surface — the six order tools plus both order
-simulators. The allowed set is 34 reads plus 11 non-trading mutations
-(watchlist and saved-scan management), each carrying a reviewed `mutates` flag
-so a consumer gating writes never has to infer which is which.
+Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
+and has been re-run on each observed drift since. A human has reviewed all 54
+discovered tools: **45 allowed, 9 denied**. The denied set is the trading
+surface — the six order tools plus both order simulators — and
+`get_limited_margin_upgrade_info`, which reads eligibility but returns the
+links that start an account upgrade flow. The allowed set is 34 reads plus 11
+non-trading mutations (watchlist and saved-scan management), each carrying a
+reviewed `mutates` flag so a consumer gating writes never has to infer which
+is which.
 
-The full-manifest digest a consumer pins, for manifest `2026.08.05` as shipped
+The full-manifest digest a consumer pins, for manifest `2026.08.09` as shipped
 on `main`:
 
 ```
-sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
+sha256:a6725f9c797c6040aab8ec0bc17776b586e78677d260057d21aa61768686443d
 ```
 
 The manifest version is named alongside it deliberately. A digest belongs to

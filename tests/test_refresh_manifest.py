@@ -300,4 +300,14 @@ def test_the_shipped_manifest_is_refreshable(tmp_path: Path) -> None:
     path.write_text(json.dumps(candidate), encoding="utf-8")
     refreshed = refresh(path, PACKAGED_MANIFEST_PATH)
     assert len(refreshed["entries"]) == len(real.entries)
-    assert sum(1 for e in refreshed["entries"] if e["disposition"] == "denied") == 8
+
+    # Against the real manifest's own dispositions, not a literal. The literal
+    # was `== 8`, which passed for the reason this test is named after and also
+    # for a reason it is not: it would have gone green on a manifest whose
+    # denials had been swapped for eight different tools. Comparing the whole
+    # mapping says what the refresh actually promises — every disposition
+    # carried forward verbatim — and does not need editing when a review adds
+    # an entry, which is when a stale literal would fail for the wrong reason.
+    assert {e["provider_tool_name"]: e["disposition"] for e in refreshed["entries"]} == {
+        e.provider_tool_name: e.disposition for e in real.entries
+    }

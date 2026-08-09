@@ -3,7 +3,7 @@
   "canonicalization_version": "rh-canon-1",
   "digest_algorithm": "sha256",
   "manifest_version": "2026.08.05",
-  "provider_surface_digest": "sha256:0b69a3957fd57405c45815205213de10056bbd962e391976b4cd6c729658c8da",
+  "provider_surface_digest": "sha256:cc095f9715c16caa4997e0a9a923bdea0f959cc0436c0b2cb334abe291abdb86",
   "observed_at": "2026-08-05T22:58:31.272121+00:00",
   "reviewer": {
     "name": "Ke Li",
@@ -3923,6 +3923,80 @@
       "annotations": {},
       "schema_digest": "sha256:dcd39e8548cc280a892e5d07637d262b95662084bb25831e9553d866923b5d15",
       "metadata_digest": "sha256:dc6eeaa020f4310a0abe6f572848e44883b1e234ffaea974ab13400f8705c7b4"
+    },
+    {
+      "capability": "get_limited_margin_upgrade_info",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Returns links that start the limited-margin upgrade flow. Read-shaped, but its output is a route to an account state change and no reviewed ainvest read path needs it. Denied until a use case exists.",
+      "provider_tool_name": "get_limited_margin_upgrade_info",
+      "description": "Check whether a cash account is eligible to upgrade to limited margin and return the links (web and mobile) that start the upgrade flow. Limited margin lets the account trade with unsettled funds — proceeds from a sale can go into a new order before that sale settles — while adding no borrowing or leverage. Call when the user asks about that capability, about trading with unsettled funds, or about enabling limited margin — or when a cash account shows unsettled_funds greater than 0 while you are reporting its funds, value, or buying power (the get_accounts and get_portfolio guides direct this)..",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "account_number": {
+            "type": "string",
+            "description": "Brokerage account number to check. Obtain from get_accounts."
+          }
+        },
+        "required": [
+          "account_number"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "account_number": {
+                "type": "string",
+                "description": "The account checked."
+              },
+              "eligible": {
+                "type": "boolean",
+                "description": "True when this account is a cash account that can be upgraded to limited margin."
+              },
+              "current_account_type": {
+                "type": "string",
+                "description": "The account's current type — 'cash', 'limited_margin', or 'unknown' if the type is unrecognized. An account already on 'limited_margin' returns eligible=false, since no upgrade is needed."
+              },
+              "web_upgrade_url": {
+                "type": "string",
+                "description": "Upgrade-flow link for desktop/web browsers (opens robinhood.com in the browser). Present only when eligible=true. Send exactly as returned with the account number unmasked — masking it breaks the link."
+              },
+              "mobile_upgrade_url": {
+                "type": "string",
+                "description": "Upgrade-flow link for mobile — a universal link that opens the flow in the Robinhood app. Present only when eligible=true. Send exactly as returned with the account number unmasked — masking it breaks the link."
+              },
+              "upgrade_fallback": {
+                "type": "string",
+                "description": "Instructions for reaching the upgrade flow manually when neither link opens. Present only when eligible=true."
+              }
+            },
+            "description": "Tool-specific result payload; see the inner properties for fields.",
+            "required": [
+              "account_number",
+              "eligible",
+              "current_account_type"
+            ],
+            "additionalProperties": false
+          },
+          "guide": {
+            "type": "string",
+            "description": "When eligible=true, tell the user in one line what limited margin gives them: it lets the account trade with unsettled funds — proceeds from a closing order can go straight into a new order before that sale settles — with no borrowing or leverage. Then give the upgrade link that matches the user's device, introduced with a line like \"To upgrade your <nickname> account (••••<last4>), open this link:\" — send mobile_upgrade_url when the user is on a phone (a universal link that opens the flow in the Robinhood app) and web_upgrade_url when they are on desktop/web (opens in a browser). If the device is unknown, offer both, clearly labeled \"on your phone\" vs \"on desktop/web\". Name the account by its nickname and last four digits (from get_accounts) in the prose, but send the chosen URL exactly as returned with the account number unmasked (masking the number in the link breaks it). If the user reports that neither link works, give them the manual path from upgrade_fallback. The user completes the upgrade themselves in that flow (identity verification and agreement acceptance); this tool never changes the account, so once they confirm they finished, re-fetch get_accounts because the account type from any earlier call is now stale."
+          }
+        },
+        "required": [
+          "data",
+          "guide"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {},
+      "schema_digest": "sha256:c143382ccdfa261076221591ea25b7710b495be294be7f3eea6e4691fe9c40e6",
+      "metadata_digest": "sha256:6413e2ce58b60994681278df7fd59223b5ac24c7ebf1dac927a313583f0a97a8"
     },
     {
       "capability": "get_option_chains",
@@ -9148,5 +9222,5 @@
       "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191"
     }
   ],
-  "full_manifest_digest": "sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a"
+  "full_manifest_digest": "sha256:d1bfea44189bf53cb44f620e97f183e1b2371766ea39ba6e48fe8f2386c56609"
 }

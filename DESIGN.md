@@ -1147,7 +1147,7 @@ historical entries while refreshing the manifest. A consumer pinning the
 `v0.2.0` *artifact* and taking its digest from that changelog entry would pin a
 digest the artifact refuses readiness against.
 
-`main` has since moved to `2026.08.09` / `a6725f9c…`, which is what the README
+`main` has since moved to `2026.08.09` / `71863472…`, which is what the README
 publishes. That does not fix anything above and is not meant to read as though
 it did: both changelog entries still print `49b7218…` beside `2026.08.03.1`,
 both tags still ship `70f88615…`, and the bracketed corrections beside them are
@@ -1240,12 +1240,12 @@ that nothing in the package calls.
 
 #### The versioning rule
 
-The package is `0.2.0` and follows SemVer with the 0.x convention `pyproject.toml`
+The package is `0.3.0` and follows SemVer with the 0.x convention `pyproject.toml`
 already states: **for a 0.x package the minor is the breaking position.**
 
-- **Patch** (`0.2.0` → `0.2.1`): no change to any surface above. Error `message`
+- **Patch** (`0.3.0` → `0.3.1`): no change to any surface above. Error `message`
   text, log lines, stderr wording, and internal behaviour may change.
-- **Minor** (`0.2.0` → `0.3.0`): may break. Adding an envelope key (and moving
+- **Minor** (`0.3.0` → `0.4.0`): may break. Adding an envelope key (and moving
   `envelope_version` to `1.1`), adding a tenth `ErrorCode`, adding a
   `CredentialStore` member, or withdrawing a public name all live here. `v0.2.0`
   itself was such a release: it withdrew four names from the export surface.

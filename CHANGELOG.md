@@ -28,6 +28,15 @@ that carries them.
 
 ## [Unreleased]
 
+### Changed
+
+- **The package version is now `0.3.0`.** Manifest `2026.08.09` adds
+  `get_limited_margin_upgrade_info` to the allowed read set, so publishing the
+  permission-expanded artifact as the already released `0.2.0` would give two
+  different security boundaries the same package identity. Consumers still
+  pin the manifest digest independently; the version bump identifies the new
+  artifact and lets the release workflow publish it under a new tag.
+
 ### Added
 
 - **DESIGN §12.5 is the published compatibility policy** — the last §12
@@ -318,11 +327,13 @@ like the thing it is not.
 **One clause in the block above has since gone out of date, and is left as
 written.** It says `49b7218…` "is what `main` ships, what the README publishes,
 and what this entry records". The third is still true and is what the sentence
-was for. The first two stopped being true when `main` moved to `2026.08.09` —
-`a6725f9c…` — one block up. Editing it would be doing to a `2026.08.05` record
-exactly what `b6d6a35` did to the `[0.1.0]` and `[0.2.0]` records, which is the
-error the block is about; so each block describes its own manifest and is read
-that way, and this note is the marker rather than a rewrite.
+was for. The first two stopped being true when the first draft of manifest
+`2026.08.09` moved to the intermediate digest `a6725f9c…`; the review-directed
+permission decision then produced the final digest `71863472…` recorded one
+block up. Editing the `2026.08.05` block would be doing exactly what `b6d6a35`
+did to the `[0.1.0]` and `[0.2.0]` records, which is the error that block is
+about; so each block describes its own manifest and this note records the later
+history without claiming that either intermediate digest is current.
 
 **Nothing here resolves the `[0.1.0]` / `[0.2.0]` corrections.** Those two
 entries still print `49b7218…` beside manifest `2026.08.03.1`; both tags still

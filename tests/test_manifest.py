@@ -864,6 +864,33 @@ class TestTheShippedManifest:
             self.SHIPPED_DIGEST
         ]
 
+    def test_current_manifest_notes_distinguish_the_final_pin_from_intermediate_pins(
+        self,
+    ) -> None:
+        """A historical digest must not be described as the one current main ships."""
+        root = Path(__file__).resolve().parents[1]
+        manifest = load_active_manifest()
+        short = manifest.digest.split(":", 1)[1][:8]
+
+        design = (root / "DESIGN.md").read_text()
+        assert (
+            f"`main` has since moved to `{manifest.manifest_version}` / `{short}…`"
+            in design
+        )
+
+        changelog = (root / "CHANGELOG.md").read_text()
+        current = changelog.split(f"#### `{manifest.manifest_version}`", 1)[1].split(
+            "\n#### ", 1
+        )[0]
+        assert manifest.digest in current
+
+        history_note = changelog.split(
+            "**One clause in the block above has since gone out of date", 1
+        )[1].split("**Nothing here resolves", 1)[0]
+        assert "intermediate digest `a6725f9c…`" in history_note
+        assert f"final digest `{short}…`" in history_note
+        assert "a6725f9c…` — one block up" not in history_note
+
     @pytest.mark.parametrize("name", TRADING_TOOLS + SIMULATION_TOOLS)
     def test_no_trading_capability_is_allowed(self, name: str) -> None:
         """§2 rule 5: trading needs a separate surface, not a wider manifest."""

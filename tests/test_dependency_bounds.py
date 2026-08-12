@@ -35,6 +35,27 @@ def runtime_requirements() -> dict[str, str]:
     return out
 
 
+def project_version() -> str:
+    data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    return str(data["project"]["version"])
+
+
+def test_the_permission_expansion_has_a_new_package_identity() -> None:
+    """The released 0.2.0 identity cannot name a different permission set."""
+    version = project_version()
+    assert version == "0.3.0"
+
+    root = PYPROJECT.parent
+    changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
+    unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+    assert f"package version is now `{version}`" in unreleased
+    assert "already released `0.2.0`" in unreleased
+
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert f"current source builds `{version}`" in readme
+    assert "not the already released `v0.2.0` artifact" in readme
+
+
 def test_the_runtime_dependency_set_is_exactly_the_two_reviewed_ones() -> None:
     """A third runtime dependency is a decision, not a dependency update.
 

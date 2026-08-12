@@ -40,6 +40,10 @@ independent security review below. All seven DESIGN.md §14 build-order steps
 have landed except the remainder of step 7, and the first reviewed manifest is
 committed. `DESIGN.md` is the authoritative spec.
 
+The current source builds `0.3.0`, the new package identity reserved for the
+permission-expanded `2026.08.09` manifest after its independent review. It is
+not the already released `v0.2.0` artifact.
+
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
 and has been re-run on each observed drift since. A human has reviewed all 54
 discovered tools: **46 allowed, 8 denied**. The denied set is exactly the

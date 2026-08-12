@@ -40,18 +40,28 @@ independent security review below. All seven DESIGN.md §14 build-order steps
 have landed except the remainder of step 7, and the first reviewed manifest is
 committed. `DESIGN.md` is the authoritative spec.
 
-Owner-assisted discovery ran against the live Robinhood server on 2026-08-03.
-A human reviewed all 53 discovered tools: **45 allowed, 8 denied**. The denied
-set is exactly the trading surface — the six order tools plus both order
-simulators. The allowed set is 34 reads plus 11 non-trading mutations
-(watchlist and saved-scan management), each carrying a reviewed `mutates` flag
-so a consumer gating writes never has to infer which is which.
+The current source builds `0.3.0`, the new package identity reserved for the
+permission-expanded `2026.08.09` manifest after its independent review. It is
+not the already released `v0.2.0` artifact.
 
-The full-manifest digest a consumer pins, for manifest `2026.08.05` as shipped
-on `main`:
+Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
+and has been re-run on each observed drift since. A human has reviewed all 54
+discovered tools: **46 allowed, 8 denied**. The denied set is exactly the
+trading surface — the six order tools plus both order simulators — and every
+denied tool genuinely writes. The allowed set is 35 reads plus 11 non-trading
+mutations (watchlist and saved-scan management), each carrying a reviewed
+`mutates` flag so a consumer gating writes never has to infer which is which.
+
+The 35th read arrived on `2026.08.09`: `get_limited_margin_upgrade_info`,
+which returns limited-margin eligibility and the links that start the upgrade
+flow. It is a permission expansion, and the first time the allowed set has
+grown since the manifest was first committed.
+
+The full-manifest digest a consumer pins, for manifest `2026.08.09` in the
+reviewed `0.3.0` source:
 
 ```
-sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
+sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043
 ```
 
 The manifest version is named alongside it deliberately. A digest belongs to

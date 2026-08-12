@@ -658,8 +658,9 @@ PACKAGED_MANIFEST_PATH: Final = Path(__file__).parent / "manifests" / "read-mani
 def load_active_manifest() -> ReviewedManifest:
     """Load the manifest committed to the installed package (§9).
 
-    A reviewed manifest ships: 53 tools, 45 allowed and 8 denied, produced by
-    owner-assisted discovery on 2026-08-03 and reviewed by hand (§2.1, §13).
+    A reviewed manifest ships: 54 tools, 46 allowed and 8 denied, produced by
+    owner-assisted discovery on 2026-08-03, refreshed against the provider on
+    each observed drift, and reviewed by hand (§2.1, §13).
 
     The absent-file branch below is therefore no longer the ordinary state. It
     is now reachable only through a broken install — a wheel built without

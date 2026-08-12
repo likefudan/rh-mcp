@@ -28,6 +28,15 @@ that carries them.
 
 ## [Unreleased]
 
+### Changed
+
+- **The package version is now `0.3.0`.** Manifest `2026.08.09` adds
+  `get_limited_margin_upgrade_info` to the allowed read set, so publishing the
+  permission-expanded artifact as the already released `0.2.0` would give two
+  different security boundaries the same package identity. Consumers still
+  pin the manifest digest independently; the version bump identifies the new
+  artifact and lets the release workflow publish it under a new tag.
+
 ### Added
 
 - **DESIGN §12.5 is the published compatibility policy** — the last §12
@@ -193,6 +202,91 @@ that carries them.
 
 ### Manifest
 
+Newest first. Each block describes one manifest and is not amended by a later
+one — see the note at the end of this section.
+
+#### `2026.08.09` — a tool appeared, and the allowed set grew
+
+```
+sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043
+```
+
+**54 tools: 46 allowed, 8 denied** — 35 reads, 11 non-trading mutations, and
+the same 8 trading denials as every manifest before it.
+
+> **This manifest expands the permission set.** A capability was **added to the
+> allowed set** — not merely catalogued — and DESIGN §12.4 lists a tool
+> appearing among the changes that need a new independent external security
+> review. That review is owed and has not happened. The internal review recorded
+> below is not it.
+
+The 54th tool is `get_limited_margin_upgrade_info`, **allowed**, `mutates:
+false`. It takes only `account_number` and returns eligibility plus the web and
+mobile links that start the limited-margin upgrade flow.
+
+It was **denied** in the first draft of this change, on the reasoning that its
+output is a route to an account state change. Independent review rejected that,
+and the reason is worth recording because it is the kind of mistake a careful
+argument can walk straight into: the manifest already contained the answer.
+`get_option_level_upgrade_info` has the same shape — `account_number` in, an
+upgrade URL out — gates the *higher* privilege of options trading, and has
+shipped `allowed` / `mutates: false` since the first commit. The `get_accounts`
+guide already directs a call to it, with a hardcoded
+`applink.robinhood.com/upgrade_options` fallback. The defect was not either
+verdict taken alone; it was that the manifest would have held both at once.
+
+Denying it would also have falsified DESIGN §2.1's normative claim that the
+denied set is exactly the trading surface, and would have created a
+`denied` + `mutates: false` category that had never existed here — every
+previous denial genuinely writes. Allowing keeps the denied set at exactly the
+eight trading tools, all `mutates: true`, and that category never comes into
+being.
+
+`mutates: false` was upheld on review, on a shorter argument than the draft's:
+§6 defines the field as whether *invoking* changes provider state, invoking
+returns URLs, and the sibling — an upgrade-link tool shipped `mutates: false`
+since day one — makes `false` the manifest's own precedent rather than a break
+from it. (The draft also argued that `true` would corrupt the write-gate signal
+consumer requirement 6 reads. That is weaker than it was put: a consumer stops
+at `allowed: false` and never reaches `mutates`, so `true` would have misled
+rather than corrupted. It now reads `allowed: true`, where the flag is load-
+bearing and is covered by the same assertion that covers the other 34 reads.)
+
+Two tools also drifted, neither disposition affected:
+
+- **`get_accounts`** — one nested schema description. Account `type` gained a
+  third value: `'cash'`, `'margin'`, `'limited_margin'`. Previously a retirement
+  account reported `'margin'` and the description explained that this meant
+  limited margin; now `limited_margin` is its own value, and the description
+  extends it to managed and agentic accounts. Structure unchanged, so this is a
+  value-domain change rather than a shape change — a consumer branching on
+  `type` can now meet a string it has never seen. Flagged for consumers; not
+  actionable inside this package, which does not interpret the field.
+- **`get_equity_orders`** — description only, and it now instructs callers to
+  call `get_advanced_orders` in parallel. The provider does not offer that tool.
+  Nothing here acts on a description, so no enforcement is affected. It is also
+  **not** novel: five such dangling references exist in the observed surface and
+  four date to the first committed manifest (`b2d4e2b`). The original four are
+  `get_quotes`, `get_crypto_positions`, `get_currency_pairs`, and
+  `preview_scan`; the last is named twice in scanner schema descriptions.
+  Consumer requirement 5 — discard provider prose from model context — is
+  continuously load-bearing rather than newly so. Recorded in DESIGN §6.1.1.
+
+`get_limited_margin_upgrade_info` was itself one of those dangling references on
+`2026.08.05`, named by the `get_accounts` and `get_portfolio` guides before it
+existed. These pointers are forward-looking, not provider errors.
+
+Procedure, because it is not the usual one: `scripts/refresh_manifest.py`
+refuses when a tool appears, by design and with no override, and it cannot
+change a disposition. So each human decision was authored into the committed
+manifest by hand and the mechanical refresh ran only after: the entry in
+`7f1a54c`, the refresh in `5f08fb4`, and the review-directed reversal from
+`denied` to `allowed` in its own commit on top. `provider_surface_digest` is
+unchanged by the reversal — it covers the observed surface, not review
+decisions — so only the full-manifest digest moved.
+
+#### `2026.08.05` — refreshed for the `direction` field
+
 `2026.08.05`, refreshed for the observed `direction` field on
 `place_option_order` and `review_option_order`. 53 tools in and out, no
 disposition moved, both affected tools denied either way.
@@ -231,6 +325,25 @@ By this file's own standard, borrowed from the tests: a line stating a wrong
 digest under the right heading is worse than no line, for the same reason a
 passing test that asserts something adjacent is worse than no test — it reads
 like the thing it is not.
+
+**One clause in the block above has since gone out of date, and is left as
+written.** It says `49b7218…` "is what `main` ships, what the README publishes,
+and what this entry records". The third is still true and is what the sentence
+was for. The first two stopped being true when the first draft of manifest
+`2026.08.09` moved to the intermediate digest `a6725f9c…`; the review-directed
+permission decision then produced the final digest `71863472…` recorded one
+block up. Editing the `2026.08.05` block would be doing exactly what `b6d6a35`
+did to the `[0.1.0]` and `[0.2.0]` records, which is the error that block is
+about; so each block describes its own manifest and this note records the later
+history without claiming that either intermediate digest is current.
+
+**Nothing here resolves the `[0.1.0]` / `[0.2.0]` corrections.** Those two
+entries still print `49b7218…` beside manifest `2026.08.03.1`; both tags still
+ship `70f88615…`; the bracketed corrections beside them are still the whole of
+the remedy, and substituting the right string is still the release owner's
+decision and nobody else's. The newer digest in the reviewed `0.3.0` source
+changes none of that — it only adds a third value to keep distinct from the
+other two.
 
 ## [0.2.0] — 2026-08-04
 
@@ -369,7 +482,7 @@ consumer's pinned manifest digest does not move.
 > `sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`,
 > which is also what the `v0.2.0` GitHub release notes publish. Verify with
 > `git show v0.2.0:src/rh_mcp/manifests/read-manifest.json`. `49b7218…` is
-> manifest `2026.08.05`, which `main` ships; commit `b6d6a35` substituted it
+> manifest `2026.08.05`, which `main` shipped on 2026-08-05; commit `b6d6a35` substituted it
 > into this entry while refreshing the manifest. The original line is preserved
 > rather than rewritten — see `[Unreleased]` → **Manifest**, and DESIGN §12.5.
 
@@ -433,7 +546,7 @@ sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
 > ships `2026.08.03.1` with
 > `sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`.
 > Verify with `git show v0.1.0:src/rh_mcp/manifests/read-manifest.json`.
-> `49b7218…` is manifest `2026.08.05`, which `main` ships; commit `b6d6a35`
+> `49b7218…` is manifest `2026.08.05`, which `main` shipped on 2026-08-05; commit `b6d6a35`
 > substituted it into this entry while refreshing the manifest. The original
 > block is preserved rather than rewritten — see `[Unreleased]` → **Manifest**,
 > and DESIGN §12.5. (`v0.1.0` should not be used with a real credential in any

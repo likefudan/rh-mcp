@@ -63,11 +63,11 @@ not inferred from the token, a tool name, or an MCP annotation.
 Authenticated discovery (§13) settled two facts that this section previously
 had to speculate about, and both matter more than they look:
 
-- The provider surface is 53 tools, and **six of them place, cancel, or
+- The provider surface is 54 tools, and **six of them place, cancel, or
   exercise real orders**. They arrive over the same session, under the same
   token, as every quote and position read. This manifest is the only thing
   between a consumer and a trade.
-- **Not one of the 53 tools carries `readOnlyHint`, or any annotation at
+- **Not one of the 54 tools carries `readOnlyHint`, or any annotation at
   all.** Rule 4 below said annotations are evidence and never authority; the
   live surface supplies no evidence whatsoever. Every disposition in the
   manifest is a human judgement from a name, a description, and a schema.
@@ -93,9 +93,9 @@ The gateway owns transport security and the capability boundary. It does
 semantics, or application audit workflows. Those remain responsibilities of
 the consumer (§10).
 
-### 2.1 What the first manifest actually allows
+### 2.1 What the active manifest actually allows
 
-45 of 53 tools are allowed; 8 are denied. The denied set is exactly the
+46 of 54 tools are allowed; 8 are denied. The denied set is exactly the
 trading surface:
 
 | denied | why |
@@ -105,9 +105,22 @@ trading surface:
 | `exercise_option` | exercises a position |
 | `review_equity_order`, `review_option_order` | "simulate an order without placing it" — denied anyway. Simulation is not a read of account state, it takes a complete order as its argument, and the meaning of "simulate" is defined entirely on Robinhood's side. If that meaning ever shifts, what we handed over was an order. |
 
-The allowed set is 34 reads plus **11 non-trading mutations**: watchlist
+The allowed set is 35 reads plus **11 non-trading mutations**: watchlist
 create/update/add/remove/follow/unfollow, and saved-scan create/update. They
 write to Robinhood; they move no money and touch no order.
+
+The 35th read is `get_limited_margin_upgrade_info`, added on `2026.08.09` when
+it appeared on the provider surface — the first time this table's *allowed* side
+has grown since the manifest was first committed, and a permission expansion in
+the sense §12.4 means. It returns limited-margin eligibility and the links that
+start the upgrade flow. A draft of that change denied it on the reasoning that
+its output is a route to a state change; review found the manifest had already
+answered the question, because `get_option_level_upgrade_info` has the same
+shape, gates the higher privilege of options trading, and has shipped `allowed`
+/ `mutates: false` since the first commit. The denial would have made this
+section's opening claim false — the denied set would no longer have been exactly
+the trading surface — which is the clearest statement of why the two had to
+agree.
 
 Two consequences a consumer must not discover by surprise:
 
@@ -381,6 +394,42 @@ decision §9's expected-digest mechanism exists to make explicit.
 **A refresh is not a review.** Digests moving is the signal to go and read what
 changed in those tools — a tool that gained a write capability would still
 carry its previous `allowed` disposition through a refresh.
+
+**What reading it caught on 2026-08-09.** `get_equity_orders`'s description
+changed only to tell a caller to invoke `get_equity_orders`, `get_option_orders`
+and `get_advanced_orders` "in parallel". The provider does not offer a
+`get_advanced_orders`.
+
+The first draft of that observation called this the first instance of provider
+prose directing a call to a tool that does not exist. That was wrong, and the
+correction is more useful than the claim. Sweeping every description and
+schema-description string in the observed surface finds **five** such
+references, and four of them —
+`get_quotes` from `get_watchlist_items`, `get_crypto_positions` from
+`get_accounts`, `get_currency_pairs` from `add_to_watchlist`, and
+`preview_scan` from the `create_scan` and `update_scan_filters` schemas — have
+been there since the first manifest was committed in `b2d4e2b`, several in
+directive form ("call `get_quotes` with the symbol(s)", "Only preview_scan
+accepts expressions"). So this is a standing property of the surface, not an
+event.
+
+`get_limited_margin_upgrade_info` is the instructive case. It was itself a
+dangling reference on `2026.08.05`: the `get_accounts` and `get_portfolio`
+guides both said "if the `get_limited_margin_upgrade_info` tool is available —
+call it". On `2026.08.09` it appeared. These references are not provider errors;
+they are forward pointers to tools being rolled out, which is also why the tool
+that appeared arrived already wired into two read guides.
+
+Nothing in this package acts on a description, so no enforcement is affected and
+readiness noticed the change only as a metadata digest moving. The exposure is
+entirely downstream: a consumer that forwards provider prose into a model's
+context is handing the provider a channel for instructions addressed to that
+model, which is what the `v0.2.0` review's consumer requirement 5 — discard
+provider `guide`, tool descriptions and schema descriptions from model,
+Telegram, CLI and log context — already requires be closed. Five live dangling
+references make that requirement continuously load-bearing rather than
+precautionary. Recorded here because the control §6.1.1 relies on is a human
+reading what moved, and this is what that reading is for.
 
 ### 6.2 Startup and call preflight
 
@@ -817,7 +866,10 @@ this — editing an auditor's evidence to make it pass is only defensible when
 the file contradicts itself, which this does not. CI deselects that one test by
 name and records why, and the property it was guarding is held independently by
 `TestTheShippedManifest`, which asserts the same 8 denials, the same 11 flagged
-mutations, and the same 45/8 split against whatever manifest ships.
+mutations, and the same 46/8 split against whatever manifest ships. It also
+asserts the denied set *as a set*, which the 2026.08.09 review added after a
+draft of that change put a ninth entry in it and every existing count assertion
+stayed green.
 
 ### 12.5 Published compatibility policy
 
@@ -1092,11 +1144,20 @@ beside manifest version `2026.08.03.1`. Those two values do not go together.
 `git show v0.1.0:src/rh_mcp/manifests/read-manifest.json` and the same at
 `v0.2.0` both carry `2026.08.03.1` with
 `sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`;
-`49b7218…` is the digest of `2026.08.05`, which is what `main` ships and what
-the README correctly publishes. Commit `b6d6a35` rewrote the digest inside the
-two historical entries while refreshing the manifest. A consumer pinning the
+`49b7218…` is the digest of `2026.08.05`, which was what `main` shipped when
+this section was written. Commit `b6d6a35` rewrote the digest inside the two
+historical entries while refreshing the manifest. A consumer pinning the
 `v0.2.0` *artifact* and taking its digest from that changelog entry would pin a
 digest the artifact refuses readiness against.
+
+The reviewed `0.3.0` source carries `2026.08.09` / `71863472…`, which is what
+the README publishes for that source. That does not fix anything above and is
+not meant to read as though it did: both changelog entries still print
+`49b7218…` beside `2026.08.03.1`, both tags still ship `70f88615…`, and the
+bracketed corrections beside them are still the whole of the remedy. A newer
+source digest has now made those entries wrong twice over, which is the
+argument for the rule below rather than against it — a changelog line
+describing one release cannot be kept true by a later one.
 
 Both wrong values are **left in place with a bracketed correction beside each**,
 naming the tag, the correct digest, and the `git show` that produces it.
@@ -1182,12 +1243,12 @@ that nothing in the package calls.
 
 #### The versioning rule
 
-The package is `0.2.0` and follows SemVer with the 0.x convention `pyproject.toml`
+The package is `0.3.0` and follows SemVer with the 0.x convention `pyproject.toml`
 already states: **for a 0.x package the minor is the breaking position.**
 
-- **Patch** (`0.2.0` → `0.2.1`): no change to any surface above. Error `message`
+- **Patch** (`0.3.0` → `0.3.1`): no change to any surface above. Error `message`
   text, log lines, stderr wording, and internal behaviour may change.
-- **Minor** (`0.2.0` → `0.3.0`): may break. Adding an envelope key (and moving
+- **Minor** (`0.3.0` → `0.4.0`): may break. Adding an envelope key (and moving
   `envelope_version` to `1.1`), adding a tenth `ErrorCode`, adding a
   `CredentialStore` member, or withdrawing a public name all live here. `v0.2.0`
   itself was such a release: it withdrew four names from the export surface.

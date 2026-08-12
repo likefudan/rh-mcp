@@ -48,12 +48,28 @@ def test_the_permission_expansion_has_a_new_package_identity() -> None:
     root = PYPROJECT.parent
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
-    assert f"package version is now `{version}`" in unreleased
-    assert "already released `0.2.0`" in unreleased
+    assert not unreleased.strip()
+    released = changelog.split(f"## [{version}] — 2026-08-12", 1)[1].split(
+        "\n## [", 1
+    )[0]
+    assert f"package version is now `{version}`" in released
+    assert "already released `0.2.0`" in released
+    assert (
+        f"[{version}]: https://github.com/likefudan/rh-mcp/compare/"
+        "v0.2.0...v0.3.0"
+    ) in changelog
+    assert (
+        "[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...HEAD"
+        in changelog
+    )
 
     readme = (root / "README.md").read_text(encoding="utf-8")
-    assert f"current source builds `{version}`" in readme
-    assert "not the already released `v0.2.0` artifact" in readme
+    readme_prose = " ".join(readme.split())
+    assert f"The `v{version}` release is built from this source" in readme_prose
+    assert (
+        "permission-expanded manifest lineage introduced on `2026.08.09` distinct "
+        "from the already released `v0.2.0` artifact"
+    ) in readme_prose
 
 
 def test_the_runtime_dependency_set_is_exactly_the_two_reviewed_ones() -> None:

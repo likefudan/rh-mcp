@@ -35,15 +35,16 @@ gateway.
 
 ## Status
 
-**Released.** `v0.1.0` shipped on 2026-08-03; `v0.2.0` is the response to the
-independent security review below. All seven DESIGN.md §14 build-order steps
-have landed except the remainder of step 7, and the first reviewed manifest is
-committed. `DESIGN.md` is the authoritative spec.
+**Released.** `v0.1.0` shipped on 2026-08-03; `v0.2.0` responded to its
+independent security review; and `v0.3.0` ships the permission-expanded
+manifest lineage and scanner refresh described below. All seven DESIGN.md §14
+build-order steps have landed except the remainder of step 7, and the reviewed
+manifest is committed. `DESIGN.md` is the authoritative spec.
 
-The current source builds `0.3.0`, the new package identity reserved for the
-permission-expanded manifest lineage introduced on `2026.08.09`. It now
-carries the owner-reviewed `2026.08.12` scanner refresh described below. It is
-not the already released `v0.2.0` artifact.
+The `v0.3.0` release is built from this source. Its new package identity keeps
+the permission-expanded manifest lineage introduced on `2026.08.09` distinct
+from the already released `v0.2.0` artifact, and it carries the owner-reviewed
+`2026.08.12` scanner refresh described below.
 
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
 and has been re-run on each observed drift since. A human has reviewed all 54
@@ -69,7 +70,7 @@ tool surface; like the five existing dangling tool references, it is inert in
 this gateway but must not be forwarded into a model or user-facing context.
 
 The full-manifest digest a consumer pins, for manifest `2026.08.12` in the
-reviewed `0.3.0` source:
+released `v0.3.0` artifact:
 
 ```
 sha256:403ddc4c8a71bf470da906f572134c7d00684ae23af023e91df1872fc6d71b3f

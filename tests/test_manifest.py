@@ -887,7 +887,7 @@ class TestTheShippedManifest:
         published = readme.split("The full-manifest digest a consumer pins", 1)[1].split(
             "The manifest version is named", 1
         )[0]
-        assert "reviewed `0.3.0` source" in published
+        assert "released `v0.3.0` artifact" in published
         assert "on `main`" not in published
 
         history_note = changelog.split(

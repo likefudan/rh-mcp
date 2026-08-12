@@ -906,13 +906,29 @@ class TestTheShippedManifest:
         )
         assert dossiers == ["v0.1.0", "v0.2.0"]
 
-        for name in ("README.md", "NOTICE"):
-            prose = " ".join((root / name).read_text().split()).lower()
-            assert "two" in prose
-            assert "released-artifact review report" in prose
-            assert "two pre-merge manifest-change review" in prose
-            assert "34" in prose
-            assert "35" in prose
+        readme = " ".join((root / "README.md").read_text().split()).lower()
+        assert (
+            "two released-artifact review reports, plus two pre-merge "
+            "manifest-change reviews"
+        ) in readme
+        assert (
+            "pr #34 independently reviewed the `2026.08.09` permission expansion, "
+            "and pr #35 independently reviewed this `2026.08.12` scanner refresh "
+            "before merge"
+        ) in readme
+
+        notice = " ".join((root / "NOTICE").read_text().split()).lower()
+        assert (
+            "two committed released-artifact review reports, plus two pre-merge "
+            "manifest-change reviews"
+        ) in notice
+        assert (
+            "prs 34 and 35 reviewed the 2026.08.09 and 2026.08.12 manifest changes "
+            "before merge"
+        ) in notice
+        assert (
+            "pr 35 independently reviewed the 2026.08.12 scanner refresh"
+        ) in notice
 
     def test_provider_prose_dangling_tool_names_are_exhaustively_recorded(self) -> None:
         """Provider prose is a prompt channel, including schema descriptions."""

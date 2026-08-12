@@ -88,8 +88,11 @@ error wire strings, the CLI exit codes, the manifest format fields, and the
 `CredentialStore` protocol promise across a version change, and what they
 deliberately do not.
 
-**Two independent security reviews. The first found blocking defects in
-`v0.1.0`; the second approved `v0.2.0`.**
+**Two released-artifact review reports, plus two pre-merge manifest-change
+reviews.** The first found blocking defects in `v0.1.0`; the second approved
+`v0.2.0`. PR #34 independently reviewed the `2026.08.09` permission expansion,
+and PR #35 independently reviewed this `2026.08.12` scanner refresh before
+merge.
 
 An AI-assisted reviewer outside this project examined the exact `v0.1.0`
 artifacts and returned **CHANGES_REQUIRED**: a public transport export that
@@ -101,11 +104,13 @@ all run under the same orchestration as the implementation, found neither.
 Both are fixed in `v0.2.0`, which was then re-reviewed as a fresh artifact and
 returned **APPROVED_FOR_AINVEST_INTEGRATION**.
 
-Both reviews are committed in full at `security-review/`, including the
-reviewers' own adversarial tests — 38 of them, which CI runs on every commit.
-They are AI-assisted reviews with a disclosed independence limitation, not
-human penetration tests or certifications, and each verdict is bound to the
-exact commit and artifacts it names. See DESIGN.md §12.1–12.3 and `NOTICE`.
+The first two reviews are committed in full at `security-review/`, including
+the reviewers' own adversarial tests — 38 of them, which CI runs on every
+commit. The PR #34 and #35 reviews are recorded on their pull requests and bind
+only the exact pre-merge source and locally rebuilt artifacts they name. All
+four are AI-assisted reviews with a disclosed independence limitation, not
+human penetration tests or certifications. See DESIGN.md §12.1–12.3 and
+`NOTICE`.
 
 ### Production runs on macOS
 

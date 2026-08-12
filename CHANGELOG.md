@@ -247,7 +247,10 @@ The other four entries do not gain a new top-level operation:
   with the existing `scan_id` and the full desired filter set.
 
 No live tool was invoked during discovery or review. The candidate was used
-only to enumerate the provider surface and produce this reviewed manifest.
+only to enumerate the provider surface and produce this reviewed manifest. An
+independent pre-merge review reproduced both interpreter gates and artifact
+hashes, added scanner/trading/drift/prose adversarial tests, and approved the
+exact release candidate after its documentation-history finding was corrected.
 
 #### `2026.08.09` — a tool appeared, and the allowed set grew
 

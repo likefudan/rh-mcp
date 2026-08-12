@@ -897,6 +897,23 @@ class TestTheShippedManifest:
         assert "final digest `71863472…`" in history_note
         assert "a6725f9c…` — one block up" not in history_note
 
+    def test_review_history_distinguishes_release_dossiers_from_pr_reviews(self) -> None:
+        """The review count must not erase the two pre-merge manifest reviews."""
+        root = Path(__file__).resolve().parents[1]
+        dossiers = sorted(
+            path.parent.name
+            for path in (root / "security-review").glob("*/REPORT.md")
+        )
+        assert dossiers == ["v0.1.0", "v0.2.0"]
+
+        for name in ("README.md", "NOTICE"):
+            prose = " ".join((root / name).read_text().split()).lower()
+            assert "two" in prose
+            assert "released-artifact review report" in prose
+            assert "two pre-merge manifest-change review" in prose
+            assert "34" in prose
+            assert "35" in prose
+
     def test_provider_prose_dangling_tool_names_are_exhaustively_recorded(self) -> None:
         """Provider prose is a prompt channel, including schema descriptions."""
         document = json.loads(PACKAGED_MANIFEST_PATH.read_text(encoding="utf-8"))

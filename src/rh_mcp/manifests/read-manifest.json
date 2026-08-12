@@ -3926,9 +3926,9 @@
     },
     {
       "capability": "get_limited_margin_upgrade_info",
-      "disposition": "denied",
+      "disposition": "allowed",
       "mutates": false,
-      "rationale": "Returns links that start the limited-margin upgrade flow. Read-shaped, but its output is a route to an account state change and no reviewed ainvest read path needs it. Denied until a use case exists.",
+      "rationale": "Reviewed read. Returns limited-margin eligibility and the links that start the upgrade flow; invoking it changes no provider state, because the upgrade happens only if a human completes Robinhood's own flow. Same shape and same treatment as get_option_level_upgrade_info, which gates a higher privilege.",
       "provider_tool_name": "get_limited_margin_upgrade_info",
       "description": "Check whether a cash account is eligible to upgrade to limited margin and return the links (web and mobile) that start the upgrade flow. Limited margin lets the account trade with unsettled funds — proceeds from a sale can go into a new order before that sale settles — while adding no borrowing or leverage. Call when the user asks about that capability, about trading with unsettled funds, or about enabling limited margin — or when a cash account shows unsettled_funds greater than 0 while you are reporting its funds, value, or buying power (the get_accounts and get_portfolio guides direct this)..",
       "input_schema": {
@@ -9222,5 +9222,5 @@
       "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191"
     }
   ],
-  "full_manifest_digest": "sha256:a6725f9c797c6040aab8ec0bc17776b586e78677d260057d21aa61768686443d"
+  "full_manifest_digest": "sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043"
 }

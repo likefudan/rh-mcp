@@ -42,19 +42,22 @@ committed. `DESIGN.md` is the authoritative spec.
 
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
 and has been re-run on each observed drift since. A human has reviewed all 54
-discovered tools: **45 allowed, 9 denied**. The denied set is the trading
-surface — the six order tools plus both order simulators — and
-`get_limited_margin_upgrade_info`, which reads eligibility but returns the
-links that start an account upgrade flow. The allowed set is 34 reads plus 11
-non-trading mutations (watchlist and saved-scan management), each carrying a
-reviewed `mutates` flag so a consumer gating writes never has to infer which
-is which.
+discovered tools: **46 allowed, 8 denied**. The denied set is exactly the
+trading surface — the six order tools plus both order simulators — and every
+denied tool genuinely writes. The allowed set is 35 reads plus 11 non-trading
+mutations (watchlist and saved-scan management), each carrying a reviewed
+`mutates` flag so a consumer gating writes never has to infer which is which.
+
+The 35th read arrived on `2026.08.09`: `get_limited_margin_upgrade_info`,
+which returns limited-margin eligibility and the links that start the upgrade
+flow. It is a permission expansion, and the first time the allowed set has
+grown since the manifest was first committed.
 
 The full-manifest digest a consumer pins, for manifest `2026.08.09` as shipped
 on `main`:
 
 ```
-sha256:a6725f9c797c6040aab8ec0bc17776b586e78677d260057d21aa61768686443d
+sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043
 ```
 
 The manifest version is named alongside it deliberately. A digest belongs to

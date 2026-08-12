@@ -826,7 +826,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:a6725f9c797c6040aab8ec0bc17776b586e78677d260057d21aa61768686443d"
+    SHIPPED_DIGEST = "sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -851,6 +851,18 @@ class TestTheShippedManifest:
 
     def test_the_shipped_digest_is_the_pinned_one(self) -> None:
         assert load_active_manifest().digest == self.SHIPPED_DIGEST
+
+    def test_readme_publishes_the_shipped_manifest_pin(self) -> None:
+        """The consumer-facing version and digest cannot drift from the artifact."""
+        manifest = load_active_manifest()
+        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+        published = readme.split("The full-manifest digest a consumer pins", 1)[1].split(
+            "The manifest version is named", 1
+        )[0]
+        assert f"for manifest `{manifest.manifest_version}`" in published
+        assert [line for line in published.splitlines() if line.startswith("sha256:")] == [
+            self.SHIPPED_DIGEST
+        ]
 
     @pytest.mark.parametrize("name", TRADING_TOOLS + SIMULATION_TOOLS)
     def test_no_trading_capability_is_allowed(self, name: str) -> None:
@@ -901,7 +913,7 @@ class TestTheShippedManifest:
         """The other direction: a read wrongly flagged would be gated for nothing."""
         manifest = load_active_manifest()
         reads = [e for e in manifest.entries if e.read_allowed and not e.mutates]
-        assert len(reads) == 34
+        assert len(reads) == 35
         assert all(e.capability.startswith(("get_", "run_", "search")) for e in reads)
 
     def test_each_allowed_mutation_states_its_own_blast_radius(self) -> None:
@@ -922,40 +934,63 @@ class TestTheShippedManifest:
         """A bare count, so an entry appearing or vanishing cannot pass quietly."""
         manifest = load_active_manifest()
         assert len(manifest.entries) == 54
-        assert len(manifest.read_capabilities) == 45
+        assert len(manifest.read_capabilities) == 46
 
         # The denied count was implied by the other two and asserted by
         # neither, which is a gap the 2026.08.09 review found the hard way: an
-        # entry appearing moves the total, and 45 allowed stays true whether
-        # the 54th entry is denied or was never added. CI's deselection comment
-        # cites the "45/9 split" as a property held here, so it is held here.
-        assert sum(1 for e in manifest.entries if not e.read_allowed) == 9
+        # entry appearing moves the total, and the allowed count stays true
+        # whether the 54th entry is denied or was never added. DESIGN §12.4 and
+        # CI's deselection comment both cite the "46/8 split" as a property
+        # held here, so it is held here.
+        assert sum(1 for e in manifest.entries if not e.read_allowed) == 8
 
-    def test_the_limited_margin_upgrade_tool_stays_denied(self) -> None:
-        """§6.1: the tool that appeared on 2026-08-09, and why it is not a read.
+        # And the denied set is exactly the trading surface — §2.1's normative
+        # claim, which nothing else asserts as a *set*. `test_no_trading_
+        # capability_is_allowed` checks those 8 are denied; it would not notice
+        # a 9th tool joining them, which is precisely what the first draft of
+        # this PR did.
+        assert {e.provider_tool_name for e in manifest.entries if not e.read_allowed} == set(
+            self.TRADING_TOOLS + self.SIMULATION_TOOLS
+        )
 
-        It takes only `account_number` and returns eligibility plus the web and
-        mobile links that *start* the limited-margin upgrade flow. Read-shaped,
-        so nothing about its schema would stop it being waved through — which
-        is why the decision is pinned here rather than left to the digest.
+    def test_the_two_upgrade_link_tools_are_treated_alike(self) -> None:
+        """§6.1: the tool that appeared on 2026-08-09, beside its precedent.
 
-        `mutates` is false and that is the honest answer to the question the
-        field asks (§6: "whether invoking the capability changes provider
-        state"). Invoking it reads eligibility and returns URLs. The account
-        changes only if a human opens one and completes identity verification
-        and agreement acceptance in Robinhood's own flow, which no call from
-        this gateway can reach. The order simulators next door are flagged
-        `true` on the opposite reasoning — there the denial rests on
-        distrusting the provider's "does not place" claim, so signing `false`
-        would endorse the evidence the denial rejects. Here the denial does not
-        depend on that claim at all: the output being a route to a state change
-        is visible in the schema and is the whole reason for the refusal.
+        `get_limited_margin_upgrade_info` takes only `account_number` and
+        returns eligibility plus the web and mobile links that *start* the
+        limited-margin upgrade flow. It was denied in the first draft of this
+        change on the reasoning that its output is a route to a state change.
+        Independent review found the manifest already answers this question:
+        `get_option_level_upgrade_info` has the same shape — `account_number`
+        in, an upgrade URL out — has shipped `allowed` / `mutates: false` since
+        the first commit, and gates a *higher* privilege (options trading). The
+        two are pinned together here because the defect was not either verdict
+        on its own, it was holding both at once.
+
+        `mutates` is false for both, which is the answer to the question §6
+        says the field asks: whether *invoking* changes provider state.
+        Invoking returns URLs. The account changes only if a human opens one
+        and completes identity verification and agreement acceptance in
+        Robinhood's own flow, which no call through this gateway reaches.
         """
-        entry = load_active_manifest().capabilities["get_limited_margin_upgrade_info"]
-        assert entry.disposition == "denied"
-        assert not entry.read_allowed
-        assert entry.mutates is False
-        assert "route to an account state change" in entry.rationale
+        manifest = load_active_manifest()
+        limited = manifest.capabilities["get_limited_margin_upgrade_info"]
+        options = manifest.capabilities["get_option_level_upgrade_info"]
+
+        for entry in (limited, options):
+            assert entry.disposition == "allowed"
+            assert entry.read_allowed
+            assert entry.mutates is False
+            assert entry.rationale.strip()
+
+        # The property that actually failed review: not either entry's verdict,
+        # but the two disagreeing. Asserting them separately would pass on a
+        # manifest that had drifted back into holding both positions.
+        assert (limited.disposition, limited.mutates) == (options.disposition, options.mutates)
+
+        # Same input shape, which is what makes the comparison legitimate
+        # rather than a coincidence of naming.
+        assert set(limited.input_schema["properties"]) == set(options.input_schema["properties"])
 
 
 # --------------------------------------------------------------------------

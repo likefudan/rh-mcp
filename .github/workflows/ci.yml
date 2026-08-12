@@ -77,17 +77,21 @@ jobs:
           # evidence to make it pass is only defensible when the file
           # contradicts itself, and this does not. The property it guards is
           # held by `TestTheShippedManifest`, which asserts the same 8
-          # trading denials, 11 flagged mutations and 45/9 split against
+          # trading denials, 11 flagged mutations and 46/8 split against
           # whatever manifest ships. If that deselection ever hides more than
           # it should, the fix is a re-review, not a wider `-k`.
           #
-          # It now hides one assertion more than it did. Manifest 2026.08.09
-          # added a ninth denial, `get_limited_margin_upgrade_info`, so their
-          # `denied == set(DENIED_TRADING)` would fail too if execution ever
-          # reached it. That direction is strictly stricter — an extra denial,
-          # no allowance moved — and `TestTheShippedManifest` pins the new
-          # entry by name. It is still a widening of what this line covers,
-          # and DESIGN §12.4 puts a tool appearing behind a re-review.
+          # It now hides one assertion more than it did, and the swap is worth
+          # naming. Manifest 2026.08.09 added `get_limited_margin_upgrade_info`
+          # as an allowed read, so their `denied == set(DENIED_TRADING)` still
+          # holds — the denied set is exactly the 8 trading tools, as before —
+          # but their `len(allowed_read) == 34` would now fail on a 35th read.
+          # That is a permission *expansion* hidden behind this line, which is
+          # a weaker position than the extra-denial case it replaced. It is
+          # held instead by `TestTheShippedManifest`, which pins 35 reads, the
+          # 46/8 split, and the denied set as a set. DESIGN §12.4 puts a tool
+          # appearing behind a new external review; that is owed here and is
+          # not discharged by this deselection being reasoned about.
           uv run pytest $suites -v \
             --deselect 'security-review/v0.1.0/test_adversarial_review.py::TestPackagedManifestBoundary::test_exact_8_trading_denied_and_11_mutations_allowed'
 

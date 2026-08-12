@@ -196,34 +196,52 @@ that carries them.
 Newest first. Each block describes one manifest and is not amended by a later
 one — see the note at the end of this section.
 
-#### `2026.08.09` — a tool appeared, and was reviewed and denied
+#### `2026.08.09` — a tool appeared, and the allowed set grew
 
 ```
-sha256:a6725f9c797c6040aab8ec0bc17776b586e78677d260057d21aa61768686443d
+sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043
 ```
 
-**54 tools, 45 allowed, 9 denied.** The allowed set did not change: 34 reads
-plus the same 11 non-trading mutations, and the same 8 trading denials. The
-54th tool is `get_limited_margin_upgrade_info`, **denied**.
+**54 tools: 46 allowed, 8 denied** — 35 reads, 11 non-trading mutations, and
+the same 8 trading denials as every manifest before it.
 
-It takes only `account_number` and returns eligibility plus the web and mobile
-links that start the limited-margin upgrade flow. Read-shaped, so nothing in
-its schema would have stopped it being waved through; its output is a route to
-an account state change and no reviewed ainvest read path needs it. Denied
-until a use case exists.
+> **This manifest expands the permission set.** A capability was **added to the
+> allowed set** — not merely catalogued — and DESIGN §12.4 lists a tool
+> appearing among the changes that need a new independent external security
+> review. That review is owed and has not happened. The internal review recorded
+> below is not it.
 
-`mutates` is **false**, which is the answer to the question §6 says the field
-asks — whether *invoking* the capability changes provider state. Invoking it
-reads eligibility and returns URLs. The account changes only if a human opens
-one of those links and completes identity verification and agreement acceptance
-in Robinhood's own flow, which no call from this gateway reaches. The order
-simulators are flagged `true` on the opposite reasoning and the difference is
-deliberate: there the denial rests on distrusting the provider's "does not
-place" claim, so `false` would endorse the evidence the denial rejects, while
-here the denial does not depend on the provider's word at all. The flag is also
-what the `v0.2.0` review's consumer requirement 6 has ainvest gating writes on,
-so overloading it to mean "dangerous" rather than "writes" would degrade the
-one signal that consumer reads.
+The 54th tool is `get_limited_margin_upgrade_info`, **allowed**, `mutates:
+false`. It takes only `account_number` and returns eligibility plus the web and
+mobile links that start the limited-margin upgrade flow.
+
+It was **denied** in the first draft of this change, on the reasoning that its
+output is a route to an account state change. Independent review rejected that,
+and the reason is worth recording because it is the kind of mistake a careful
+argument can walk straight into: the manifest already contained the answer.
+`get_option_level_upgrade_info` has the same shape — `account_number` in, an
+upgrade URL out — gates the *higher* privilege of options trading, and has
+shipped `allowed` / `mutates: false` since the first commit. The `get_accounts`
+guide already directs a call to it, with a hardcoded
+`applink.robinhood.com/upgrade_options` fallback. The defect was not either
+verdict taken alone; it was that the manifest would have held both at once.
+
+Denying it would also have falsified DESIGN §2.1's normative claim that the
+denied set is exactly the trading surface, and would have created a
+`denied` + `mutates: false` category that had never existed here — every
+previous denial genuinely writes. Allowing keeps the denied set at exactly the
+eight trading tools, all `mutates: true`, and that category never comes into
+being.
+
+`mutates: false` was upheld on review, on a shorter argument than the draft's:
+§6 defines the field as whether *invoking* changes provider state, invoking
+returns URLs, and the sibling — an upgrade-link tool shipped `mutates: false`
+since day one — makes `false` the manifest's own precedent rather than a break
+from it. (The draft also argued that `true` would corrupt the write-gate signal
+consumer requirement 6 reads. That is weaker than it was put: a consumer stops
+at `allowed: false` and never reaches `mutates`, so `true` would have misled
+rather than corrupted. It now reads `allowed: true`, where the flag is load-
+bearing and is covered by the same assertion that covers the other 34 reads.)
 
 Two tools also drifted, neither disposition affected:
 
@@ -236,23 +254,25 @@ Two tools also drifted, neither disposition affected:
   `type` can now meet a string it has never seen. Flagged for consumers; not
   actionable inside this package, which does not interpret the field.
 - **`get_equity_orders`** — description only, and it now instructs callers to
-  call `get_advanced_orders` in parallel. **The provider does not offer that
-  tool.** Nothing here acts on a description, so no enforcement is affected, but
-  it is the first observed case of provider prose directing a tool call, which
-  makes consumer requirement 5 (discard provider descriptions from model
-  context) load-bearing rather than precautionary. Recorded in DESIGN §6.1.1.
+  call `get_advanced_orders` in parallel. The provider does not offer that tool.
+  Nothing here acts on a description, so no enforcement is affected. It is also
+  **not** novel: four such dangling references exist in the observed surface and
+  three date to the first committed manifest (`b2d4e2b`). Consumer requirement 5
+  — discard provider prose from model context — is continuously load-bearing
+  rather than newly so. Recorded in DESIGN §6.1.1.
+
+`get_limited_margin_upgrade_info` was itself one of those dangling references on
+`2026.08.05`, named by the `get_accounts` and `get_portfolio` guides before it
+existed. These pointers are forward-looking, not provider errors.
 
 Procedure, because it is not the usual one: `scripts/refresh_manifest.py`
-refuses when a tool appears, by design and with no override. So the disposition
-was authored by hand into the committed manifest first (commit `7f1a54c`,
-loading and digesting cleanly), and only then did the refresh run and carry it
-forward verbatim, restamp the two drifted tools, and recompute the digests.
-Both steps are separate commits so the human decision and the mechanical part
-are separately reviewable.
-
-**This manifest has not had a new independent external security review.** §12.4
-lists "a tool appearing or disappearing" among the changes that need one. See
-the PR that carried this change.
+refuses when a tool appears, by design and with no override, and it cannot
+change a disposition. So each human decision was authored into the committed
+manifest by hand and the mechanical refresh ran only after: the entry in
+`7f1a54c`, the refresh in `5f08fb4`, and the review-directed reversal from
+`denied` to `allowed` in its own commit on top. `provider_surface_digest` is
+unchanged by the reversal — it covers the observed surface, not review
+decisions — so only the full-manifest digest moved.
 
 #### `2026.08.05` — refreshed for the `direction` field
 
@@ -448,7 +468,7 @@ consumer's pinned manifest digest does not move.
 > `sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`,
 > which is also what the `v0.2.0` GitHub release notes publish. Verify with
 > `git show v0.2.0:src/rh_mcp/manifests/read-manifest.json`. `49b7218…` is
-> manifest `2026.08.05`, which `main` ships; commit `b6d6a35` substituted it
+> manifest `2026.08.05`, which `main` shipped on 2026-08-05; commit `b6d6a35` substituted it
 > into this entry while refreshing the manifest. The original line is preserved
 > rather than rewritten — see `[Unreleased]` → **Manifest**, and DESIGN §12.5.
 
@@ -512,7 +532,7 @@ sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
 > ships `2026.08.03.1` with
 > `sha256:70f88615716b05b8f547bf21ba756643ba2ded140202395998d428f63d84c91b`.
 > Verify with `git show v0.1.0:src/rh_mcp/manifests/read-manifest.json`.
-> `49b7218…` is manifest `2026.08.05`, which `main` ships; commit `b6d6a35`
+> `49b7218…` is manifest `2026.08.05`, which `main` shipped on 2026-08-05; commit `b6d6a35`
 > substituted it into this entry while refreshing the manifest. The original
 > block is preserved rather than rewritten — see `[Unreleased]` → **Manifest**,
 > and DESIGN §12.5. (`v0.1.0` should not be used with a real credential in any

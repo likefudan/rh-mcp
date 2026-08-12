@@ -122,6 +122,16 @@ section's opening claim false — the denied set would no longer have been exact
 the trading surface — which is the clearest statement of why the two had to
 agree.
 
+The `2026.08.12` observation expanded one of the already allowed non-trading
+mutations. `create_scan` can now take `scan_id` to append a new active
+configuration version to an existing saved scan, and it can persist expression
+filters. The owner accepted that as an expansion within the existing
+saved-scanner configuration domain: the entry remains `allowed` / `mutates:
+true`, its rationale now names the REPLACE-semantics blast radius, and no order,
+funds, position, or account-permission state is reachable through it. The other
+four moved scanner entries only changed provider prose nested in their schemas
+to describe how custom expressions round-trip.
+
 Two consequences a consumer must not discover by surprise:
 
 - `RobinhoodGateway.invoke()` can mutate. The method was named `read()` when
@@ -430,6 +440,13 @@ Telegram, CLI and log context — already requires be closed. Five live dangling
 references make that requirement continuously load-bearing rather than
 precautionary. Recorded here because the control §6.1.1 relies on is a human
 reading what moved, and this is what that reading is for.
+
+The `2026.08.12` scanner refresh added a **sixth** dangling name:
+`get_scanner_datapoints`, repeated in `create_scan`'s description, filter
+schema, and result guide. The offered tool set still has no such name. It is
+the same downstream prompt-channel risk and changes no enforcement result:
+provider prose is data, the gateway never resolves a name from it, and a
+consumer must discard it rather than follow it.
 
 ### 6.2 Startup and call preflight
 
@@ -1150,7 +1167,7 @@ historical entries while refreshing the manifest. A consumer pinning the
 `v0.2.0` *artifact* and taking its digest from that changelog entry would pin a
 digest the artifact refuses readiness against.
 
-The reviewed `0.3.0` source carries `2026.08.09` / `71863472…`, which is what
+The reviewed `0.3.0` source carries `2026.08.12` / `403ddc4c…`, which is what
 the README publishes for that source. That does not fix anything above and is
 not meant to read as though it did: both changelog entries still print
 `49b7218…` beside `2026.08.03.1`, both tags still ship `70f88615…`, and the

@@ -41,7 +41,8 @@ have landed except the remainder of step 7, and the first reviewed manifest is
 committed. `DESIGN.md` is the authoritative spec.
 
 The current source builds `0.3.0`, the new package identity reserved for the
-permission-expanded `2026.08.09` manifest after its independent review. It is
+permission-expanded manifest lineage introduced on `2026.08.09`. It now
+carries the owner-reviewed `2026.08.12` scanner refresh described below. It is
 not the already released `v0.2.0` artifact.
 
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
@@ -57,11 +58,21 @@ which returns limited-margin eligibility and the links that start the upgrade
 flow. It is a permission expansion, and the first time the allowed set has
 grown since the manifest was first committed.
 
-The full-manifest digest a consumer pins, for manifest `2026.08.09` in the
+On `2026.08.12`, Robinhood expanded `create_scan` within the already allowed
+saved-scanner write domain: it can append a new active configuration version
+to an existing scan and persist expression filters. It remains
+`allowed` / `mutates: true`; the expansion cannot place orders, move funds, or
+change account permissions. Four other scanner tools changed only their
+schemas' explanatory text so those expression filters can round-trip. The new
+provider prose also names `get_scanner_datapoints`, which is not on the offered
+tool surface; like the five existing dangling tool references, it is inert in
+this gateway but must not be forwarded into a model or user-facing context.
+
+The full-manifest digest a consumer pins, for manifest `2026.08.12` in the
 reviewed `0.3.0` source:
 
 ```
-sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043
+sha256:403ddc4c8a71bf470da906f572134c7d00684ae23af023e91df1872fc6d71b3f
 ```
 
 The manifest version is named alongside it deliberately. A digest belongs to

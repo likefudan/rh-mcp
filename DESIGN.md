@@ -1,14 +1,15 @@
 # rh-mcp — Design
 
-Status: **released.** `v0.1.0` shipped on 2026-08-03. Owner-assisted discovery
-ran against the live server the same day; a human reviewed all 53 tools and
-committed 45 allowed / 8 denied (§2.1).
+Status: **released.** `v0.1.0` shipped on 2026-08-03, `v0.2.0` on 2026-08-04,
+and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 54
+tools; a human reviewed 46 allowed / 8 denied (§2.1).
 
 The §12 acceptance list is now satisfied: license, changelog, tagged artifact
 with published digests, the independent security review, and — as of §12.5 —
-the published **compatibility policy** have all landed. `v0.2.0` responds to the
-independent review, which returned CHANGES_REQUIRED against `v0.1.0` — see §12.1
-and `security-review/v0.1.0/`.
+the published **compatibility policy** have all landed. `v0.2.0` responded to
+the independent review that returned CHANGES_REQUIRED against `v0.1.0`;
+`v0.3.0` ships the independently reviewed permission expansion and scanner
+refresh — see §12.1–§12.4 and PRs #34–#35.
 
 ## 1. Purpose
 

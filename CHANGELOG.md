@@ -28,6 +28,8 @@ that carries them.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-08-12
+
 ### Changed
 
 - **The package version is now `0.3.0`.** Manifest `2026.08.09` adds
@@ -531,7 +533,7 @@ consumer's pinned manifest digest does not move.
 > `git show v0.2.0:src/rh_mcp/manifests/read-manifest.json`. `49b7218…` is
 > manifest `2026.08.05`, which `main` shipped on 2026-08-05; commit `b6d6a35` substituted it
 > into this entry while refreshing the manifest. The original line is preserved
-> rather than rewritten — see `[Unreleased]` → **Manifest**, and DESIGN §12.5.
+> rather than rewritten — see `[0.3.0]` → **Manifest**, and DESIGN §12.5.
 
 ## [0.1.0] — 2026-08-03
 
@@ -595,7 +597,7 @@ sha256:49b7218278fc2aebb1a040c89b8c94f60750afe142d6b728e88771944a88093a
 > Verify with `git show v0.1.0:src/rh_mcp/manifests/read-manifest.json`.
 > `49b7218…` is manifest `2026.08.05`, which `main` shipped on 2026-08-05; commit `b6d6a35`
 > substituted it into this entry while refreshing the manifest. The original
-> block is preserved rather than rewritten — see `[Unreleased]` → **Manifest**,
+> block is preserved rather than rewritten — see `[0.3.0]` → **Manifest**,
 > and DESIGN §12.5. (`v0.1.0` should not be used with a real credential in any
 > case; see **Known limitations** below.)
 
@@ -647,6 +649,7 @@ description changed. No disposition moved.
 - The `stdio` development transport bounds payload size after decoding rather
   than during, unlike the HTTP path.
 
-[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/likefudan/rh-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/likefudan/rh-mcp/releases/tag/v0.1.0

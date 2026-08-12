@@ -2,7 +2,7 @@
 name = "rh-mcp"
 # 0.3.0 gives the permission-expanded manifest lineage introduced on
 # 2026.08.09 a package identity distinct from the already released v0.2.0
-# artifact. The 2026.08.12 scanner refresh remains in that unreleased lineage.
+# artifact. The 2026.08.12 scanner refresh ships in the same v0.3.0 release.
 # SemVer for a 0.x package makes the minor the breaking position. See
 # CHANGELOG.md.
 version = "0.3.0"

@@ -2,12 +2,12 @@
   "manifest_format_version": "1.2",
   "canonicalization_version": "rh-canon-1",
   "digest_algorithm": "sha256",
-  "manifest_version": "2026.08.09",
-  "provider_surface_digest": "sha256:192f519c73d2f0600c6fa68c664279536393084c3e0e388ee3fb6244ef0a6c6c",
-  "observed_at": "2026-08-09T19:16:54.666229+00:00",
+  "manifest_version": "2026.08.12",
+  "provider_surface_digest": "sha256:ba3ccf94184110b0bf82219163706e9f8f32481a621add69f21f9bad82db46b4",
+  "observed_at": "2026-08-12T11:22:44.529861+00:00",
   "reviewer": {
     "name": "Ke Li",
-    "reviewed_at": "2026-08-03T11:42:53.775001+00:00"
+    "reviewed_at": "2026-08-12T11:30:49+00:00"
   },
   "entries": [
     {
@@ -492,15 +492,19 @@
       "capability": "create_scan",
       "disposition": "allowed",
       "mutates": true,
-      "rationale": "Creates a saved scanner. Additive, but a failure partway can leave a scan with incomplete filters, so a retry may leave an orphan.",
+      "rationale": "Creates a saved scanner or appends a new active configuration version to an existing scanner; it never trades or moves funds. The new-scan enum path can leave partial state, and existing-scan updates use REPLACE semantics, so callers must supply the full intended filter set.",
       "provider_tool_name": "create_scan",
-      "description": "Create a new saved scanner (screener) on the user's account, optionally applying a preset and custom filters in a single call. Returns the new scan's id, title, applied filters, and the initial live market results.\n\nThis tool composes multiple Beacon operations:\n  1. Create an empty scan\n  2. If a non-INITIAL preset was requested: apply that preset configuration (DAILY_GAINERS, DAILY_LOSERS, HIGH_OPTIONS_VOLUME_IV, UPCOMING_EARNINGS)\n  3. If custom filters were provided: apply them (replaces any preset filters)\n  4. If a custom title was provided: set the title\n\nIf any step after the initial create fails, the scan still exists with the partial state — the response surfaces what was applied. Use update_scan_filters / update_scan_config to fix anything that failed.\n\nParameters:\n- preset (optional) — starting preset. Default: DAILY_GAINERS when no filters supplied, INITIAL when filters supplied. Valid values: INITIAL, DAILY_GAINERS, DAILY_LOSERS, HIGH_OPTIONS_VOLUME_IV, UPCOMING_EARNINGS.\n- filters (optional) — array of custom filter specs. Call get_scanner_filter_specs to discover valid filter_type / predicate values.\n- title (optional) — custom human-readable name for the scan.\n\nExample: to make \"stocks with RSI > 70 and volume > 1M, sorted by volume desc\", call with\n  preset = \"INITIAL\"\n  filters = [\n    {\"filter_type\": \"FILTER_TYPE_RSI\", \"predicate\": \">\", \"values\": [\"70\"], \"interval\": \"1d\", \"length\": 14},\n    {\"filter_type\": \"FILTER_TYPE_VOLUME\", \"predicate\": \">\", \"values\": [\"1000000\"], \"interval\": \"1d\"}\n  ]\n  title = \"High RSI + High Volume\"",
+      "description": "Create a new saved scanner (screener) on the user's account — or, with scan_id, update an existing one by appending a new configuration version. Filters can be enum-based (from get_scanner_filter_specs) or expression-based (a raw market-data expression built from get_scanner_datapoints). Returns the scan's id, title, applied filters, and live market results.\n\nPrefer an enum filter_type whenever one covers the request: enum filters are pre-validated and render as standard, user-editable filters in Legend. Build a raw expression only when no enum filter covers the request, and validate it with preview_scan before saving it here. This is the only tool that saves expression filters — update_scan_filters rejects them — so to change a scan that has an expression filter, call this tool with that scan's scan_id and the full desired filter set.\n\nTwo execution paths:\n- New scan, enum-only filters (or none): composes multiple Beacon operations — create the scan, apply the preset configuration if non-INITIAL, apply filters, set the title. If a step after the initial create fails, the scan still exists in its partial state; the response surfaces what was applied, and update_scan_filters / update_scan_config can fix the rest.\n- scan_id set, or any expression filter present: a single transactional Beacon call that persists the filters as a new ACTIVE configuration version (on the given scan, or on a brand-new one). All-or-nothing — an expression the market-data provider rejects means NOTHING is persisted, and the provider's validation error is returned. Earlier versions of a scan are never edited. A non-INITIAL preset cannot be combined with this path.\n\nParameters:\n- scan_id (optional) — update this existing scan instead of creating one. REPLACE semantics: the new version holds exactly the filters passed, so read the current set via get_scans first and send the complete intended set. Cortex-managed scans are rejected.\n- preset (optional) — starting preset for a new scan. Default: DAILY_GAINERS when no filters supplied, INITIAL when filters supplied. Valid values: INITIAL, DAILY_GAINERS, DAILY_LOSERS, HIGH_OPTIONS_VOLUME_IV, UPCOMING_EARNINGS.\n- filters (optional for a new scan, required with scan_id) — array of filter specs, enum and/or expression. Call get_scanner_filter_specs for enum filters; call get_scanner_datapoints before composing an expression.\n- title (optional) — custom human-readable name for the scan.\n\nExample: to make \"stocks with RSI > 70 and volume > 1M\", call with\n  preset = \"INITIAL\"\n  filters = [\n    {\"filter_type\": \"FILTER_TYPE_RSI\", \"predicate\": \">\", \"values\": [\"70\"], \"interval\": \"1d\", \"length\": 14},\n    {\"filter_type\": \"FILTER_TYPE_VOLUME\", \"predicate\": \">\", \"values\": [\"1000000\"], \"interval\": \"1d\"}\n  ]\n  title = \"High RSI + High Volume\"\n\nExample: to save \"stocks where put option volume exceeds call option volume\" (no enum filter compares two datapoints), call with\n  filters = [\n    {\"expression\": \"optionsPutDayVolume > optionsCallDayVolume\", \"predicate\": \"=\", \"values\": [\"True\"], \"display_title\": \"Put exceeds call\"}\n  ]\n  title = \"Put hedging screen\"\n\nExample: to tighten that saved screen later without creating a second scan, call with\n  scan_id = \"<its scan_id from get_scans>\"\n  filters = [the scan's current filters, copied from get_scans (expressions verbatim, enum filters by filter_type_enum), with the desired change applied]",
       "input_schema": {
         "type": "object",
         "properties": {
+          "scan_id": {
+            "type": "string",
+            "description": "Optional. Update an existing scan by appending the given filters as a NEW configuration version, which becomes the active one — earlier versions are preserved, never edited. The version holds exactly the filters passed (REPLACE semantics, not merge): read the scan's current filters with get_scans first and pass the complete intended set. This is how to change a scan that has expression filters, which update_scan_filters cannot carry. Cortex-managed scans are rejected. Omit to create a new scan."
+          },
           "preset": {
             "type": "string",
-            "description": "Starting preset for the new scan. One of: INITIAL (no preset; only valid if filters are provided), DAILY_GAINERS, DAILY_LOSERS, HIGH_OPTIONS_VOLUME_IV, UPCOMING_EARNINGS. Defaults to DAILY_GAINERS when no filters are provided, INITIAL when filters are provided."
+            "description": "Starting preset for the new scan. One of: INITIAL (no preset; only valid if filters are provided), DAILY_GAINERS, DAILY_LOSERS, HIGH_OPTIONS_VOLUME_IV, UPCOMING_EARNINGS. Defaults to DAILY_GAINERS when no filters are provided, INITIAL when filters are provided. A non-INITIAL preset cannot be combined with expression filters or with scan_id."
           },
           "filters": {
             "type": [
@@ -544,7 +548,7 @@
                 },
                 "expression": {
                   "type": "string",
-                  "description": "Raw market-data expression to screen on, e.g. \"dayVolume / volumeAvg(candleCount=30, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\" with a numeric predicate, or a whole comparison like \"tradeAllDay.price > closeAvg(candleCount=50, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\" with predicate \"=\" and values [\"True\"]. Only preview_scan accepts expressions. Omit filter_type when set. Prefer an enum filter_type whenever one covers the request."
+                  "description": "Raw market-data expression to screen on, e.g. \"dayVolume / volumeAvg(candleCount=30, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\" with a numeric predicate, or a whole comparison like \"tradeAllDay.price > closeAvg(candleCount=50, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\" with predicate \"=\" and values [\"True\"]. Accepted by preview_scan (validate without saving) and create_scan (save); update_scan_filters rejects expressions — to change an expression filter on a saved scan, call create_scan with that scan's scan_id and the full filter set (a new configuration version is appended; earlier versions are preserved). Omit filter_type when set. Prefer an enum filter_type whenever one covers the request."
                 },
                 "display_title": {
                   "type": "string",
@@ -557,11 +561,11 @@
               ],
               "additionalProperties": false
             },
-            "description": "Custom filters to apply after the preset. Each filter has filter_type (FILTER_TYPE_... enum), predicate (>, <, =, BETWEEN, etc.), values, optional interval (e.g. 1d), and optional length (e.g. 14 for RSI). Call get_scanner_filter_specs first for valid filter_type / predicate combinations."
+            "description": "Custom filters, enum-based and/or expression-based. Enum filter: filter_type (FILTER_TYPE_... enum from get_scanner_filter_specs) plus predicate/values and optional interval/length/plot. Expression filter: expression (built from get_scanner_datapoints; omit filter_type) plus predicate/values and an optional display_title. Required when scan_id is set. Prefer an enum filter_type whenever one covers the request; validate an expression with preview_scan before saving it here."
           },
           "title": {
             "type": "string",
-            "description": "Optional custom title for the saved scan. If omitted, Beacon assigns a default title based on the preset."
+            "description": "Optional custom title for the saved scan. If omitted: a new scan gets Beacon's default title for the preset, and a scan_id update keeps the scan's existing title."
           }
         },
         "additionalProperties": false
@@ -645,7 +649,7 @@
                         },
                         "filter_type_enum": {
                           "type": "string",
-                          "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, which those tools cannot yet accept, so it cannot be re-created. Never send FILTER_TYPE_CUSTOM — it would create an empty filter. Empty only when the filter has no recognized type."
+                          "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, so re-create it by sending the expression field to create_scan and omitting filter_type. Never send FILTER_TYPE_CUSTOM as a filter_type — it would create an empty filter. Empty only when the filter has no recognized type."
                         },
                         "predicate": {
                           "type": "string",
@@ -677,7 +681,7 @@
                         },
                         "expression": {
                           "type": "string",
-                          "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses); the value to send back when re-applying the filter is filter_type_enum, not this."
+                          "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses). When re-applying a standard filter, send filter_type_enum rather than this; for a FILTER_TYPE_CUSTOM filter this expression is exactly what to send, as the expression field of a create_scan filter."
                         }
                       },
                       "required": [
@@ -713,7 +717,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "How to interpret the response:\n- result.scan_id — newly created scan. Pass this to run_scan, update_scan_filters, or update_scan_config in follow-up calls.\n- result.scan_title — final title (custom if provided, else Beacon's default for the preset).\n- result.filters_applied — the filter set actually in effect after the call. If this doesn't match what the user asked for, one of the composite steps failed silently — surface that to the user.\n- result.results — initial live results (real-time market data at scan creation time).\n- result.total_items — total matches. May exceed len(results) if the scan's frontend_limit is hit.\n\nWhen presenting:\n- Confirm the scan was created and note its title + filters_applied (so the user knows what was actually saved).\n- Render the initial results as a table.\n- Tell the user the scan is saved and can be re-run anytime with run_scan + the returned scan_id.\n- If results is empty: tell the user no instruments match the filters right now, and suggest broadening them with update_scan_filters.\n\nError handling:\n- \"unknown preset X\" → preset enum not recognized. List the valid presets to the user.\n- \"filter[N]: ...\" → filter validation failure at index N. Tell the user which filter and why. The scan may still exist with just the preset applied — they can fix the filter with update_scan_filters.\n- Partial-failure responses (e.g. \"scan X created but preset Y could not be applied\") indicate a partial success: the scan exists but is missing some of the intended state. Use filters_applied on the response to see what actually landed; mention this clearly to the user so they know whether they need to follow up with update_scan_filters."
+            "description": "How to interpret the response:\n- result.scan_id — the created scan (or, when scan_id was passed, that same scan: the update landed as a new configuration version on it). Pass this to run_scan, update_scan_filters, or update_scan_config in follow-up calls.\n- result.scan_title — final title (custom if provided; else Beacon's default for a new scan, or the existing title on a scan_id update).\n- result.filters_applied — the filter set actually in effect after the call. If this doesn't match what the user asked for, one of the composite steps failed silently — surface that to the user.\n- result.results — initial live results (real-time market data at scan creation time).\n- result.total_items — total matches. May exceed len(results) if the scan's frontend_limit is hit.\n\nWhen presenting:\n- Confirm the scan was created and note its title + filters_applied (so the user knows what was actually saved).\n- Render the initial results as a table.\n- Tell the user the scan is saved and can be re-run anytime with run_scan + the returned scan_id.\n- If results is empty: tell the user no instruments match the filters right now, and suggest broadening them with update_scan_filters.\n\nError handling:\n- \"unknown preset X\" → preset enum not recognized. List the valid presets to the user.\n- \"filter[N]: ...\" → filter validation failure at index N. Tell the user which filter and why. Rejected before any Beacon call — nothing was created.\n- \"created by Cortex and cannot be modified\" (with scan_id) → the target scan is Cortex-managed. Offer to create a fresh scan (omit scan_id) instead.\n- Partial-failure responses (e.g. \"scan X created but preset Y could not be applied\") indicate a partial success on the enum path: the scan exists but is missing some of the intended state. Use filters_applied on the response to see what actually landed; mention this clearly to the user so they know whether they need to follow up with update_scan_filters.\n- With expression filters there are no partial failures: an upstream validation error (e.g. \"unresolved reference: X\", \"unsupported candle-period\") means nothing was saved. Fix the expression — get_scanner_datapoints has the valid names and signatures — and call again, or iterate with preview_scan first."
           }
         },
         "required": [
@@ -723,8 +727,8 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:d1581dd301770a06378d59921ae6f35963edc720a1c1d6c89e840121a56d0e75",
-      "metadata_digest": "sha256:7773e888888b8223730e8867e771a06e167fb978792aeb44de7ee5a713b83b43"
+      "schema_digest": "sha256:2ad7c8f10f3df41bc8de003f4e1c4b296d3a8bef337a6264ef56d26706f1095a",
+      "metadata_digest": "sha256:8676ed93f6d745823449a908526f5c3ce81a2da34714ab8bcb53deb4f2649175"
     },
     {
       "capability": "create_watchlist",
@@ -6187,7 +6191,7 @@
                           },
                           "filter_type_enum": {
                             "type": "string",
-                            "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, which those tools cannot yet accept, so it cannot be re-created. Never send FILTER_TYPE_CUSTOM — it would create an empty filter. Empty only when the filter has no recognized type."
+                            "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, so re-create it by sending the expression field to create_scan and omitting filter_type. Never send FILTER_TYPE_CUSTOM as a filter_type — it would create an empty filter. Empty only when the filter has no recognized type."
                           },
                           "predicate": {
                             "type": "string",
@@ -6219,7 +6223,7 @@
                           },
                           "expression": {
                             "type": "string",
-                            "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses); the value to send back when re-applying the filter is filter_type_enum, not this."
+                            "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses). When re-applying a standard filter, send filter_type_enum rather than this; for a FILTER_TYPE_CUSTOM filter this expression is exactly what to send, as the expression field of a create_scan filter."
                           }
                         },
                         "required": [
@@ -6301,7 +6305,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "How to interpret the response:\n- scans is an array, newest first. Empty when the user has no saved scans — offer to create one with create_scan if they ask.\n- filter_summary on each scan describes the active filters. Use filter_type (e.g. \"RSI\"), predicate, values and optional interval/length to tell the user what the scan does. To re-send a filter to update_scan_filters or create_scan, copy filter_type_enum — not filter_type, which is a user-editable column label and will be rejected.\n- A filter whose filter_type_enum is FILTER_TYPE_CUSTOM is defined by its expression, and no write tool can express one yet. If the user asks to change a scan that has one, warn them that filter cannot be preserved instead of silently dropping it.\n- cortex_managed: true means the scan was created or modified by Cortex inside Legend. Tell the user it's read-only via MCP if they ask to modify it. Suggest creating a fresh scan via create_scan as the alternative.\n- columns lists every configured column, hidden ones included; column_count counts only the visible ones. When the user asks to re-sort a scan, take update_scan_config's sorting_column verbatim from a columns[].display_name — never guess it.\n- sorting describes the scan's current sort (e.g. \"Volume desc\"). Mention it when summarizing how results would be ordered.\n- Use scan_id (not title) when calling run_scan, update_scan_filters, or update_scan_config.\n\nWhen presenting scans to the user:\n- Render as a numbered list with the title prominent and a short summary of filters.\n- Mark Cortex-managed scans clearly so the user knows they're read-only here.\n- If the user wants to see results, ask which scan and call run_scan with that scan_id."
+            "description": "How to interpret the response:\n- scans is an array, newest first. Empty when the user has no saved scans — offer to create one with create_scan if they ask.\n- filter_summary on each scan describes the active filters. Use filter_type (e.g. \"RSI\"), predicate, values and optional interval/length to tell the user what the scan does. To re-send a filter to update_scan_filters or create_scan, copy filter_type_enum — not filter_type, which is a user-editable column label and will be rejected.\n- A filter whose filter_type_enum is FILTER_TYPE_CUSTOM is defined by its expression. update_scan_filters cannot carry it over; to change a scan that has one, use create_scan with that scan's scan_id and the full intended filter set, passing the filter's expression in the expression field (the scan gets a new configuration version; earlier versions are preserved).\n- cortex_managed: true means the scan was created or modified by Cortex inside Legend. Tell the user it's read-only via MCP if they ask to modify it. Suggest creating a fresh scan via create_scan as the alternative.\n- columns lists every configured column, hidden ones included; column_count counts only the visible ones. When the user asks to re-sort a scan, take update_scan_config's sorting_column verbatim from a columns[].display_name — never guess it.\n- sorting describes the scan's current sort (e.g. \"Volume desc\"). Mention it when summarizing how results would be ordered.\n- Use scan_id (not title) when calling run_scan, update_scan_filters, or update_scan_config.\n\nWhen presenting scans to the user:\n- Render as a numbered list with the title prominent and a short summary of filters.\n- Mark Cortex-managed scans clearly so the user knows they're read-only here.\n- If the user wants to see results, ask which scan and call run_scan with that scan_id."
           }
         },
         "required": [
@@ -6311,7 +6315,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:6630e8e3073c5bb00d261d86b9c0d00176b1ef47ad4df666963d1cebc536b086",
+      "schema_digest": "sha256:d05ef7ee78118155e57fe5b048ed23f0d08c7e40b711a6256ba9eeb8c5e95427",
       "metadata_digest": "sha256:8541ba856e2ede01459f1a8617dd9130c8681d1beb1dc39ef6275bd58f211819"
     },
     {
@@ -8357,7 +8361,7 @@
                         },
                         "filter_type_enum": {
                           "type": "string",
-                          "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, which those tools cannot yet accept, so it cannot be re-created. Never send FILTER_TYPE_CUSTOM — it would create an empty filter. Empty only when the filter has no recognized type."
+                          "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, so re-create it by sending the expression field to create_scan and omitting filter_type. Never send FILTER_TYPE_CUSTOM as a filter_type — it would create an empty filter. Empty only when the filter has no recognized type."
                         },
                         "predicate": {
                           "type": "string",
@@ -8389,7 +8393,7 @@
                         },
                         "expression": {
                           "type": "string",
-                          "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses); the value to send back when re-applying the filter is filter_type_enum, not this."
+                          "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses). When re-applying a standard filter, send filter_type_enum rather than this; for a FILTER_TYPE_CUSTOM filter this expression is exactly what to send, as the expression field of a create_scan filter."
                         }
                       },
                       "required": [
@@ -8435,7 +8439,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:5fb9007806548cc8f5ead5b5bf672175e33a298d82eb8539d5643cc6ce908e90",
+      "schema_digest": "sha256:e2ba9278bb5609cd989770d23a82035a41a68d3a7de70807be909ab260b8ebef",
       "metadata_digest": "sha256:997644a615c2a669285688e7d52ea4c5838971b86cb140ea0f21554a18970125"
     },
     {
@@ -8792,7 +8796,7 @@
                         },
                         "filter_type_enum": {
                           "type": "string",
-                          "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, which those tools cannot yet accept, so it cannot be re-created. Never send FILTER_TYPE_CUSTOM — it would create an empty filter. Empty only when the filter has no recognized type."
+                          "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, so re-create it by sending the expression field to create_scan and omitting filter_type. Never send FILTER_TYPE_CUSTOM as a filter_type — it would create an empty filter. Empty only when the filter has no recognized type."
                         },
                         "predicate": {
                           "type": "string",
@@ -8824,7 +8828,7 @@
                         },
                         "expression": {
                           "type": "string",
-                          "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses); the value to send back when re-applying the filter is filter_type_enum, not this."
+                          "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses). When re-applying a standard filter, send filter_type_enum rather than this; for a FILTER_TYPE_CUSTOM filter this expression is exactly what to send, as the expression field of a create_scan filter."
                         }
                       },
                       "required": [
@@ -8870,7 +8874,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:9330cc029b05f525e283f7d0ddae1d1773500ee9dc9699ed1fa1c872b1850604",
+      "schema_digest": "sha256:af9ad5c8805f78e20a3b390ac941ca3e51b61852711367dc25abd33cd31b8131",
       "metadata_digest": "sha256:b3895c4276e157ca1c83948aa37dd215bf1df28e2b91fe15a6ed7e9030223319"
     },
     {
@@ -8929,7 +8933,7 @@
                 },
                 "expression": {
                   "type": "string",
-                  "description": "Raw market-data expression to screen on, e.g. \"dayVolume / volumeAvg(candleCount=30, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\" with a numeric predicate, or a whole comparison like \"tradeAllDay.price > closeAvg(candleCount=50, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\" with predicate \"=\" and values [\"True\"]. Only preview_scan accepts expressions. Omit filter_type when set. Prefer an enum filter_type whenever one covers the request."
+                  "description": "Raw market-data expression to screen on, e.g. \"dayVolume / volumeAvg(candleCount=30, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\" with a numeric predicate, or a whole comparison like \"tradeAllDay.price > closeAvg(candleCount=50, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\" with predicate \"=\" and values [\"True\"]. Accepted by preview_scan (validate without saving) and create_scan (save); update_scan_filters rejects expressions — to change an expression filter on a saved scan, call create_scan with that scan's scan_id and the full filter set (a new configuration version is appended; earlier versions are preserved). Omit filter_type when set. Prefer an enum filter_type whenever one covers the request."
                 },
                 "display_title": {
                   "type": "string",
@@ -9030,7 +9034,7 @@
                         },
                         "filter_type_enum": {
                           "type": "string",
-                          "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, which those tools cannot yet accept, so it cannot be re-created. Never send FILTER_TYPE_CUSTOM — it would create an empty filter. Empty only when the filter has no recognized type."
+                          "description": "Wire-format enum name for this filter (e.g. \"FILTER_TYPE_RSI\") — the value to pass as a filter's filter_type when re-sending this filter to create_scan or update_scan_filters. FILTER_TYPE_CUSTOM is the exception: such a filter is defined by its expression, so re-create it by sending the expression field to create_scan and omitting filter_type. Never send FILTER_TYPE_CUSTOM as a filter_type — it would create an empty filter. Empty only when the filter has no recognized type."
                         },
                         "predicate": {
                           "type": "string",
@@ -9062,7 +9066,7 @@
                         },
                         "expression": {
                           "type": "string",
-                          "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses); the value to send back when re-applying the filter is filter_type_enum, not this."
+                          "description": "Upstream market-data expression this filter screens on. Populated for every filter, standard or custom — an enum filter type is a preset that compiles to an expression upstream. Useful for explaining precisely what the filter measures (which interval, lookback and session it uses). When re-applying a standard filter, send filter_type_enum rather than this; for a FILTER_TYPE_CUSTOM filter this expression is exactly what to send, as the expression field of a create_scan filter."
                         }
                       },
                       "required": [
@@ -9098,7 +9102,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "How to interpret the response:\n- result.filters_applied lists the filters that are now in effect on the scan. Confirm this matches what the user requested.\n- result.total_items reflects matches under the new filter set — tighter filters typically lower this count.\n- result.results is fresh live data evaluated against the new filters.\n\nWhen presenting:\n- Confirm exactly which filters are now active (filters_applied) — useful especially after add/remove operations where the user wants to know the new total filter set.\n- Mention the new total_items so the user sees the impact of the change.\n- Render the new results as a table.\n- If results is empty: tell the user no instruments match the new filter set. Suggest relaxing one filter (and offer to call update_scan_filters again with the relaxed set).\n\nREPLACE-semantics callout:\n- If the user said \"add a market cap filter\" but the request payload only had the new filter (not the existing ones), the existing filters were dropped because update_scan_filters REPLACES the filter set. Surface this if the result's filters_applied is shorter than expected. Recovery: read the scan via get_scans/run_scan, then call again with the full intended set — carry each existing filter over using its filter_type_enum value, since filter_type is a display label and is not accepted here. A filter whose filter_type_enum is FILTER_TYPE_CUSTOM cannot be carried over at all — it is defined by an expression this tool does not accept yet, so tell the user it would be lost rather than sending FILTER_TYPE_CUSTOM, which creates an empty filter.\n\nError handling:\n- \"filter[N]: ...\" → validation failure at filter index N. Tell the user which filter and why.\n- \"created by Cortex\" → the scan is read-only via MCP. Suggest creating a fresh scan via create_scan as the alternative.\n- \"scan X does not exist or you do not have access\" → bad scan_id. Suggest get_scans."
+            "description": "How to interpret the response:\n- result.filters_applied lists the filters that are now in effect on the scan. Confirm this matches what the user requested.\n- result.total_items reflects matches under the new filter set — tighter filters typically lower this count.\n- result.results is fresh live data evaluated against the new filters.\n\nWhen presenting:\n- Confirm exactly which filters are now active (filters_applied) — useful especially after add/remove operations where the user wants to know the new total filter set.\n- Mention the new total_items so the user sees the impact of the change.\n- Render the new results as a table.\n- If results is empty: tell the user no instruments match the new filter set. Suggest relaxing one filter (and offer to call update_scan_filters again with the relaxed set).\n\nREPLACE-semantics callout:\n- If the user said \"add a market cap filter\" but the request payload only had the new filter (not the existing ones), the existing filters were dropped because update_scan_filters REPLACES the filter set. Surface this if the result's filters_applied is shorter than expected. Recovery: read the scan via get_scans/run_scan, then call again with the full intended set — carry each existing filter over using its filter_type_enum value, since filter_type is a display label and is not accepted here. A filter whose filter_type_enum is FILTER_TYPE_CUSTOM cannot be carried over here — it is defined by an expression, which this tool does not accept. To keep it, use create_scan instead with this scan's scan_id and the full intended filter set, passing that filter's expression in the expression field (the scan gets a new configuration version; earlier versions are preserved). Never send FILTER_TYPE_CUSTOM as a filter_type — it creates an empty filter.\n\nError handling:\n- \"filter[N]: ...\" → validation failure at filter index N. Tell the user which filter and why.\n- \"created by Cortex\" → the scan is read-only via MCP. Suggest creating a fresh scan via create_scan as the alternative.\n- \"scan X does not exist or you do not have access\" → bad scan_id. Suggest get_scans."
           }
         },
         "required": [
@@ -9108,7 +9112,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:802bcc994f5ad68ebcf46979f92a647dadddd75fb1f6ab9e2efabf3a427693ad",
+      "schema_digest": "sha256:d621ae1ca4902b362a90a5b40434e53ba5b9da25c3cb3e03823a5ef433abe97d",
       "metadata_digest": "sha256:21ce3a183b776f0ac2158c846796af2bddb04fb5ab36660b9682bd280c82f51f"
     },
     {
@@ -9222,5 +9226,5 @@
       "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191"
     }
   ],
-  "full_manifest_digest": "sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043"
+  "full_manifest_digest": "sha256:403ddc4c8a71bf470da906f572134c7d00684ae23af023e91df1872fc6d71b3f"
 }

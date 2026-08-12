@@ -205,6 +205,53 @@ that carries them.
 Newest first. Each block describes one manifest and is not amended by a later
 one — see the note at the end of this section.
 
+#### `2026.08.12` — saved-scanner configuration expanded
+
+```
+sha256:403ddc4c8a71bf470da906f572134c7d00684ae23af023e91df1872fc6d71b3f
+```
+
+**54 tools: 46 allowed, 8 denied** — the tool set, disposition split, and
+35-read / 11-non-trading-mutation boundary are unchanged. Two consecutive
+authenticated discoveries returned identical tool payloads. The provider
+surface digest moved from `192f519c…` to `ba3ccf94…`, across five scanner
+entries.
+
+`create_scan` is the material change. Its input gained optional `scan_id`, so
+the already allowed saved-scanner writer can append a new active configuration
+version to an existing scan as well as create a new one. It can also persist a
+raw expression filter that was previously described as preview-only. Existing-
+scan updates use REPLACE semantics and require the complete intended filter
+set; prior configuration versions are preserved, and expression validation is
+transactional.
+
+Its new provider prose repeatedly directs callers to
+`get_scanner_datapoints`, but no such tool is offered. That is the sixth exact
+dangling tool-shaped name in the recursive prose sweep, joining the five
+recorded on `2026.08.09`. Nothing in this package follows provider prose, so
+default-deny enforcement is unchanged; consumer requirement 5 remains
+load-bearing.
+
+The owner explicitly accepted that same-domain write expansion. `create_scan`
+remains `allowed` / `mutates: true`, and its reviewer rationale now states the
+expanded blast radius. It still cannot place or cancel an order, exercise a
+position, move funds, or change account permissions. The package's security
+boundary remains "no trading", not "no writes".
+
+The other four entries do not gain a new top-level operation:
+
+- `get_scans`, `run_scan`, and `update_scan_config` changed nested output
+  descriptions so a custom filter's expression can be read and re-sent.
+- `update_scan_filters` changed descriptions and its guide to make explicit
+  that it still rejects expressions; preserving one requires `create_scan`
+  with the existing `scan_id` and the full desired filter set.
+
+No live tool was invoked during discovery or review. The candidate was used
+only to enumerate the provider surface and produce this reviewed manifest. An
+independent pre-merge review reproduced both interpreter gates and artifact
+hashes, added scanner/trading/drift/prose adversarial tests, and approved the
+exact release candidate after its documentation-history finding was corrected.
+
 #### `2026.08.09` — a tool appeared, and the allowed set grew
 
 ```

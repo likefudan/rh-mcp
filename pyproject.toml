@@ -1,8 +1,10 @@
 [project]
 name = "rh-mcp"
-# 0.3.0 gives the permission-expanded 2026.08.09 manifest a package identity
-# distinct from the already released v0.2.0 artifact. SemVer for a 0.x package
-# makes the minor the breaking position. See CHANGELOG.md.
+# 0.3.0 gives the permission-expanded manifest lineage introduced on
+# 2026.08.09 a package identity distinct from the already released v0.2.0
+# artifact. The 2026.08.12 scanner refresh remains in that unreleased lineage.
+# SemVer for a 0.x package makes the minor the breaking position. See
+# CHANGELOG.md.
 version = "0.3.0"
 description = "A default-deny Python Read Gateway for Robinhood's official MCP server"
 readme = "README.md"

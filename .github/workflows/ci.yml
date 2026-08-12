@@ -89,9 +89,11 @@ jobs:
           # That is a permission *expansion* hidden behind this line, which is
           # a weaker position than the extra-denial case it replaced. It is
           # held instead by `TestTheShippedManifest`, which pins 35 reads, the
-          # 46/8 split, and the denied set as a set. DESIGN §12.4 puts a tool
-          # appearing behind a new external review; that is owed here and is
-          # not discharged by this deselection being reasoned about.
+          # 46/8 split, and the denied set as a set. DESIGN §12.4 put that tool
+          # appearance behind a new independent review; PR #34 completed it
+          # before merge. This deselection still discharges nothing by itself:
+          # the current manifest boundary must remain held by the shipped-
+          # manifest tests and by the review of the exact release candidate.
           uv run pytest $suites -v \
             --deselect 'security-review/v0.1.0/test_adversarial_review.py::TestPackagedManifestBoundary::test_exact_8_trading_denied_and_11_mutations_allowed'
 

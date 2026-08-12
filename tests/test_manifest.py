@@ -827,7 +827,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043"
+    SHIPPED_DIGEST = "sha256:403ddc4c8a71bf470da906f572134c7d00684ae23af023e91df1872fc6d71b3f"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -894,8 +894,41 @@ class TestTheShippedManifest:
             "**One clause in the block above has since gone out of date", 1
         )[1].split("**Nothing here resolves", 1)[0]
         assert "intermediate digest `a6725f9c…`" in history_note
-        assert f"final digest `{short}…`" in history_note
+        assert "final digest `71863472…`" in history_note
         assert "a6725f9c…` — one block up" not in history_note
+
+    def test_review_history_distinguishes_release_dossiers_from_pr_reviews(self) -> None:
+        """The review count must not erase the two pre-merge manifest reviews."""
+        root = Path(__file__).resolve().parents[1]
+        dossiers = sorted(
+            path.parent.name
+            for path in (root / "security-review").glob("*/REPORT.md")
+        )
+        assert dossiers == ["v0.1.0", "v0.2.0"]
+
+        readme = " ".join((root / "README.md").read_text().split()).lower()
+        assert (
+            "two released-artifact review reports, plus two pre-merge "
+            "manifest-change reviews"
+        ) in readme
+        assert (
+            "pr #34 independently reviewed the `2026.08.09` permission expansion, "
+            "and pr #35 independently reviewed this `2026.08.12` scanner refresh "
+            "before merge"
+        ) in readme
+
+        notice = " ".join((root / "NOTICE").read_text().split()).lower()
+        assert (
+            "two committed released-artifact review reports, plus two pre-merge "
+            "manifest-change reviews"
+        ) in notice
+        assert (
+            "prs 34 and 35 reviewed the 2026.08.09 and 2026.08.12 manifest changes "
+            "before merge"
+        ) in notice
+        assert (
+            "pr 35 independently reviewed the 2026.08.12 scanner refresh"
+        ) in notice
 
     def test_provider_prose_dangling_tool_names_are_exhaustively_recorded(self) -> None:
         """Provider prose is a prompt channel, including schema descriptions."""
@@ -952,6 +985,7 @@ class TestTheShippedManifest:
             "get_crypto_positions",
             "get_currency_pairs",
             "get_quotes",
+            "get_scanner_datapoints",
             "preview_scan",
         }
 
@@ -1020,6 +1054,29 @@ class TestTheShippedManifest:
         }
         assert len(set(rationales.values())) == len(rationales)
         assert "REPLACE" in rationales["update_scan_filters"]
+
+    def test_create_scan_expanded_write_scope_is_explicit(self) -> None:
+        """The 2026-08-12 refresh expanded an allowed scanner writer.
+
+        It may update an existing saved scan, but it did not become a trading
+        or account-permission capability. Pin the provider-visible input and
+        the reviewer decision together so a future prose-only refresh cannot
+        hide this blast-radius decision.
+        """
+        entry = load_active_manifest().capabilities["create_scan"]
+
+        assert entry.disposition == "allowed"
+        assert entry.mutates is True
+        assert set(entry.input_schema["properties"]) == {
+            "scan_id",
+            "preset",
+            "filters",
+            "title",
+        }
+        assert "scan_id" not in entry.input_schema.get("required", [])
+        assert "existing scanner" in entry.rationale
+        assert "never trades or moves funds" in entry.rationale
+        assert "REPLACE semantics" in entry.rationale
 
     def test_the_allowed_set_is_the_size_the_reviewer_approved(self) -> None:
         """A bare count, so an entry appearing or vanishing cannot pass quietly."""

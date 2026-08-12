@@ -402,13 +402,16 @@ and `get_advanced_orders` "in parallel". The provider does not offer a
 
 The first draft of that observation called this the first instance of provider
 prose directing a call to a tool that does not exist. That was wrong, and the
-correction is more useful than the claim. Sweeping every description in the
-observed surface finds **four** such references, and three of them —
+correction is more useful than the claim. Sweeping every description and
+schema-description string in the observed surface finds **five** such
+references, and four of them —
 `get_quotes` from `get_watchlist_items`, `get_crypto_positions` from
-`get_accounts`, `get_currency_pairs` from `add_to_watchlist` — have been there
-since the first manifest was committed in `b2d4e2b`, several in directive form
-("call `get_quotes` with the symbol(s)"). So this is a standing property of the
-surface, not an event.
+`get_accounts`, `get_currency_pairs` from `add_to_watchlist`, and
+`preview_scan` from the `create_scan` and `update_scan_filters` schemas — have
+been there since the first manifest was committed in `b2d4e2b`, several in
+directive form ("call `get_quotes` with the symbol(s)", "Only preview_scan
+accepts expressions"). So this is a standing property of the surface, not an
+event.
 
 `get_limited_margin_upgrade_info` is the instructive case. It was itself a
 dangling reference on `2026.08.05`: the `get_accounts` and `get_portfolio`
@@ -423,7 +426,7 @@ entirely downstream: a consumer that forwards provider prose into a model's
 context is handing the provider a channel for instructions addressed to that
 model, which is what the `v0.2.0` review's consumer requirement 5 — discard
 provider `guide`, tool descriptions and schema descriptions from model,
-Telegram, CLI and log context — already requires be closed. Four live dangling
+Telegram, CLI and log context — already requires be closed. Five live dangling
 references make that requirement continuously load-bearing rather than
 precautionary. Recorded here because the control §6.1.1 relies on is a human
 reading what moved, and this is what that reading is for.
@@ -1147,14 +1150,14 @@ historical entries while refreshing the manifest. A consumer pinning the
 `v0.2.0` *artifact* and taking its digest from that changelog entry would pin a
 digest the artifact refuses readiness against.
 
-`main` has since moved to `2026.08.09` / `71863472…`, which is what the README
-publishes. That does not fix anything above and is not meant to read as though
-it did: both changelog entries still print `49b7218…` beside `2026.08.03.1`,
-both tags still ship `70f88615…`, and the bracketed corrections beside them are
-still the whole of the remedy. The digest `main` ships has now been wrong in
-those entries twice over, which is the argument for the rule below rather than
-against it — a changelog line describing one release cannot be kept true by a
-later one.
+The reviewed `0.3.0` source carries `2026.08.09` / `71863472…`, which is what
+the README publishes for that source. That does not fix anything above and is
+not meant to read as though it did: both changelog entries still print
+`49b7218…` beside `2026.08.03.1`, both tags still ship `70f88615…`, and the
+bracketed corrections beside them are still the whole of the remedy. A newer
+source digest has now made those entries wrong twice over, which is the
+argument for the rule below rather than against it — a changelog line
+describing one release cannot be kept true by a later one.
 
 Both wrong values are **left in place with a bracketed correction beside each**,
 naming the tag, the correct digest, and the `git show` that produces it.

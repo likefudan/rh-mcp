@@ -57,8 +57,8 @@ which returns limited-margin eligibility and the links that start the upgrade
 flow. It is a permission expansion, and the first time the allowed set has
 grown since the manifest was first committed.
 
-The full-manifest digest a consumer pins, for manifest `2026.08.09` as shipped
-on `main`:
+The full-manifest digest a consumer pins, for manifest `2026.08.09` in the
+reviewed `0.3.0` source:
 
 ```
 sha256:718634721f97af891a05e4574bb59eafae149aa08eb46e805869a6ca42191043

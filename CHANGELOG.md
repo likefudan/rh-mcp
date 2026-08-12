@@ -265,10 +265,12 @@ Two tools also drifted, neither disposition affected:
 - **`get_equity_orders`** — description only, and it now instructs callers to
   call `get_advanced_orders` in parallel. The provider does not offer that tool.
   Nothing here acts on a description, so no enforcement is affected. It is also
-  **not** novel: four such dangling references exist in the observed surface and
-  three date to the first committed manifest (`b2d4e2b`). Consumer requirement 5
-  — discard provider prose from model context — is continuously load-bearing
-  rather than newly so. Recorded in DESIGN §6.1.1.
+  **not** novel: five such dangling references exist in the observed surface and
+  four date to the first committed manifest (`b2d4e2b`). The original four are
+  `get_quotes`, `get_crypto_positions`, `get_currency_pairs`, and
+  `preview_scan`; the last is named twice in scanner schema descriptions.
+  Consumer requirement 5 — discard provider prose from model context — is
+  continuously load-bearing rather than newly so. Recorded in DESIGN §6.1.1.
 
 `get_limited_margin_upgrade_info` was itself one of those dangling references on
 `2026.08.05`, named by the `get_accounts` and `get_portfolio` guides before it
@@ -339,8 +341,9 @@ history without claiming that either intermediate digest is current.
 entries still print `49b7218…` beside manifest `2026.08.03.1`; both tags still
 ship `70f88615…`; the bracketed corrections beside them are still the whole of
 the remedy, and substituting the right string is still the release owner's
-decision and nobody else's. A newer digest on `main` changes none of that — it
-only adds a third value to keep distinct from the other two.
+decision and nobody else's. The newer digest in the reviewed `0.3.0` source
+changes none of that — it only adds a third value to keep distinct from the
+other two.
 
 ## [0.2.0] — 2026-08-04
 

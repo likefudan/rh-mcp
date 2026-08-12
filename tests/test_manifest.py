@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import dataclasses
 import json
+import re
 from collections.abc import Coroutine
 from dataclasses import replace
 from pathlib import Path
@@ -867,16 +868,14 @@ class TestTheShippedManifest:
     def test_current_manifest_notes_distinguish_the_final_pin_from_intermediate_pins(
         self,
     ) -> None:
-        """A historical digest must not be described as the one current main ships."""
+        """Pre-release docs bind the final pin to source, not prematurely to main."""
         root = Path(__file__).resolve().parents[1]
         manifest = load_active_manifest()
         short = manifest.digest.split(":", 1)[1][:8]
 
         design = (root / "DESIGN.md").read_text()
-        assert (
-            f"`main` has since moved to `{manifest.manifest_version}` / `{short}…`"
-            in design
-        )
+        assert f"source carries `{manifest.manifest_version}` / `{short}…`" in design
+        assert f"`main` has since moved to `{manifest.manifest_version}`" not in design
 
         changelog = (root / "CHANGELOG.md").read_text()
         current = changelog.split(f"#### `{manifest.manifest_version}`", 1)[1].split(
@@ -884,12 +883,77 @@ class TestTheShippedManifest:
         )[0]
         assert manifest.digest in current
 
+        readme = (root / "README.md").read_text()
+        published = readme.split("The full-manifest digest a consumer pins", 1)[1].split(
+            "The manifest version is named", 1
+        )[0]
+        assert "reviewed `0.3.0` source" in published
+        assert "on `main`" not in published
+
         history_note = changelog.split(
             "**One clause in the block above has since gone out of date", 1
         )[1].split("**Nothing here resolves", 1)[0]
         assert "intermediate digest `a6725f9c…`" in history_note
         assert f"final digest `{short}…`" in history_note
         assert "a6725f9c…` — one block up" not in history_note
+
+    def test_provider_prose_dangling_tool_names_are_exhaustively_recorded(self) -> None:
+        """Provider prose is a prompt channel, including schema descriptions."""
+        document = json.loads(PACKAGED_MANIFEST_PATH.read_text(encoding="utf-8"))
+        offered = {entry["provider_tool_name"] for entry in document["entries"]}
+        tool_name = re.compile(
+            r"\b(?:add|cancel|create|exercise|follow|get|place|preview|remove|review|"
+            r"run|search|unfollow|update)_[a-z0-9_]+\b"
+        )
+
+        def prose(value: Any) -> list[str]:
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, list):
+                return [text for item in value for text in prose(item)]
+            if isinstance(value, dict):
+                return [text for item in value.values() for text in prose(item)]
+            return []
+
+        def schema_property_names(value: Any) -> set[str]:
+            if isinstance(value, list):
+                return set().union(*(schema_property_names(item) for item in value))
+            if not isinstance(value, dict):
+                return set()
+            own = set(value.get("properties", {}))
+            nested = set().union(*(schema_property_names(item) for item in value.values()))
+            return own | nested
+
+        provider_fields = [
+            entry[field]
+            for entry in document["entries"]
+            for field in ("description", "input_schema", "output_schema", "annotations")
+        ]
+        mentioned = {
+            name
+            for value in provider_fields
+            for text in prose(value)
+            for name in tool_name.findall(text)
+        }
+        declared_fields = set().union(
+            *(
+                schema_property_names(entry[field])
+                for entry in document["entries"]
+                for field in ("input_schema", "output_schema")
+            )
+        )
+        # `exercise_cost` is named as a result-context field in provider prose,
+        # not as an instruction to invoke a tool. It is not declared in the
+        # surrounding open-ended context schema, so keep the exception explicit
+        # rather than weakening the tool-shaped-name sweep.
+        provider_result_fields = {"exercise_cost"}
+        assert mentioned - offered - declared_fields - provider_result_fields == {
+            "get_advanced_orders",
+            "get_crypto_positions",
+            "get_currency_pairs",
+            "get_quotes",
+            "preview_scan",
+        }
 
     @pytest.mark.parametrize("name", TRADING_TOOLS + SIMULATION_TOOLS)
     def test_no_trading_capability_is_allowed(self, name: str) -> None:

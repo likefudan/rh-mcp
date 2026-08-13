@@ -40,36 +40,26 @@ def project_version() -> str:
     return str(data["project"]["version"])
 
 
-def test_the_permission_expansion_has_a_new_package_identity() -> None:
-    """The released 0.2.0 identity cannot name a different permission set."""
+def test_the_current_source_identity_is_published_without_claiming_a_release() -> None:
+    """Source pins are current even in the interval before a tag workflow finishes."""
     version = project_version()
-    assert version == "0.3.0"
+    assert tuple(int(part) for part in version.split(".")) >= (0, 3, 0)
 
     root = PYPROJECT.parent
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    unreleased = changelog.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
-    assert not unreleased.strip()
-    released = changelog.split(f"## [{version}] — 2026-08-12", 1)[1].split(
-        "\n## [", 1
-    )[0]
-    assert f"package version is now `{version}`" in released
-    assert "already released `0.2.0`" in released
+    assert f"## [{version}]" in changelog
+    assert f"[{version}]: https://github.com/likefudan/rh-mcp/compare/" in changelog
     assert (
-        f"[{version}]: https://github.com/likefudan/rh-mcp/compare/"
-        "v0.2.0...v0.3.0"
-    ) in changelog
-    assert (
-        "[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...HEAD"
+        f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v{version}...HEAD"
         in changelog
     )
 
     readme = (root / "README.md").read_text(encoding="utf-8")
-    readme_prose = " ".join(readme.split())
-    assert f"The `v{version}` release is built from this source" in readme_prose
-    assert (
-        "permission-expanded manifest lineage introduced on `2026.08.09` distinct "
-        "from the already released `v0.2.0` artifact"
-    ) in readme_prose
+    current = readme.split("<!-- manifest-automation:current-start -->", 1)[1].split(
+        "<!-- manifest-automation:current-end -->", 1
+    )[0]
+    assert f"source declares package version `v{version}`" in " ".join(current.split())
+    assert "released `v" not in current
 
 
 def test_the_runtime_dependency_set_is_exactly_the_two_reviewed_ones() -> None:

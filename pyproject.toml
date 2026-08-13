@@ -2,10 +2,11 @@
 name = "rh-mcp"
 # 0.3.0 gives the permission-expanded manifest lineage introduced on
 # 2026.08.09 a package identity distinct from the already released v0.2.0
-# artifact. The 2026.08.12 scanner refresh ships in the same v0.3.0 release.
+# artifact. 0.3.1 adds release automation without changing the manifest or
+# any runtime compatibility surface.
 # SemVer for a 0.x package makes the minor the breaking position. See
 # CHANGELOG.md.
-version = "0.3.0"
+version = "0.3.1"
 description = "A default-deny Python Read Gateway for Robinhood's official MCP server"
 readme = "README.md"
 license = "Apache-2.0"
@@ -72,6 +73,7 @@ include = [
   "/scripts",
   "/security-review",
   "/.github/workflows",
+  "/.github/manifest-observation-cert.pem",
   "/AGENTS.md",
   "/CHANGELOG.md",
   "/DESIGN.md",

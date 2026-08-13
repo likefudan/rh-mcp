@@ -1,0 +1,186 @@
+name: Robinhood manifest refresh
+
+on:
+  schedule:
+    # Off the top of the hour because GitHub documents schedule congestion there.
+    - cron: "17 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: robinhood-manifest-refresh
+  cancel-in-progress: false
+
+jobs:
+  # This is the only job that can see the Robinhood Keychain credential.  It
+  # receives no App private key and no repository write permission.  Never add
+  # pull_request or pull_request_target to this workflow: a fork must not be
+  # able to schedule code on the credential-bearing machine.
+  discover:
+    runs-on: [self-hosted, macOS, ARM64, rh-mcp-probe]
+    timeout-minutes: 20
+    outputs:
+      state: ${{ steps.probe.outputs.state }}
+      surface_short: ${{ steps.probe.outputs.surface_short }}
+      added_count: ${{ steps.probe.outputs.added_count }}
+      removed_count: ${{ steps.probe.outputs.removed_count }}
+      moved_count: ${{ steps.probe.outputs.moved_count }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Use the frozen environment
+        run: uv sync --frozen
+
+      - name: Observe twice without invoking a tool
+        id: probe
+        run: >-
+          uv run python scripts/manifest_automation.py probe
+          --output-dir "$RUNNER_TEMP/manifest-observation"
+          --settle-seconds 60
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Upload a one-day encrypted observation bundle
+        if: steps.probe.outputs.state != 'no_drift'
+        uses: actions/upload-artifact@v7
+        with:
+          name: manifest-observation-${{ github.run_id }}
+          path: ${{ runner.temp }}/manifest-observation/
+          retention-days: 1
+          if-no-files-found: error
+
+  prepare_refresh_pr:
+    if: needs.discover.outputs.state == 'refresh'
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Mint a repository-scoped bot token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RH_MCP_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RH_MCP_BOT_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app.outputs.token }}
+          persist-credentials: true
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: manifest-observation-${{ github.run_id }}
+          path: ${{ runner.temp }}/manifest-observation
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+
+      - run: uv sync --frozen
+
+      - name: Decrypt only on the GitHub-hosted PR worker
+        env:
+          OBSERVATION_DECRYPT_KEY: ${{ secrets.RH_MCP_OBSERVATION_DECRYPT_KEY }}
+        run: |
+          test -n "$OBSERVATION_DECRYPT_KEY" || {
+            echo "RH_MCP_OBSERVATION_DECRYPT_KEY is unset"
+            exit 1
+          }
+          printf '%s\n' "$OBSERVATION_DECRYPT_KEY" > "$RUNNER_TEMP/observation-key.pem"
+          chmod 600 "$RUNNER_TEMP/observation-key.pem"
+          openssl cms -decrypt -binary -inform DER \
+            -in "$RUNNER_TEMP/manifest-observation/candidate.cms" \
+            -recip .github/manifest-observation-cert.pem \
+            -inkey "$RUNNER_TEMP/observation-key.pem" \
+            -out "$RUNNER_TEMP/manifest-observation/candidate.json"
+          rm "$RUNNER_TEMP/observation-key.pem"
+
+      - name: Carry forward decisions and prepare a patch release
+        run: >-
+          uv run python scripts/manifest_automation.py prepare-refresh
+          --candidate "$RUNNER_TEMP/manifest-observation/candidate.json"
+          --repo-root "$GITHUB_WORKSPACE"
+          --report "$RUNNER_TEMP/pr-body.md"
+
+      - name: Commit, open the PR, and wait for owner approval
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          SURFACE_SHORT: ${{ needs.discover.outputs.surface_short }}
+        run: |
+          branch="automation/manifest-$SURFACE_SHORT"
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
+            echo "A branch already records this provider surface; leaving it unchanged."
+            exit 0
+          fi
+          version=$(uv version --short)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add CHANGELOG.md DESIGN.md README.md pyproject.toml uv.lock \
+            src/rh_mcp/manifests/read-manifest.json tests/test_manifest.py
+          git diff --cached --check
+          git commit -m "Refresh Robinhood tool manifest for v$version"
+          git push origin "HEAD:refs/heads/$branch"
+          pr_url=$(gh pr create --base main --head "$branch" \
+            --title "Refresh Robinhood tool manifest for v$version" \
+            --body-file "$RUNNER_TEMP/pr-body.md")
+          gh pr merge "$pr_url" --auto --squash
+
+  open_tool_set_review:
+    if: needs.discover.outputs.state == 'review_required'
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Mint a repository-scoped bot token
+        id: app
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RH_MCP_BOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RH_MCP_BOT_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app.outputs.token }}
+          persist-credentials: true
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: manifest-observation-${{ github.run_id }}
+          path: ${{ runner.temp }}/manifest-observation
+
+      - name: Write a public marker without unreviewed provider names
+        env:
+          SURFACE_SHORT: ${{ needs.discover.outputs.surface_short }}
+        run: >-
+          python scripts/manifest_automation.py write-review-marker
+          --summary "$RUNNER_TEMP/manifest-observation/summary.json"
+          --destination "manifest-reviews/$SURFACE_SHORT.md"
+          --run-url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Open a blocked Draft PR
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          SURFACE_SHORT: ${{ needs.discover.outputs.surface_short }}
+        run: |
+          branch="automation/tool-set-review-$SURFACE_SHORT"
+          if git ls-remote --exit-code origin "refs/heads/$branch" >/dev/null 2>&1; then
+            echo "A Draft PR already records this provider surface."
+            exit 0
+          fi
+          marker="manifest-reviews/$SURFACE_SHORT.md"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${APP_SLUG}[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add "$marker"
+          git commit -m "Record Robinhood tool-set change for review"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title "Review required: Robinhood tool set changed" \
+            --body-file "$marker"

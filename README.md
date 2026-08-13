@@ -41,10 +41,10 @@ manifest lineage and scanner refresh described below. All seven DESIGN.md §14
 build-order steps have landed except the remainder of step 7, and the reviewed
 manifest is committed. `DESIGN.md` is the authoritative spec.
 
-The `v0.3.0` release is built from this source. Its new package identity keeps
-the permission-expanded manifest lineage introduced on `2026.08.09` distinct
-from the already released `v0.2.0` artifact, and it carries the owner-reviewed
-`2026.08.12` scanner refresh described below.
+The `v0.3.0` release introduced a package identity for the permission-expanded
+manifest lineage observed on `2026.08.09`, distinct from the already released
+`v0.2.0` artifact. It also carried the owner-reviewed `2026.08.12` scanner
+refresh described below.
 
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
 and has been re-run on each observed drift since. A human has reviewed all 54
@@ -69,17 +69,18 @@ provider prose also names `get_scanner_datapoints`, which is not on the offered
 tool surface; like the five existing dangling tool references, it is inert in
 this gateway but must not be forwarded into a model or user-facing context.
 
-The full-manifest digest a consumer pins, for manifest `2026.08.12` in the
-released `v0.3.0` artifact:
+<!-- manifest-automation:current-start -->
+The current source declares package version `v0.3.1` and carries manifest
+`2026.08.12`. Its full-manifest digest is:
 
 ```
 sha256:403ddc4c8a71bf470da906f572134c7d00684ae23af023e91df1872fc6d71b3f
 ```
 
-The manifest version is named alongside it deliberately. A digest belongs to
-one manifest, the two move together, and a released tag ships whichever
-manifest it was cut from — so take the digest you pin from the artifact you are
-pinning, not from a document describing a different revision (DESIGN.md §12.5).
+The version and digest belong to this source tree. A GitHub release exists only
+after the tag workflow has completed; consumers should pin both values from the
+same tagged artifact.
+<!-- manifest-automation:current-end -->
 
 The DESIGN.md §12 acceptance list is now complete: the changelog, the tagged
 artifact with checksums, the independent security review, and the published
@@ -134,6 +135,62 @@ is macOS. `CredentialStore` is a narrow protocol, so adding one is a small
 piece of work when a deployment needs it, and it also solves moving a
 credential between machines, which matters because the first login must open a
 browser.
+
+### Automated manifest refresh
+
+`.github/workflows/manifest-refresh.yml` checks the provider once a day at
+10:17 UTC and can also be run manually. The credential-bearing job is confined
+to a repository-scoped self-hosted Mac runner labelled `rh-mcp-probe`; it has
+read-only repository permission, receives no GitHub App private key, and runs
+two discovery-only observations one minute apart. Because Actions artifacts in
+a public repository are readable public resources, the candidate is encrypted
+on the Mac with AES-256-GCM CMS before upload; only ciphertext and a safe
+summary are retained for one day. The workflow is intentionally not
+triggerable by a pull request.
+
+When the tool set is unchanged, the GitHub-hosted half carries every reviewed
+decision forward, bumps the patch version, opens a PR and enables auto-merge.
+The owner still has to read the provider diff and approve it. When a tool
+appears or disappears, the bot instead opens a blocked Draft PR containing
+only counts and hashes; unreviewed provider names remain encrypted. The owner
+re-runs `rh-mcp admin discover` locally before authoring the required
+`capability`, `disposition`, `mutates` and `rationale` decisions.
+
+One-time repository setup:
+
+1. Add this Mac as a **repository-scoped** self-hosted Actions runner and give
+   it the custom label `rh-mcp-probe`. Install it as a launch service for the
+   macOS user whose login Keychain contains the `rh-mcp` credential. Do not
+   assign this runner to pull-request workflows.
+2. Create a PR GitHub App with repository permissions **Contents: read/write**
+   and **Pull requests: read/write**, install it only on `likefudan/rh-mcp`, and
+   configure `RH_MCP_BOT_APP_CLIENT_ID` as an Actions variable,
+   `RH_MCP_BOT_APP_PRIVATE_KEY` as a secret, and its exact bot login (including
+   `[bot]`) as `RH_MCP_BOT_LOGIN`.
+3. Configure the private key corresponding to
+   `.github/manifest-observation-cert.pem` as the
+   `RH_MCP_OBSERVATION_DECRYPT_KEY` Actions secret. It is used only by the
+   GitHub-hosted refresh job; the Mac job has only the public certificate.
+4. Create a separate Release GitHub App with only **Contents: read/write**.
+   Configure `RH_MCP_RELEASE_APP_CLIENT_ID` and
+   `RH_MCP_RELEASE_APP_PRIVATE_KEY` the same way. The separate identity means
+   a PR-writing token cannot mint a release tag.
+5. Enable auto-merge and protect `main`: require one owner approval, dismiss
+   stale approvals after new commits, require both CI interpreter jobs and the
+   package job, require conversations to be resolved, and grant neither App a
+   bypass. Add a tag ruleset matching `v*` that blocks creation except for the
+   separate Release App (and an owner emergency bypass). This is what prevents
+   the PR App's branch-writing permission from minting a release tag.
+6. Run `Robinhood manifest refresh` once with **Run workflow**. A no-drift run
+   should finish without a branch or PR. After that, only a changed observation
+   creates work.
+
+After an ordinary refresh PR is approved and its required checks pass, GitHub
+auto-merges it. `.github/workflows/auto-release.yml` re-checks the App identity,
+current approval, exact file allowlist and one-patch version bump before the
+separate Release App creates an annotated tag. The tag workflow then rebuilds,
+tests, attests, publishes and downloads the GitHub release assets to verify
+their checksums. Existing tags and releases are never moved or overwritten.
 
 ### One residual risk, and it is a requirement on you
 

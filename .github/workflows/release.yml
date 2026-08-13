@@ -24,10 +24,11 @@
 # and get an answer about *origin*, not just about bytes. §11 asks exactly
 # this question and v0.1.0 could not answer it.
 #
-# What this does not do: publish to PyPI, and not by omission. The release is
-# still attached to a GitHub release by a human who has read the diff, because
-# §12 makes a release a reviewed event rather than an automated consequence of
-# pushing a tag.
+# What this does not do: publish to PyPI. GitHub release publication is now the
+# mechanical continuation of an immutable tag, but the tag itself is created
+# only by auto-release.yml after the manifest PR has a current owner approval.
+# The human decision remains the PR review; this workflow rebuilds and proves
+# the exact approved source before it publishes any asset.
 
 name: Release
 
@@ -57,6 +58,7 @@ jobs:
           # commit it claims, which is precisely the property v0.1.0's sdist
           # lacked.
           ref: ${{ github.ref }}
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: astral-sh/setup-uv@v7
@@ -64,6 +66,14 @@ jobs:
           python-version: "3.13"
 
       - run: uv sync --frozen
+
+      - name: Refuse a lightweight or missing release tag
+        run: |
+          kind=$(git cat-file -t "$GITHUB_REF")
+          test "$kind" = "tag" || {
+            echo "release ref must be an annotated tag, got $kind"
+            exit 1
+          }
 
       # The full gate, again, on the exact commit being released. CI having
       # passed on the branch is not the same statement as this tag being sound.
@@ -138,3 +148,62 @@ jobs:
         with:
           name: release-dist
           path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      attestations: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Verify the artifacts before publication
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS
+
+      - name: Verify signed build provenance before publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for artifact in dist/*.whl dist/*.tar.gz; do
+            gh attestation verify "$artifact" --repo "$GITHUB_REPOSITORY"
+          done
+
+      - name: Generate release notes bound to the packaged manifest
+        run: >-
+          python scripts/release_notes.py
+          --manifest src/rh_mcp/manifests/read-manifest.json
+          --checksums dist/SHA256SUMS
+          --output "$RUNNER_TEMP/release-notes.md"
+
+      - name: Publish a new immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "refusing to overwrite existing release $GITHUB_REF_NAME"
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --title "rh-mcp $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"
+
+      - name: Download and verify the public assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir "$RUNNER_TEMP/published"
+          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/published"
+          cd "$RUNNER_TEMP/published"
+          sha256sum -c SHA256SUMS

@@ -857,10 +857,10 @@ class TestTheShippedManifest:
         """The consumer-facing version and digest cannot drift from the artifact."""
         manifest = load_active_manifest()
         readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
-        published = readme.split("The full-manifest digest a consumer pins", 1)[1].split(
-            "The manifest version is named", 1
+        published = readme.split("<!-- manifest-automation:current-start -->", 1)[1].split(
+            "<!-- manifest-automation:current-end -->", 1
         )[0]
-        assert f"for manifest `{manifest.manifest_version}`" in published
+        assert f"`{manifest.manifest_version}`" in published
         assert [line for line in published.splitlines() if line.startswith("sha256:")] == [
             self.SHIPPED_DIGEST
         ]
@@ -874,7 +874,12 @@ class TestTheShippedManifest:
         short = manifest.digest.split(":", 1)[1][:8]
 
         design = (root / "DESIGN.md").read_text()
-        assert f"source carries `{manifest.manifest_version}` / `{short}…`" in design
+        current_source = design.split("<!-- manifest-automation:current-start -->", 1)[
+            1
+        ].split("<!-- manifest-automation:current-end -->", 1)[0]
+        assert f"manifest `{manifest.manifest_version}` / `{short}…`" in " ".join(
+            current_source.split()
+        )
         assert f"`main` has since moved to `{manifest.manifest_version}`" not in design
 
         changelog = (root / "CHANGELOG.md").read_text()
@@ -884,11 +889,12 @@ class TestTheShippedManifest:
         assert manifest.digest in current
 
         readme = (root / "README.md").read_text()
-        published = readme.split("The full-manifest digest a consumer pins", 1)[1].split(
-            "The manifest version is named", 1
+        published = readme.split("<!-- manifest-automation:current-start -->", 1)[1].split(
+            "<!-- manifest-automation:current-end -->", 1
         )[0]
-        assert "released `v0.3.0` artifact" in published
-        assert "on `main`" not in published
+        assert "source declares package version" in published
+        assert "release exists" in published
+        assert "released `v" not in published
 
         history_note = changelog.split(
             "**One clause in the block above has since gone out of date", 1

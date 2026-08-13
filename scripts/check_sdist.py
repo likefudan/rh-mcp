@@ -68,6 +68,7 @@ ALLOWED_DIRECTORIES: dict[str, frozenset[str]] = {
     "scripts/": frozenset({".py"}),
     "security-review/": frozenset({".md", ".py"}),
     ".github/workflows/": frozenset({".yml"}),
+    ".github/": frozenset({".pem"}),
 }
 
 # An allowlist alone cannot fail an *empty* archive, and a packaging change
@@ -82,6 +83,7 @@ REQUIRED_PATHS = frozenset(
         "src/rh_mcp/__init__.py",
         "src/rh_mcp/gateway.py",
         "src/rh_mcp/manifests/read-manifest.json",
+        ".github/manifest-observation-cert.pem",
     }
 )
 

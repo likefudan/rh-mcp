@@ -37,7 +37,7 @@ rh-mcp = "rh_mcp.cli:main"
 dev = [
     "mypy>=1.11",
     "pytest>=8.3",
-    "ruff>=0.6",
+    "ruff>=0.16.2",
 ]
 
 [build-system]

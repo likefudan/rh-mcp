@@ -44,6 +44,12 @@ from rh_mcp.manifest import (  # noqa: E402
     provider_surface_digest,
 )
 
+DEFAULT_DIAGNOSTIC_LOG = (
+    Path.home() / "Library/Logs/rh-mcp/manifest-refresh-last-error.log"
+)
+DISCOVERY_RETRY_DELAYS = (5.0, 15.0)
+MAX_DIAGNOSTIC_BYTES = 65_536
+
 README_START = "<!-- manifest-automation:current-start -->"
 README_END = "<!-- manifest-automation:current-end -->"
 DESIGN_START = "<!-- manifest-automation:current-start -->"
@@ -207,22 +213,61 @@ def write_summary(path: Path, summary: DriftSummary) -> None:
     _private_write(path, json.dumps(summary.to_json_dict(), indent=2) + "\n")
 
 
-def _run_discovery(command: Sequence[str], destination: Path, expected_digest: str) -> None:
+def _diagnostic_text(attempts: Sequence[tuple[int, bytes]]) -> str:
+    sections: list[str] = []
+    for attempt, (returncode, stderr) in enumerate(attempts, start=1):
+        detail = stderr[-MAX_DIAGNOSTIC_BYTES:].decode("utf-8", errors="replace")
+        if len(stderr) > MAX_DIAGNOSTIC_BYTES:
+            detail = "[earlier diagnostic bytes truncated]\n" + detail
+        sections.append(f"attempt={attempt} exit_code={returncode}\n{detail.rstrip()}\n")
+    return "\n".join(sections)
+
+
+def _clear_diagnostic(path: Path) -> None:
+    if path.is_symlink():
+        raise AutomationError(f"refusing to remove a symlinked local diagnostic: {path}")
+    if path.exists():
+        if not path.is_file():
+            raise AutomationError(f"local diagnostic is not a regular file: {path}")
+        path.unlink()
+
+
+def _run_discovery(
+    command: Sequence[str],
+    destination: Path,
+    expected_digest: str,
+    *,
+    diagnostic_log: Path = DEFAULT_DIAGNOSTIC_LOG,
+    retry_delays: Sequence[float] = DISCOVERY_RETRY_DELAYS,
+) -> None:
     env = os.environ.copy()
     env["RH_MCP_EXPECTED_MANIFEST_DIGEST"] = expected_digest
-    completed = subprocess.run(
-        command,
-        env=env,
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        check=False,
-    )
-    if completed.returncode != 0:
-        # Provider and OAuth diagnostics are intentionally not copied to stdout.
-        raise AutomationError(
-            f"authenticated discovery failed with exit {completed.returncode}; "
-            "inspect the credential-bearing runner locally"
+    failed_attempts: list[tuple[int, bytes]] = []
+    for attempt in range(len(retry_delays) + 1):
+        completed = subprocess.run(
+            command,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            check=False,
         )
+        if completed.returncode == 0:
+            _clear_diagnostic(diagnostic_log)
+            break
+
+        failed_attempts.append((completed.returncode, completed.stderr))
+        _private_write(diagnostic_log, _diagnostic_text(failed_attempts))
+        # Exit 1 is the CLI's safe runtime/provider bucket. Authentication (4),
+        # configuration (3), and usage (2) need an operator, not blind retries.
+        if completed.returncode != 1 or attempt == len(retry_delays):
+            raise AutomationError(
+                f"authenticated discovery failed with exit {completed.returncode}; "
+                f"private details are on the credential-bearing runner at {diagnostic_log}"
+            )
+        time.sleep(retry_delays[attempt])
+    else:  # pragma: no cover - the loop always breaks or raises
+        raise AutomationError("authenticated discovery exhausted its attempts")
+
     try:
         text = completed.stdout.decode("utf-8")
     except UnicodeDecodeError:
@@ -267,16 +312,30 @@ def probe(
     settle_seconds: float,
     command: Sequence[str],
     certificate: Path,
+    diagnostic_log: Path = DEFAULT_DIAGNOSTIC_LOG,
+    retry_delays: Sequence[float] = DISCOVERY_RETRY_DELAYS,
 ) -> DriftSummary:
     previous = load_manifest_file(manifest_path)
     output_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     output_dir.chmod(0o700)
     first = output_dir / "candidate-first.json"
     stable = output_dir / "candidate.json"
-    _run_discovery(command, first, previous.digest)
+    _run_discovery(
+        command,
+        first,
+        previous.digest,
+        diagnostic_log=diagnostic_log,
+        retry_delays=retry_delays,
+    )
     if settle_seconds:
         time.sleep(settle_seconds)
-    _run_discovery(command, stable, previous.digest)
+    _run_discovery(
+        command,
+        stable,
+        previous.digest,
+        diagnostic_log=diagnostic_log,
+        retry_delays=retry_delays,
+    )
     candidate = require_stable_candidates(first, stable)
     summary = classify_candidate(candidate, manifest_path)
     write_summary(output_dir / "summary.json", summary)
@@ -497,6 +556,9 @@ def main(argv: list[str] | None = None) -> int:
     probe_parser.add_argument("--settle-seconds", type=float, default=60.0)
     probe_parser.add_argument("--github-output", type=Path)
     probe_parser.add_argument(
+        "--diagnostic-log", type=Path, default=DEFAULT_DIAGNOSTIC_LOG
+    )
+    probe_parser.add_argument(
         "--certificate",
         type=Path,
         default=REPO_ROOT / ".github/manifest-observation-cert.pem",
@@ -522,6 +584,7 @@ def main(argv: list[str] | None = None) -> int:
                 settle_seconds=args.settle_seconds,
                 command=(str(executable), "admin", "discover"),
                 certificate=args.certificate,
+                diagnostic_log=args.diagnostic_log,
             )
             print(
                 f"stable discovery: {summary.state}; prior={summary.prior_tool_count}; "

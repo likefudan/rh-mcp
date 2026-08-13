@@ -185,6 +185,13 @@ One-time repository setup:
    should finish without a branch or PR. After that, only a changed observation
    creates work.
 
+The credential-bearing job retries only the CLI's provider/runtime failure
+bucket (exit `1`), with bounded 5- and 15-second delays. Authentication,
+configuration and usage failures stop immediately. Detailed child-process
+stderr never enters the public Actions log: the Mac overwrites
+`~/Library/Logs/rh-mcp/manifest-refresh-last-error.log` as a mode-`0600` local
+diagnostic, and removes a stale diagnostic after the next successful discovery.
+
 After an ordinary refresh PR is approved and its required checks pass, GitHub
 auto-merges it. `.github/workflows/auto-release.yml` re-checks the App identity,
 current approval, exact file allowlist and one-patch version bump before the

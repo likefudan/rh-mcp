@@ -14,8 +14,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
+import manifest_automation as automation  # noqa: E402
 from manifest_automation import (  # noqa: E402
     AutomationError,
+    _run_discovery,
     classify_candidate,
     prepare_refresh,
     require_stable_candidates,
@@ -53,6 +55,92 @@ def candidate_from_active() -> dict[str, Any]:
 def write_json(path: Path, value: Any) -> Path:
     path.write_text(json.dumps(value), encoding="utf-8")
     return path
+
+
+def _completed(returncode: int, *, stdout: bytes = b"", stderr: bytes = b"") -> Any:
+    return subprocess.CompletedProcess(
+        args=("rh-mcp", "admin", "discover"),
+        returncode=returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def test_provider_failure_retries_privately_then_clears_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    diagnostic = tmp_path / "private/state/last-error.log"
+    destination = tmp_path / "candidate.json"
+    candidate = json.dumps(candidate_from_active()).encode()
+    responses = iter(
+        (
+            _completed(1, stdout=b"unsanitized-candidate", stderr=b"safe provider detail"),
+            _completed(0, stdout=candidate),
+        )
+    )
+    calls: list[tuple[Any, ...]] = []
+    sleeps: list[float] = []
+
+    def fake_run(*args: Any, **kwargs: Any) -> Any:
+        calls.append(args)
+        assert kwargs["stdin"] is subprocess.DEVNULL
+        assert kwargs["capture_output"] is True
+        return next(responses)
+
+    def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+        assert diagnostic.stat().st_mode & 0o777 == 0o600
+        text = diagnostic.read_text()
+        assert "safe provider detail" in text
+        assert "unsanitized-candidate" not in text
+
+    monkeypatch.setattr(automation.subprocess, "run", fake_run)
+    monkeypatch.setattr(automation.time, "sleep", fake_sleep)
+    _run_discovery(
+        ("rh-mcp", "admin", "discover"),
+        destination,
+        "sha256:" + "a" * 64,
+        diagnostic_log=diagnostic,
+        retry_delays=(0.25,),
+    )
+
+    assert len(calls) == 2
+    assert sleeps == [0.25]
+    assert json.loads(destination.read_text()) == candidate_from_active()
+    assert not diagnostic.exists()
+
+
+@pytest.mark.parametrize("returncode", [2, 3, 4])
+def test_operator_failures_do_not_retry_or_publish_private_detail(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, returncode: int
+) -> None:
+    diagnostic = tmp_path / "private/last-error.log"
+    calls = 0
+
+    def fake_run(*args: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        return _completed(
+            returncode,
+            stdout=b"provider candidate must never be diagnosed",
+            stderr=b"local-only-detail",
+        )
+
+    monkeypatch.setattr(automation.subprocess, "run", fake_run)
+    with pytest.raises(AutomationError, match=f"failed with exit {returncode}") as caught:
+        _run_discovery(
+            ("rh-mcp", "admin", "discover"),
+            tmp_path / "candidate.json",
+            "sha256:" + "a" * 64,
+            diagnostic_log=diagnostic,
+            retry_delays=(0.0, 0.0),
+        )
+
+    assert calls == 1
+    assert "local-only-detail" not in str(caught.value)
+    assert diagnostic.stat().st_mode & 0o777 == 0o600
+    assert "local-only-detail" in diagnostic.read_text()
+    assert "provider candidate" not in diagnostic.read_text()
 
 
 def test_stability_ignores_only_the_observation_clock(tmp_path: Path) -> None:

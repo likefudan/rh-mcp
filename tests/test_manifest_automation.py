@@ -1,0 +1,259 @@
+"""Automation stays narrower than the credential and manifest boundaries."""
+
+from __future__ import annotations
+
+import copy
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+
+from manifest_automation import (  # noqa: E402
+    AutomationError,
+    classify_candidate,
+    prepare_refresh,
+    require_stable_candidates,
+    seal_candidate,
+    stable_candidate_bytes,
+)
+from release_notes import render  # noqa: E402
+
+from rh_mcp.manifest import load_active_manifest, load_manifest_file  # noqa: E402
+from rh_mcp.validation import json_safe  # noqa: E402
+
+
+def candidate_from_active() -> dict[str, Any]:
+    manifest = load_active_manifest()
+    return {
+        "candidate": True,
+        "observed_at": "2026-08-13T08:00:00+00:00",
+        "tools": [
+            {
+                "provider_tool_name": entry.provider_tool_name,
+                "description": entry.description,
+                "input_schema": json_safe(entry.input_schema),
+                "output_schema": json_safe(entry.output_schema),
+                "annotations": json_safe(entry.annotations),
+                "capability": None,
+                "disposition": "denied",
+                "mutates": None,
+                "rationale": "UNREVIEWED",
+            }
+            for entry in manifest.entries
+        ],
+    }
+
+
+def write_json(path: Path, value: Any) -> Path:
+    path.write_text(json.dumps(value), encoding="utf-8")
+    return path
+
+
+def test_stability_ignores_only_the_observation_clock(tmp_path: Path) -> None:
+    first = candidate_from_active()
+    second = copy.deepcopy(first)
+    second["observed_at"] = "2026-08-13T08:01:00+00:00"
+    assert stable_candidate_bytes(first) == stable_candidate_bytes(second)
+    assert require_stable_candidates(
+        write_json(tmp_path / "one.json", first), write_json(tmp_path / "two.json", second)
+    ) == second
+
+    second["tools"][0]["description"] += " changed"
+    with pytest.raises(AutomationError, match="disagreed"):
+        require_stable_candidates(
+            write_json(tmp_path / "one.json", first),
+            write_json(tmp_path / "two.json", second),
+        )
+
+
+def test_classification_separates_refresh_from_permission_review() -> None:
+    manifest_path = ROOT / "src/rh_mcp/manifests/read-manifest.json"
+    unchanged = candidate_from_active()
+    assert classify_candidate(unchanged, manifest_path).state == "no_drift"
+
+    drifted = copy.deepcopy(unchanged)
+    moved = drifted["tools"][0]["provider_tool_name"]
+    drifted["tools"][0]["description"] += " changed"
+    refresh = classify_candidate(drifted, manifest_path)
+    assert refresh.state == "refresh"
+    assert refresh.moved == (moved,)
+
+    appeared = copy.deepcopy(unchanged)
+    appeared["tools"].append(
+        {
+            "provider_tool_name": "provider_unreviewed_name",
+            "description": "unreviewed",
+            "input_schema": {"type": "object", "properties": {}},
+            "output_schema": None,
+            "annotations": {},
+        }
+    )
+    review = classify_candidate(appeared, manifest_path)
+    assert review.state == "review_required"
+    assert review.added_count == 1
+    assert "provider_unreviewed_name" not in json.dumps(review.to_json_dict())
+
+
+def _minimal_refresh_repo(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    (root / "src/rh_mcp/manifests").mkdir(parents=True)
+    (root / "tests").mkdir()
+    source_manifest = ROOT / "src/rh_mcp/manifests/read-manifest.json"
+    (root / "src/rh_mcp/manifests/read-manifest.json").write_text(
+        source_manifest.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    digest = load_active_manifest().digest
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "rh-mcp"\nversion = "0.3.0"\n', encoding="utf-8"
+    )
+    (root / "uv.lock").write_text(
+        '[[package]]\nname = "rh-mcp"\nversion = "0.3.0"\n', encoding="utf-8"
+    )
+    (root / "tests/test_manifest.py").write_text(
+        f'    SHIPPED_DIGEST = "{digest}"\n', encoding="utf-8"
+    )
+    (root / "README.md").write_text(
+        "before\n<!-- manifest-automation:current-start -->\nold\n"
+        "<!-- manifest-automation:current-end -->\nafter\n",
+        encoding="utf-8",
+    )
+    (root / "DESIGN.md").write_text(
+        "before\n<!-- manifest-automation:current-start -->\nold\n"
+        "<!-- manifest-automation:current-end -->\nafter\n",
+        encoding="utf-8",
+    )
+    (root / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [Unreleased]\n\n## [0.3.0] — 2026-08-12\nold\n\n"
+        "<!-- manifest-automation:release-links-start -->\n"
+        "[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...HEAD\n"
+        "[0.3.0]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...v0.3.0\n"
+        "<!-- manifest-automation:release-links-end -->\n"
+        "[0.2.0]: old\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+def test_prepare_refresh_bumps_patch_and_carries_every_decision(tmp_path: Path) -> None:
+    root = _minimal_refresh_repo(tmp_path)
+    before = load_manifest_file(root / "src/rh_mcp/manifests/read-manifest.json")
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+    report = tmp_path / "report.md"
+
+    assert prepare_refresh(candidate_path, root, report) == "0.3.1"
+    after = load_manifest_file(root / "src/rh_mcp/manifests/read-manifest.json")
+    old = {entry.provider_tool_name: entry for entry in before.entries}
+    for entry in after.entries:
+        prior = old[entry.provider_tool_name]
+        assert (entry.capability, entry.disposition, entry.mutates, entry.rationale) == (
+            prior.capability,
+            prior.disposition,
+            prior.mutates,
+            prior.rationale,
+        )
+    assert 'version = "0.3.1"' in (root / "pyproject.toml").read_text()
+    assert 'version = "0.3.1"' in (root / "uv.lock").read_text()
+    assert after.digest in (root / "README.md").read_text()
+    assert after.digest in (root / "CHANGELOG.md").read_text()
+    assert "Reviewer decisions: unchanged" in report.read_text()
+
+
+def test_release_notes_bind_the_manifest_and_checksums() -> None:
+    manifest = {
+        "manifest_version": "2026.08.13",
+        "full_manifest_digest": "sha256:" + "a" * 64,
+    }
+    notes = render(manifest, "abc  wheel.whl\n")
+    assert "`2026.08.13`" in notes
+    assert manifest["full_manifest_digest"] in notes
+    assert "abc  wheel.whl" in notes
+
+
+def test_candidate_is_authenticated_ciphertext_before_artifact_upload(tmp_path: Path) -> None:
+    candidate = write_json(tmp_path / "candidate.json", candidate_from_active())
+    key = tmp_path / "key.pem"
+    certificate = tmp_path / "certificate.pem"
+    encrypted = tmp_path / "candidate.cms"
+    decrypted = tmp_path / "decrypted.json"
+    subprocess.run(
+        (
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-sha256",
+            "-days",
+            "1",
+            "-nodes",
+            "-subj",
+            "/CN=test-observation",
+            "-keyout",
+            str(key),
+            "-out",
+            str(certificate),
+        ),
+        check=True,
+        capture_output=True,
+    )
+    seal_candidate(candidate, encrypted, certificate)
+    assert not candidate.exists()
+    assert encrypted.is_file()
+    subprocess.run(
+        (
+            "openssl",
+            "cms",
+            "-decrypt",
+            "-binary",
+            "-inform",
+            "DER",
+            "-in",
+            str(encrypted),
+            "-recip",
+            str(certificate),
+            "-inkey",
+            str(key),
+            "-out",
+            str(decrypted),
+        ),
+        check=True,
+        capture_output=True,
+    )
+    assert json.loads(decrypted.read_text()) == candidate_from_active()
+
+
+def test_credential_job_cannot_be_triggered_by_a_pull_request_or_read_app_secrets() -> None:
+    workflow = (ROOT / ".github/workflows/manifest-refresh.yml").read_text()
+    trigger, jobs = workflow.split("jobs:", 1)
+    discover, hosted = jobs.split("  prepare_refresh_pr:", 1)
+    assert "pull_request" not in trigger
+    assert "pull_request_target" not in trigger
+    assert "runs-on: [self-hosted, macOS, ARM64, rh-mcp-probe]" in discover
+    assert "RH_MCP_BOT_APP_PRIVATE_KEY" not in discover
+    assert "RH_MCP_OBSERVATION_DECRYPT_KEY" not in discover
+    assert "contents: write" not in discover
+    assert "actions/create-github-app-token" in hosted
+    assert "candidate.cms" in hosted
+    assert "RH_MCP_OBSERVATION_DECRYPT_KEY" in hosted
+
+
+def test_release_requires_bot_identity_current_approval_and_narrow_diff() -> None:
+    coordinator = (ROOT / ".github/workflows/auto-release.yml").read_text()
+    release = (ROOT / ".github/workflows/release.yml").read_text()
+    assert "EXPECTED_BOT_LOGIN" in coordinator
+    assert 'test "$decision" = "APPROVED"' in coordinator
+    assert "scripts/verify_release_pr.py" in coordinator
+    assert "git rev-parse" in coordinator
+    assert "refusing to move or replace existing tag" in coordinator
+    assert "gh release create" in release
+    assert "gh attestation verify" in release
+    assert "release ref must be an annotated tag" in release
+    assert "refusing to overwrite existing release" in release

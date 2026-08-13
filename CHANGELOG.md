@@ -28,6 +28,38 @@ that carries them.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-08-13
+
+### Added
+
+- A credential-separated manifest refresh workflow. Only the repository-scoped
+  self-hosted Mac job can access the Robinhood Keychain, and that job has
+  read-only repository permission and no GitHub App key. It performs two
+  discovery-only observations, encrypts changed candidates with AES-256-GCM CMS
+  before publishing one-day Actions artifacts, and never invokes a provider
+  tool. The corresponding private key exists only as a GitHub-hosted job secret;
+  public-repository artifacts never contain candidate plaintext.
+- A GitHub-hosted PR job for same-set schema and metadata drift. It reuses the
+  existing fail-closed refresh implementation, carries all reviewer decisions
+  verbatim, bumps only the patch version, opens a PR and enables auto-merge.
+  Tool additions or removals instead produce a blocked Draft PR without
+  publishing unreviewed provider names.
+- Approval-to-release coordination. After required checks and current owner
+  approval, a separate release App verifies the bot identity, the exact file
+  allowlist and the one-patch bump before creating an annotated tag. The tag
+  workflow now verifies provenance and checksums, publishes a new GitHub
+  release without an update path, downloads its assets, and verifies them
+  again. It still does not publish to PyPI.
+
+### Security
+
+- The credential-bearing workflow has no `pull_request` or
+  `pull_request_target` trigger, so fork code cannot be scheduled on the Mac.
+  PR-writing and tag-writing use separate repository-scoped GitHub Apps; neither
+  key is exposed to the Mac job, neither App may bypass branch protection, and
+  a documented `v*` tag ruleset permits creation only by the Release App. An
+  existing tag or release is never moved or overwritten.
+
 ## [0.3.0] — 2026-08-12
 
 ### Changed
@@ -649,7 +681,10 @@ description changed. No disposition moved.
 - The `stdio` development transport bounds payload size after decoding rather
   than during, unlike the HTTP path.
 
-[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...HEAD
+<!-- manifest-automation:release-links-start -->
+[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...v0.3.0
+<!-- manifest-automation:release-links-end -->
 [0.2.0]: https://github.com/likefudan/rh-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/likefudan/rh-mcp/releases/tag/v0.1.0

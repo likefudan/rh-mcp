@@ -1168,8 +1168,12 @@ historical entries while refreshing the manifest. A consumer pinning the
 `v0.2.0` *artifact* and taking its digest from that changelog entry would pin a
 digest the artifact refuses readiness against.
 
-The reviewed `0.3.0` source carries `2026.08.12` / `403ddc4c…`, which is what
-the README publishes for that source. That does not fix anything above and is
+<!-- manifest-automation:current-start -->
+The current source declares package `0.3.1` and carries manifest `2026.08.12` /
+`403ddc4c…`. This statement is about source identity; publication is established
+only by a completed tag workflow and GitHub release.
+<!-- manifest-automation:current-end -->
+That does not fix anything above and is
 not meant to read as though it did: both changelog entries still print
 `49b7218…` beside `2026.08.03.1`, both tags still ship `70f88615…`, and the
 bracketed corrections beside them are still the whole of the remedy. A newer

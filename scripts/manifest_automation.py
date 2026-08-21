@@ -44,9 +44,12 @@ from rh_mcp.manifest import (  # noqa: E402
     provider_surface_digest,
 )
 
-DEFAULT_DIAGNOSTIC_LOG = (
-    Path.home() / "Library/Logs/rh-mcp/manifest-refresh-last-error.log"
-)
+# `errors.EXIT_CODE_CONFIGURATION_ERROR`. Held as a literal so a change to
+# the gateway's exit contract breaks this script's test rather than silently
+# reclassifying an unreadable credential as something an operator may ignore.
+_CLI_CONFIGURATION_ERROR = 3
+
+DEFAULT_DIAGNOSTIC_LOG = Path.home() / "Library/Logs/rh-mcp/manifest-refresh-last-error.log"
 DISCOVERY_RETRY_DELAYS = (5.0, 15.0)
 MAX_DIAGNOSTIC_BYTES = 65_536
 
@@ -114,9 +117,7 @@ def _load_candidate(path: Path) -> dict[str, Any]:
             raise AutomationError("candidate contains a tool without an input schema")
         if tool.get("description") is not None and not isinstance(tool["description"], str):
             raise AutomationError("candidate contains a non-string tool description")
-        if tool.get("output_schema") is not None and not isinstance(
-            tool["output_schema"], dict
-        ):
+        if tool.get("output_schema") is not None and not isinstance(tool["output_schema"], dict):
             raise AutomationError("candidate contains a malformed output schema")
         if tool.get("annotations") is not None and not isinstance(tool["annotations"], dict):
             raise AutomationError("candidate contains malformed annotations")
@@ -129,9 +130,9 @@ def _load_candidate(path: Path) -> dict[str, Any]:
 def stable_candidate_bytes(document: dict[str, Any]) -> bytes:
     """Canonical comparison payload, excluding only the observation clock."""
     payload = {key: value for key, value in document.items() if key != "observed_at"}
-    return json.dumps(
-        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
 
 
 def require_stable_candidates(first: Path, second: Path) -> dict[str, Any]:
@@ -230,6 +231,64 @@ def _clear_diagnostic(path: Path) -> None:
         if not path.is_file():
             raise AutomationError(f"local diagnostic is not a regular file: {path}")
         path.unlink()
+
+
+# `rh-mcp status` and `admin discover` both open a provider session, so a
+# credential the runner cannot read surfaces there as a cancelled handshake
+# rather than as a credential error. Measured, not theorised: a locked keychain
+# on the probe runner produced `exit_code=1` — the CLI's *retryable provider*
+# bucket — three pointless retries, and the message "authenticated discovery
+# failed", which sent the operator looking at the network for an afternoon. The
+# same store, read by `auth-status` on the same runner in the same second,
+# returned exit 3 with "reading the keychain credential failed with status 36".
+#
+# So the classification exists; the probe path just cannot reach it. This runs
+# first, uses the one command that touches the credential store and nothing
+# else, and keeps the distinction the retry logic already encodes.
+CREDENTIAL_PREFLIGHT_LOG = Path.home() / "Library/Logs/rh-mcp/manifest-preflight-last-error.log"
+
+
+def preflight_credential(
+    command: Sequence[str],
+    expected_digest: str,
+    *,
+    diagnostic_log: Path = CREDENTIAL_PREFLIGHT_LOG,
+) -> None:
+    """Prove the credential store is readable before any provider call.
+
+    Public output names the *class* of failure and nothing else. `auth-status`
+    is the gateway's own safe-diagnostics command and prints no secret, but it
+    does print issuer, granted scope and expiry, and this log is world-readable
+    on a public repository — so none of it is echoed here. The detail goes to
+    the same kind of 0600 file on the credential-bearing runner that
+    `_run_discovery` already uses.
+    """
+    env = os.environ.copy()
+    env["RH_MCP_EXPECTED_MANIFEST_DIGEST"] = expected_digest
+    completed = subprocess.run(
+        command,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode == 0:
+        _clear_diagnostic(diagnostic_log)
+        return
+
+    _private_write(diagnostic_log, _diagnostic_text([(completed.returncode, completed.stderr)]))
+    # Exit 3 is `configuration_error`, which is what an unreadable credential
+    # store returns. Naming it is the whole point: it is the difference between
+    # "an operator must fix this machine" and "the provider is flaky".
+    if completed.returncode == _CLI_CONFIGURATION_ERROR:
+        raise AutomationError(
+            "the credential store on this runner could not be read, so no provider call "
+            f"was attempted; private details at {diagnostic_log}"
+        )
+    raise AutomationError(
+        f"the credential preflight failed with exit {completed.returncode} before any "
+        f"provider call; private details at {diagnostic_log}"
+    )
 
 
 def _run_discovery(
@@ -345,9 +404,7 @@ def probe(
 
 
 def _read_version(pyproject: Path) -> str:
-    match = re.search(
-        r"(?m)^version = \"(\d+\.\d+\.\d+)\"$", pyproject.read_text(encoding="utf-8")
-    )
+    match = re.search(r"(?m)^version = \"(\d+\.\d+\.\d+)\"$", pyproject.read_text(encoding="utf-8"))
     if match is None:
         raise AutomationError("pyproject has no single literal project version")
     return match.group(1)
@@ -496,7 +553,7 @@ same tagged artifact."""
 - Provider surface: `{summary.provider_surface_digest}`
 - Tool set: unchanged ({summary.observed_tool_count})
 - Reviewer decisions: unchanged
-- Changed entries: {', '.join(f'`{name}`' for name in summary.moved)}
+- Changed entries: {", ".join(f"`{name}`" for name in summary.moved)}
 
 Review the committed provider-schema diff. In particular, confirm that no
 already-allowed tool gained a write or trading-shaped operation. The bot cannot
@@ -515,12 +572,12 @@ def write_review_marker(summary_path: Path, destination: Path, run_url: str) -> 
 This Draft PR records a stable provider observation without publishing the
 unreviewed tool names or schemas.
 
-- Previous tool count: {summary['prior_tool_count']}
-- Observed tool count: {summary['observed_tool_count']}
-- Appeared: {summary['added_count']}
-- Disappeared: {summary['removed_count']}
-- Candidate SHA-256: `{summary['stable_candidate_sha256']}`
-- Provider surface digest: `{summary['provider_surface_digest']}`
+- Previous tool count: {summary["prior_tool_count"]}
+- Observed tool count: {summary["observed_tool_count"]}
+- Appeared: {summary["added_count"]}
+- Disappeared: {summary["removed_count"]}
+- Candidate SHA-256: `{summary["stable_candidate_sha256"]}`
+- Provider surface digest: `{summary["provider_surface_digest"]}`
 - Encrypted Actions run: {run_url}
 
 Re-run `rh-mcp admin discover` locally, confirm its candidate hash against the
@@ -555,14 +612,16 @@ def main(argv: list[str] | None = None) -> int:
     probe_parser.add_argument("--output-dir", type=Path, required=True)
     probe_parser.add_argument("--settle-seconds", type=float, default=60.0)
     probe_parser.add_argument("--github-output", type=Path)
-    probe_parser.add_argument(
-        "--diagnostic-log", type=Path, default=DEFAULT_DIAGNOSTIC_LOG
-    )
+    probe_parser.add_argument("--diagnostic-log", type=Path, default=DEFAULT_DIAGNOSTIC_LOG)
     probe_parser.add_argument(
         "--certificate",
         type=Path,
         default=REPO_ROOT / ".github/manifest-observation-cert.pem",
     )
+
+    preflight = sub.add_parser("preflight-credential")
+    preflight.add_argument("--manifest", type=Path, default=PACKAGED_MANIFEST_PATH)
+    preflight.add_argument("--diagnostic-log", type=Path, default=CREDENTIAL_PREFLIGHT_LOG)
 
     prepare = sub.add_parser("prepare-refresh")
     prepare.add_argument("--candidate", type=Path, required=True)
@@ -593,6 +652,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             if args.github_output is not None:
                 _write_github_output(args.github_output, summary)
+        elif args.command == "preflight-credential":
+            executable = Path(sys.executable).with_name("rh-mcp")
+            preflight_credential(
+                (str(executable), "auth-status"),
+                load_manifest_file(args.manifest).digest,
+                diagnostic_log=args.diagnostic_log,
+            )
+            print("credential store readable on this runner")
         elif args.command == "prepare-refresh":
             version = prepare_refresh(args.candidate, args.repo_root, args.report)
             print(f"prepared same-set refresh for v{version}")

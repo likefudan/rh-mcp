@@ -36,6 +36,14 @@ jobs:
       - name: Use the frozen environment
         run: uv sync --frozen
 
+      # Before any provider call. An unreadable credential store reaches the
+      # probe as a cancelled handshake with the CLI's *retryable provider* exit
+      # code, so the probe retries it three times and reports it as a discovery
+      # failure. This asks the one command that touches only the credential
+      # store, and reports what it actually is.
+      - name: Prove the credential store is readable
+        run: uv run python scripts/manifest_automation.py preflight-credential
+
       - name: Observe twice without invoking a tool
         id: probe
         run: >-

@@ -148,9 +148,12 @@ def test_stability_ignores_only_the_observation_clock(tmp_path: Path) -> None:
     second = copy.deepcopy(first)
     second["observed_at"] = "2026-08-13T08:01:00+00:00"
     assert stable_candidate_bytes(first) == stable_candidate_bytes(second)
-    assert require_stable_candidates(
-        write_json(tmp_path / "one.json", first), write_json(tmp_path / "two.json", second)
-    ) == second
+    assert (
+        require_stable_candidates(
+            write_json(tmp_path / "one.json", first), write_json(tmp_path / "two.json", second)
+        )
+        == second
+    )
 
     second["tools"][0]["description"] += " changed"
     with pytest.raises(AutomationError, match="disagreed"):
@@ -345,3 +348,118 @@ def test_release_requires_bot_identity_current_approval_and_narrow_diff() -> Non
     assert "gh attestation verify" in release
     assert "release ref must be an annotated tag" in release
     assert "refusing to overwrite existing release" in release
+
+
+# ---------------------------------------------------------------------------
+# The credential preflight (`preflight-credential`)
+#
+# It exists because the probe path *cannot* report an unreadable credential.
+# Measured on the probe runner: a locked keychain surfaced as a cancelled MCP
+# handshake with exit 1 — the CLI's retryable-provider bucket — and three
+# retries, while `auth-status` on the same machine returned exit 3 with the
+# real reason. These tests pin that distinction, because the distinction is the
+# entire value of the step.
+# ---------------------------------------------------------------------------
+
+
+def _fake_completed(returncode: int, stderr: bytes = b"") -> Any:
+    return subprocess.CompletedProcess(args=["rh-mcp"], returncode=returncode, stderr=stderr)
+
+
+def test_preflight_passes_and_clears_a_stale_diagnostic(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "private/preflight.log"
+    log.parent.mkdir(parents=True)
+    log.write_text("a failure from a previous run\n", encoding="utf-8")
+
+    monkeypatch.setattr(automation.subprocess, "run", lambda *a, **k: _fake_completed(0))
+    automation.preflight_credential(
+        ("rh-mcp", "auth-status"), "sha256:" + "0" * 64, diagnostic_log=log
+    )
+
+    # A left-behind log would make the next operator debug the wrong failure.
+    assert not log.exists()
+
+
+def test_preflight_names_an_unreadable_credential_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exit 3 must be reported as a credential problem, not a provider one."""
+    log = tmp_path / "private/preflight.log"
+    monkeypatch.setattr(
+        automation.subprocess,
+        "run",
+        lambda *a, **k: _fake_completed(
+            3, b"reading the keychain credential failed with status 36"
+        ),
+    )
+
+    with pytest.raises(AutomationError) as caught:
+        automation.preflight_credential(
+            ("rh-mcp", "auth-status"), "sha256:" + "0" * 64, diagnostic_log=log
+        )
+
+    message = str(caught.value)
+    assert "credential store" in message
+    assert "no provider call" in message
+    # The public message must not carry the private detail it points at.
+    assert "status 36" not in message
+    assert "keychain" not in message
+
+
+def test_preflight_does_not_call_an_unreadable_store_a_provider_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The mutation this file exists to catch.
+
+    Dropping the exit-3 branch leaves a message that reads as a generic
+    failure, which is exactly the wording that sent an operator to the network
+    for an afternoon. Assert the two classes produce *different* text.
+    """
+    log = tmp_path / "private/preflight.log"
+
+    def message_for(returncode: int) -> str:
+        monkeypatch.setattr(
+            automation.subprocess, "run", lambda *a, **k: _fake_completed(returncode, b"detail")
+        )
+        with pytest.raises(AutomationError) as caught:
+            automation.preflight_credential(
+                ("rh-mcp", "auth-status"), "sha256:" + "0" * 64, diagnostic_log=log
+            )
+        return str(caught.value)
+
+    unreadable = message_for(automation._CLI_CONFIGURATION_ERROR)
+    other = message_for(1)
+
+    assert unreadable != other
+    assert "credential store" in unreadable
+    assert "credential store" not in other
+
+
+def test_preflight_writes_the_detail_privately(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "private/preflight.log"
+    monkeypatch.setattr(
+        automation.subprocess, "run", lambda *a, **k: _fake_completed(3, b"the private reason")
+    )
+
+    with pytest.raises(AutomationError):
+        automation.preflight_credential(
+            ("rh-mcp", "auth-status"), "sha256:" + "0" * 64, diagnostic_log=log
+        )
+
+    assert "the private reason" in log.read_text(encoding="utf-8")
+    assert log.stat().st_mode & 0o777 == 0o600
+
+
+def test_the_configuration_exit_code_matches_the_gateway_contract() -> None:
+    """A literal, checked against the source of truth rather than restated.
+
+    If the CLI's exit contract moves, this fails here instead of silently
+    reclassifying an unreadable credential as a retryable provider blip.
+    """
+    from rh_mcp.errors import EXIT_CODE_CONFIGURATION_ERROR
+
+    assert automation._CLI_CONFIGURATION_ERROR == EXIT_CODE_CONFIGURATION_ERROR == 3

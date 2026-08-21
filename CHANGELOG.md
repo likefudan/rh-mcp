@@ -28,6 +28,27 @@ that carries them.
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-08-21
+
+### Manifest
+
+#### `2026.08.21` — automated provider refresh candidate
+
+```
+sha256:fe484a8b6c3ba7dad6ae2f462e41eb39f64349285012c92f672d341d75d2a30a
+```
+
+The provider tool set and every reviewed `capability`, `disposition`, `mutates`
+and `rationale` decision are unchanged from `0.3.1`. Two consecutive
+authenticated discoveries returned byte-equivalent tool payloads after the
+observation timestamp was removed. Provider-derived schema or metadata moved
+for `create_scan`, `get_accounts`, `get_earnings_calendar`, `get_earnings_results`, `get_equity_fundamentals`, `get_equity_historicals`, `get_equity_orders`, `get_equity_positions`, `get_equity_price_book`, `get_equity_quotes`, `get_equity_tax_lots`, `get_equity_technical_indicators`, `get_equity_tradability`, `get_financials`, `get_index_historicals`, `get_index_quotes`, `get_indexes`, `get_limited_margin_upgrade_info`, `get_option_chains`, `get_option_historicals`, `get_option_instruments`, `get_option_level_upgrade_info`, `get_option_orders`, `get_option_positions`, `get_option_quotes`, `get_option_watchlist`, `get_pnl_trade_history`, `get_popular_watchlists`, `get_portfolio`, `get_realized_pnl`, `get_scanner_filter_specs`, `get_scans`, `get_watchlist_items`, `get_watchlists`, `run_scan`, `search`, `update_scan_config`, `update_scan_filters`.
+
+The bot made no permission decision. Approval of the PR carrying this block is
+the owner's review of the provider diff and authorizes the release coordinator
+to merge, tag and publish this exact source.
+
+
 ## [0.3.1] — 2026-08-13
 
 ### Added
@@ -682,9 +703,9 @@ description changed. No disposition moved.
   than during, unlike the HTTP path.
 
 <!-- manifest-automation:release-links-start -->
-[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/likefudan/rh-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...v0.3.0
 <!-- manifest-automation:release-links-end -->
 [0.2.0]: https://github.com/likefudan/rh-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/likefudan/rh-mcp/releases/tag/v0.1.0

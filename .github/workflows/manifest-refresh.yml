@@ -79,7 +79,7 @@ jobs:
           token: ${{ steps.app.outputs.token }}
           persist-credentials: true
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: manifest-observation-${{ github.run_id }}
           path: ${{ runner.temp }}/manifest-observation
@@ -157,7 +157,7 @@ jobs:
           token: ${{ steps.app.outputs.token }}
           persist-credentials: true
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: manifest-observation-${{ github.run_id }}
           path: ${{ runner.temp }}/manifest-observation

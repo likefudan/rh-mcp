@@ -827,7 +827,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:403ddc4c8a71bf470da906f572134c7d00684ae23af023e91df1872fc6d71b3f"
+    SHIPPED_DIGEST = "sha256:fe484a8b6c3ba7dad6ae2f462e41eb39f64349285012c92f672d341d75d2a30a"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -1062,12 +1062,19 @@ class TestTheShippedManifest:
         assert "REPLACE" in rationales["update_scan_filters"]
 
     def test_create_scan_expanded_write_scope_is_explicit(self) -> None:
-        """The 2026-08-12 refresh expanded an allowed scanner writer.
+        """This allowed scanner writer has now widened twice.
 
-        It may update an existing saved scan, but it did not become a trading
-        or account-permission capability. Pin the provider-visible input and
-        the reviewer decision together so a future prose-only refresh cannot
-        hide this blast-radius decision.
+        `2026-08-12` added the saved-scan update fields. `2026-08-21` added
+        `columns`, an optional list of display columns; the provider's own
+        wording is that "columns display values, filters screen", so it
+        changes what a saved scan renders and not what it may reach. Neither
+        expansion made this a trading or account-permission capability.
+
+        The property set is pinned as an exact equality on purpose: when the
+        `columns` refresh arrived, this assertion is what failed, and that
+        failure is the only thing that distinguished a widened *write* surface
+        from the 37 prose-only drifts in the same refresh. A subset check, or
+        no check, would have let it merge as routine.
         """
         entry = load_active_manifest().capabilities["create_scan"]
 
@@ -1078,8 +1085,13 @@ class TestTheShippedManifest:
             "preset",
             "filters",
             "title",
+            "columns",
         }
-        assert "scan_id" not in entry.input_schema.get("required", [])
+        # Nothing here is mandatory, which is what bounds the blast radius: a
+        # required field would make every existing caller send something new,
+        # and would let the provider widen what a write *must* carry rather
+        # than what it *may*.
+        assert not entry.input_schema.get("required")
         assert "existing scanner" in entry.rationale
         assert "never trades or moves funds" in entry.rationale
         assert "REPLACE semantics" in entry.rationale

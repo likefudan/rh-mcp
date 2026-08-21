@@ -6,7 +6,7 @@ name = "rh-mcp"
 # any runtime compatibility surface.
 # SemVer for a 0.x package makes the minor the breaking position. See
 # CHANGELOG.md.
-version = "0.3.1"
+version = "0.3.2"
 description = "A default-deny Python Read Gateway for Robinhood's official MCP server"
 readme = "README.md"
 license = "Apache-2.0"

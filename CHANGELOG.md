@@ -28,6 +28,27 @@ that carries them.
 
 ## [Unreleased]
 
+## [0.3.3] — 2026-08-22
+
+### Manifest
+
+#### `2026.08.22` — automated provider refresh candidate
+
+```
+sha256:2ea0954b4a52d9469837bc2b167904ab871de893475e68b43dc2a8fb02e7f886
+```
+
+The provider tool set and every reviewed `capability`, `disposition`, `mutates`
+and `rationale` decision are unchanged from `0.3.2`. Two consecutive
+authenticated discoveries returned byte-equivalent tool payloads after the
+observation timestamp was removed. Provider-derived schema or metadata moved
+for `create_scan`, `get_accounts`, `get_scanner_filter_specs`, `run_scan`, `update_scan_config`, `update_scan_filters`.
+
+The bot made no permission decision. Approval of the PR carrying this block is
+the owner's review of the provider diff and authorizes the release coordinator
+to merge, tag and publish this exact source.
+
+
 ## [0.3.2] — 2026-08-21
 
 ### Manifest
@@ -720,9 +741,9 @@ description changed. No disposition moved.
   than during, unlike the HTTP path.
 
 <!-- manifest-automation:release-links-start -->
-[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/likefudan/rh-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/likefudan/rh-mcp/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.1
 <!-- manifest-automation:release-links-end -->
 [0.2.0]: https://github.com/likefudan/rh-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/likefudan/rh-mcp/releases/tag/v0.1.0

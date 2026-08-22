@@ -2,9 +2,9 @@
   "manifest_format_version": "1.2",
   "canonicalization_version": "rh-canon-1",
   "digest_algorithm": "sha256",
-  "manifest_version": "2026.08.21",
-  "provider_surface_digest": "sha256:b3e6a6f17c8ff6d40c34c4fabb8f5165f3f5ff86a875d026f36737b83b8d6d16",
-  "observed_at": "2026-08-21T11:35:48.672428+00:00",
+  "manifest_version": "2026.08.22",
+  "provider_surface_digest": "sha256:3e3f1d3e3e63bef64a2270d9cd238e12c78b247e82c4e717fa3302b0e9e970f8",
+  "observed_at": "2026-08-22T10:55:45.473634+00:00",
   "reviewer": {
     "name": "Ke Li",
     "reviewed_at": "2026-08-12T11:30:49+00:00"
@@ -655,7 +655,7 @@
                         },
                         "columns": {
                           "type": "object",
-                          "description": "Column display name -> cell value, for every visible column in the scan's configuration. Numeric values are upstream-formatted strings; the agent should re-format for the user.",
+                          "description": "Column display name -> cell value, for every visible column in the scan's configuration. Values are raw numeric strings, not display-formatted: columns whose header contains % hold ratios (multiply by 100 before presenting), large numbers can arrive in scientific notation, and floats carry precision noise. Always format before presenting. An empty string means the datapoint is undefined for that instrument; the row still matched the filters.",
                           "additionalProperties": {
                             "type": "string"
                           }
@@ -767,7 +767,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:353909e7c22429e7fe7fb3c324ba27a9ddef347b83143229405d47747006aab5",
+      "schema_digest": "sha256:4d1324ece0ffd8918fb36a52d304363e24b590a36a4e336f1968e6fda7c2fc09",
       "metadata_digest": "sha256:d0e53a81a19a134952ba0501e7061a46d73c8f4dbe45d81d9d220306f804f6af"
     },
     {
@@ -1131,7 +1131,7 @@
       "mutates": false,
       "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_accounts",
-      "description": "List the user's brokerage accounts. Use this to look up account_number values needed by other tools. If the user has multiple accounts and hasn't specified which one, present the list and ask them to choose. Does NOT return reliable buying power — route buying-power questions through get_portfolio.",
+      "description": "List the user's brokerage accounts. Each account includes an agentic_allowed field indicating whether it's tradable by you — accounts where it's false are read-only to you. Use this to look up account_number values needed by other tools. Exactly one account is tradable by you; when the user is choosing an account for a trade, use that account directly without asking. Does NOT return reliable buying power — route buying-power questions through get_portfolio.",
       "input_schema": {
         "type": "object",
         "additionalProperties": false
@@ -1239,7 +1239,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "Sort the list deterministically when presenting: the default account first, agentic accounts (agentic_allowed=true) second, then other individual accounts, then retirement (IRA) accounts. Present account_number, rhc_account_number (label it \"Crypto Account\"), brokerage_account_type (label it \"Account Type\" — a linked crypto account always shares it, so never add a separate crypto account type column), type (label it \"Brokerage Trading Type\"), nickname (if set), and is_default — in that column order. In the Crypto Account column show \"N/A\" for accounts with an empty rhc_account_number; omit the column entirely only when no account has one. When referring to the account in user-facing prose (e.g. \"your <X> account\"), use nickname when set; fall back to brokerage_account_type otherwise. When displaying account_number or rhc_account_number to the user, mask all but the last 4 digits (e.g. '••••1234'); pass the full value to other tools unchanged — including get_option_level_upgrade_info and any fallback upgrade URL; masking breaks the link. Flag agentic_allowed when the user is choosing an account for a trade. agentic_allowed is caller-relative — true means accessible to this agent, false means this agent cannot act on it (the account may still be agentic-enabled for a different agent). Do not use nickname to determine agentic-account eligibility. Skip false accounts for trade operations; if the user asks why, say the account is not accessible to this agent, not that it needs to be enabled. When option_level is empty or 'option_level_0' and the user wants options, call get_option_level_upgrade_info with the account_number; if that tool is unavailable, direct the user to https://applink.robinhood.com/upgrade_options?account_number=<that account's account_number> (embed the full unmasked account_number in the URL). management_type='managed' is layered on brokerage_account_type — surface alongside, not as a replacement. For tools that ask for an account identifier on a crypto-backed flow (get_crypto_positions, future crypto write tools), pass rhs_account_number; for everything else (equities, options, etc.) pass account_number. Do not add an unsettled_funds column to the account table — surface it only via the following rule. Whenever you report an account's funds, value, or buying power and that account has type='cash' with unsettled_funds greater than 0, tell the user those unsettled proceeds could be traded immediately with a limited-margin upgrade, and — if the get_limited_margin_upgrade_info tool is available — call it with the account_number and share the appropriate upgrade link. If that tool is not available, say nothing about limited margin (there is no fallback). "
+            "description": "Sort the list deterministically when presenting: the default account first, agentic accounts (agentic_allowed=true) second, then other individual accounts, then retirement (IRA) accounts. Present account_number, rhc_account_number (label it \"Crypto Account\"), brokerage_account_type (label it \"Account Type\" — a linked crypto account always shares it, so never add a separate crypto account type column), type (label it \"Brokerage Trading Type\"), nickname (if set), and is_default — in that column order. In the Crypto Account column show \"N/A\" for accounts with an empty rhc_account_number; omit the column entirely only when no account has one. When referring to the account in user-facing prose (e.g. \"your <X> account\"), use nickname when set; fall back to brokerage_account_type otherwise. When displaying account_number or rhc_account_number to the user, mask all but the last 4 digits (e.g. '••••1234'); pass the full value to other tools unchanged — including get_option_level_upgrade_info and any fallback upgrade URL; masking breaks the link. Flag agentic_allowed when the user is choosing an account for a trade. There is exactly one agentic_allowed=true account — use it directly rather than asking which account to trade. agentic_allowed is caller-relative — true means accessible to this agent, false means this agent cannot act on it (the account may still be agentic-enabled for a different agent). Never state agentic_allowed's field name or raw boolean value to the user. Do not use nickname to determine agentic-account eligibility. Skip false accounts for trade operations; if the user asks why, say the account is not accessible to this agent, not that it needs to be enabled. When option_level is empty or 'option_level_0' and the user wants options, call get_option_level_upgrade_info with the account_number; if that tool is unavailable, direct the user to https://applink.robinhood.com/upgrade_options?account_number=<that account's account_number> (embed the full unmasked account_number in the URL). management_type='managed' is layered on brokerage_account_type — surface alongside, not as a replacement. For tools that ask for an account identifier on a crypto-backed flow (get_crypto_positions, future crypto write tools), pass rhs_account_number; for everything else (equities, options, etc.) pass account_number. Do not add an unsettled_funds column to the account table — surface it only via the following rule. Whenever you report an account's funds, value, or buying power and that account has type='cash' with unsettled_funds greater than 0, tell the user those unsettled proceeds could be traded immediately with a limited-margin upgrade, and — if the get_limited_margin_upgrade_info tool is available — call it with the account_number and share the appropriate upgrade link. If that tool is not available, say nothing about limited margin (there is no fallback). "
           }
         },
         "required": [
@@ -1251,8 +1251,8 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "schema_digest": "sha256:cff243bfc06af5658ee531abffed02d177be9bf17067532695610e13710658e8",
-      "metadata_digest": "sha256:d88ee9c99f2ec3bb770042cfd3dd32e291b89fc6fa19c0d087216c0309e4fea9"
+      "schema_digest": "sha256:86d2bd9ea4863f3dddc6fa59c53141000f7d5ba882bb8ad8997015106f97b93c",
+      "metadata_digest": "sha256:0fb6231d2aaef18bd7c42f7f3d4e1b83883b2a5702a03ed6196487ae6ce7a991"
     },
     {
       "capability": "get_earnings_calendar",
@@ -6163,7 +6163,7 @@
                     },
                     "unit_type": {
                       "type": "string",
-                      "description": "Value unit: DOLLAR, PERCENTAGE, or PLAIN."
+                      "description": "Value unit: DOLLAR, PERCENTAGE, or PLAIN. PERCENTAGE filters take DECIMAL values: 0.05 means 5%, so send 0.05 and never 5 (which reads as 500% and silently matches nothing). Same convention as the Legend UI, which converts percent input to decimals before sending."
                     },
                     "supported_predicates": {
                       "type": [
@@ -6239,7 +6239,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "Match filter_type exactly, including suffixes (e.g. percent-change filters use FILTER_TYPE_PERCENT_CHANGE_FROM_CLOSE, not FILTER_TYPE_PERCENT_CHANGE). If a filter's supported_intervals is non-empty, pass an interval — omitting it is the leading cause of an otherwise-valid filter returning no results. Use supported_predicates symbols exactly (e.g. \">\", \"BETWEEN\").\n\nIf a filter has options, its values must come from that list verbatim — it is the filter's complete vocabulary, and anything else is rejected. Do not infer these values from scan results: the instrument_type field in results is Robinhood's classification, which is coarser than the asset-type filter's (its EQUITY spans both STOCK and ETF), so a value copied from there screens for nothing."
+            "description": "Match filter_type exactly, including suffixes (e.g. percent-change filters use FILTER_TYPE_PERCENT_CHANGE_FROM_CLOSE, not FILTER_TYPE_PERCENT_CHANGE). If a filter's supported_intervals is non-empty, pass an interval — omitting it is the leading cause of an otherwise-valid filter returning no results. Use supported_predicates symbols exactly (e.g. \">\", \"BETWEEN\").\n\nNo enum filter scopes a scan to particular instruments: to restrict it to named tickers or to an index's members, use an expression filter on the symbol field (get_scanner_datapoints, descriptive category) rather than concluding it cannot be done.\n\nIf a filter has options, its values must come from that list verbatim — it is the filter's complete vocabulary, and anything else is rejected. Do not infer these values from scan results: the instrument_type field in results is Robinhood's classification, which is coarser than the asset-type filter's (its EQUITY spans both STOCK and ETF), so a value copied from there screens for nothing.\n\nFilters with unit_type PERCENTAGE take DECIMAL values: 0.05 means 5%. A whole-percent number silently matches nothing — \"implied volatility above 80\" is values [\"0.8\"], because [\"80\"] reads as 8000% and returns zero rows with no error. This applies to every PERCENTAGE filter (implied and historical volatility, IV rank, the margins, return on assets/equity, % change, gap)."
           }
         },
         "required": [
@@ -6251,7 +6251,7 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "schema_digest": "sha256:ce93f270b05982701fde08ba9d9c8cbdd8061a8c6bc579ed4bd2cc836099cbdf",
+      "schema_digest": "sha256:9bb11bd386ccd7817ba36cfcd1192bb1f918cf6036b09a99501e6cd9f0cfdd40",
       "metadata_digest": "sha256:955bf65a979ce80021ffcf3d858944d134dcad87fc0f56c249e10aa406ae9538"
     },
     {
@@ -8443,7 +8443,7 @@
                         },
                         "columns": {
                           "type": "object",
-                          "description": "Column display name -> cell value, for every visible column in the scan's configuration. Numeric values are upstream-formatted strings; the agent should re-format for the user.",
+                          "description": "Column display name -> cell value, for every visible column in the scan's configuration. Values are raw numeric strings, not display-formatted: columns whose header contains % hold ratios (multiply by 100 before presenting), large numbers can arrive in scientific notation, and floats carry precision noise. Always format before presenting. An empty string means the datapoint is undefined for that instrument; the row still matched the filters.",
                           "additionalProperties": {
                             "type": "string"
                           }
@@ -8545,7 +8545,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "How to interpret the response:\n- result.total_items is the total number of instruments matching the scan's filters. result.results may contain fewer entries if the scan's frontend_limit caps the rows — mention this to the user when total_items > len(results).\n- result.results is an array of matching instruments. Each entry has:\n  - ticker: trading symbol (e.g. \"AAPL\"). Empty when the scan does not have a Symbol/Ticker column visible — use instrument_id then.\n  - instrument_id: Robinhood instrument UUID. Pass this to other trading tools that take an instrument_id.\n  - instrument_type: STOCK, ETF, etc.\n  - columns: map of column display name -> cell value. Values are pre-formatted strings from upstream — re-format only if needed for the user. An empty string means the datapoint is undefined for that instrument (e.g. Market cap for an ETF); the row still matched the filters.\n- result.sorted_by tells you the row order (e.g. \"Volume desc\"). Mention it when describing the table.\n- result.filters_applied lists the filters in effect — useful for confirming \"this scan currently filters by RSI > 70\".\n- result.cortex_managed: true means the scan was created by Cortex inside Legend. Reads are fine, but update_scan_filters / update_scan_config will reject Cortex-managed scans — tell the user that if they ask to modify it.\n\nWhen presenting results:\n- Render as a table with ticker as the leftmost column followed by the most user-relevant columns (% Change, Volume, etc.).\n- State total_items so the user knows how big the match set is.\n- Note that results are live as of execution time — they will differ if run again later.\n- If results is empty: tell the user the scan returned 0 matches right now. Suggest relaxing filters with update_scan_filters if they want broader results.\n\nError handling:\n- \"scan does not exist or you do not have access to it\" → the scan_id is wrong or the scan belongs to a different user. Suggest get_scans to see available scans.\n- Rate-limited or upstream failure → surface the error verbatim, no automatic retry."
+            "description": "How to interpret the response:\n- result.total_items is the total number of instruments matching the scan's filters. result.results may contain fewer entries if the scan's frontend_limit caps the rows — mention this to the user when total_items > len(results).\n- result.results is an array of matching instruments. Each entry has:\n  - ticker: trading symbol (e.g. \"AAPL\"). Empty when the scan does not have a Symbol/Ticker column visible — use instrument_id then.\n  - instrument_id: Robinhood instrument UUID. Pass this to other trading tools that take an instrument_id.\n  - instrument_type: Robinhood's own asset classification (EQUITY, OPTION, INDEX, CRYPTO, FUTURES_PRODUCT, FUTURES_CONTRACT, COMBO). EQUITY covers both stocks and ETFs. This is NOT the vocabulary the asset-type filter accepts and it is not translatable to it: to screen on asset type, use the values listed in the asset-type filter's options from get_scanner_filter_specs, never a value copied from this field.\n  - columns: map of column display name -> cell value. Values are RAW numeric strings, not display-formatted; always format them before presenting. In particular: columns whose header contains \"%\" (e.g. \"% Change\") hold RATIOS, so multiply by 100 (a cell of \"-0.0059\" is -0.59%, not -0.0059%); large numbers can arrive in scientific notation (\"1.98e+11\"); floats carry precision noise (\"-0.6800000000000068\") and need rounding. An empty string means the datapoint is undefined for that instrument (e.g. Market cap for an ETF); the row still matched the filters.\n- result.sorted_by tells you the row order (e.g. \"Volume desc\"). Mention it when describing the table.\n- result.filters_applied lists the filters in effect — useful for confirming \"this scan currently filters by RSI > 70\".\n- result.cortex_managed: true means the scan was created by Cortex inside Legend. Reads are fine, but update_scan_filters / update_scan_config will reject Cortex-managed scans — tell the user that if they ask to modify it.\n\nWhen presenting results:\n- Render as a table with ticker as the leftmost column followed by the most user-relevant columns (% Change, Volume, etc.).\n- State total_items so the user knows how big the match set is.\n- Note that results are live as of execution time — they will differ if run again later.\n- If results is empty: tell the user the scan returned 0 matches right now. Suggest relaxing filters with update_scan_filters if they want broader results.\n\nError handling:\n- \"scan does not exist or you do not have access to it\" → the scan_id is wrong or the scan belongs to a different user. Suggest get_scans to see available scans.\n- Rate-limited or upstream failure → surface the error verbatim, no automatic retry."
           }
         },
         "required": [
@@ -8557,7 +8557,7 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "schema_digest": "sha256:08807bb2a834668b418172b34d85b4cde54878953e7bbd9d1e1a56cdef2878d2",
+      "schema_digest": "sha256:6d2a4e180fb839ae2bf3dac3d880bca9a8c42c2b6c2194aa729d71eeb37084a8",
       "metadata_digest": "sha256:d34285f04983267d7dcb2538b93cece77a259aadd137c42f1baf07bb858d8391"
     },
     {
@@ -8920,7 +8920,7 @@
                         },
                         "columns": {
                           "type": "object",
-                          "description": "Column display name -> cell value, for every visible column in the scan's configuration. Numeric values are upstream-formatted strings; the agent should re-format for the user.",
+                          "description": "Column display name -> cell value, for every visible column in the scan's configuration. Values are raw numeric strings, not display-formatted: columns whose header contains % hold ratios (multiply by 100 before presenting), large numbers can arrive in scientific notation, and floats carry precision noise. Always format before presenting. An empty string means the datapoint is undefined for that instrument; the row still matched the filters.",
                           "additionalProperties": {
                             "type": "string"
                           }
@@ -9032,7 +9032,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:1f01a35132f6bc69af07700e690ffe4d2c370ce28db6edee48fa1d60f5e1580f",
+      "schema_digest": "sha256:1e56e47085a95ad0e55a42a9a3131e9c5d54eda0c6cf3d55a58fb146869fcb58",
       "metadata_digest": "sha256:53885660d97546020b1d1beb27829b76dc831a7e87c64481f9ea624bb48380a2"
     },
     {
@@ -9158,7 +9158,7 @@
                         },
                         "columns": {
                           "type": "object",
-                          "description": "Column display name -> cell value, for every visible column in the scan's configuration. Numeric values are upstream-formatted strings; the agent should re-format for the user.",
+                          "description": "Column display name -> cell value, for every visible column in the scan's configuration. Values are raw numeric strings, not display-formatted: columns whose header contains % hold ratios (multiply by 100 before presenting), large numbers can arrive in scientific notation, and floats carry precision noise. Always format before presenting. An empty string means the datapoint is undefined for that instrument; the row still matched the filters.",
                           "additionalProperties": {
                             "type": "string"
                           }
@@ -9270,7 +9270,7 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:183ef1ca3f7cb02db576948d61528c6b10d8bdcf8e639fc5849bfcd257061442",
+      "schema_digest": "sha256:adba729581dee18de15302d82380266ae2237a20c73e3e32a7f826ddd26d4ba7",
       "metadata_digest": "sha256:21ce3a183b776f0ac2158c846796af2bddb04fb5ab36660b9682bd280c82f51f"
     },
     {
@@ -9384,5 +9384,5 @@
       "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191"
     }
   ],
-  "full_manifest_digest": "sha256:fe484a8b6c3ba7dad6ae2f462e41eb39f64349285012c92f672d341d75d2a30a"
+  "full_manifest_digest": "sha256:2ea0954b4a52d9469837bc2b167904ab871de893475e68b43dc2a8fb02e7f886"
 }

@@ -1,9 +1,20 @@
 name: Robinhood manifest refresh
 
 on:
-  schedule:
-    # Off the top of the hour because GitHub documents schedule congestion there.
-    - cron: "17 10 * * *"
+  # Dispatch only. There is deliberately no `schedule:` here.
+  #
+  # The `discover` job runs on the self-hosted Mac that holds the credential,
+  # and GitHub's scheduler knows nothing about whether that machine is awake.
+  # A cron at 10:17 UTC is 03:17 Pacific, when a laptop on battery is in deep
+  # idle: on 2026-08-24 the job sat queued for 31 minutes, was claimed during a
+  # DarkWake, and was abandoned by GitHub's 20-minute timeout while the runner
+  # was still working on it — a failure that says nothing about the manifest.
+  # Seven of the eleven scheduled runs before that failed the same way or worse.
+  #
+  # `scripts/local_refresh_trigger.sh`, run by a LaunchAgent on that same Mac,
+  # dispatches this instead. launchd re-runs a missed StartCalendarInterval at
+  # the next wake, so "run it when the machine is on" is a property of the
+  # trigger rather than a bet about 3am.
   workflow_dispatch:
 
 permissions:

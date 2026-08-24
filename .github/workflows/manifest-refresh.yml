@@ -11,7 +11,7 @@ on:
   # was still working on it — a failure that says nothing about the manifest.
   # Seven of the eleven scheduled runs before that failed the same way or worse.
   #
-  # `scripts/local_refresh_trigger.sh`, run by a LaunchAgent on that same Mac,
+  # `contrib/local_refresh_trigger.sh`, run by a LaunchAgent on that same Mac,
   # dispatches this instead. launchd re-runs a missed StartCalendarInterval at
   # the next wake, so "run it when the machine is on" is a property of the
   # trigger rather than a bet about 3am.

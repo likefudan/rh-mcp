@@ -28,7 +28,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
-    <string>/Users/kel/codebase/rh-mcp/scripts/local_refresh_trigger.sh</string>
+    <string>/Users/kel/codebase/rh-mcp/contrib/local_refresh_trigger.sh</string>
   </array>
 
   <key>StartCalendarInterval</key>

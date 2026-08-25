@@ -995,7 +995,7 @@ class TestTheShippedManifest:
         # Every file in the dossier, case-insensitively, and a mention may not
         # name this artifact.
         #
-        # Two earlier versions were defeated. The first excluded the approval
+        # Three earlier versions were defeated. The first excluded the approval
         # string only from the text before one heading, so appending a section
         # passed. The second required `v0.2.0` on the same line, which is
         # co-occurrence and not aboutness: `**0.3.3 is
@@ -1003,6 +1003,10 @@ class TestTheShippedManifest:
         # v0.2.0.)` passed fully green. Both versions read only README.md, so an
         # approval appended to REPORT.md — the file a consumer actually reads —
         # passed both gates untouched, and a lowercase variant passed either.
+        # The third searched the whole line for a denial and globbed `*.md` at
+        # one level, and was defeated three ways: a negation in a later clause,
+        # an approval in this dossier's `.py`, and one in an `.md` a directory
+        # down. Each of those five bypasses is now a red test.
         #
         # What this still cannot catch is stated rather than implied: a Unicode
         # lookalike for an ASCII letter, and a claim spread across sentences so
@@ -1017,18 +1021,36 @@ class TestTheShippedManifest:
         # `"not "` with a trailing space and missed `*not*`, because markdown
         # emphasis sits between the word and the space.
         denial = re.compile(r"\bnot\b|\bnever\b|n't|\bcannot\b|\bunlike\b|belongs to")
-        for path in sorted((root / "security-review" / "0.3.3").glob("*.md")):
+        label = "approved_for_ainvest_integration"
+        # A denial only counts *before* the label. Searching the whole line
+        # accepted `0.3.3 is APPROVED_FOR_AINVEST_INTEGRATION, and this is not
+        # a draft.` — a sentence that approves this artifact, waved through by
+        # a negation belonging to a different clause. English negates forward,
+        # so only the text leading up to the label can deny it.
+        #
+        # Every directory entry, not `glob("*.md")`: an approval appended to
+        # this dossier's `.py`, or to any `.md` one directory down, passed the
+        # previous version untouched.
+        dossier = root / "security-review" / "0.3.3"
+        for path in sorted(dossier.rglob("*")):
+            if path.suffix not in {".md", ".py", ".txt"} or not path.is_file():
+                continue
             lines = path.read_text().splitlines()
             for number, line in enumerate(lines, start=1):
                 lowered = line.casefold()
-                if "approved_for_ainvest_integration" not in lowered:
+                if label not in lowered:
                     continue
-                where = f"{path.name}:{number}"
-                # A denial may sit on the previous line: the label is long and
-                # wraps. Both are read, and neither alone is enough.
-                context = (lines[number - 2] if number > 1 else "").casefold() + " " + lowered
-                attributed = "v0.2.0" in context
-                denied = denial.search(context) is not None
+                rel = path.relative_to(dossier)
+                where = f"{rel}:{number}"
+                # The label is long and wraps, so a denial may sit on the line
+                # above; both are read, and only what precedes the label counts.
+                before = (
+                    (lines[number - 2] if number > 1 else "").casefold()
+                    + " "
+                    + lowered.split(label)[0]
+                )
+                attributed = "v0.2.0" in before or "v0.2.0" in lowered
+                denied = denial.search(before) is not None
                 assert attributed or denied, where
                 assert "0.3.3" not in lowered or denied, where
         assert "does **not** discharge" in source_review or "not** discharge" in source_review

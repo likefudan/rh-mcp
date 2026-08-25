@@ -28,7 +28,42 @@ that carries them.
 
 ## [Unreleased]
 
-## [0.3.3] — 2026-08-22
+## [0.3.3] — 2026-08-25
+
+**`0.3.1` and `0.3.2` were never tagged or published**, so this release carries
+them. The comparison link below runs from `v0.3.0`, the last tag that exists;
+the automation that maintains these links assumes every version bump becomes a
+tag, which is why the previous link named a `v0.3.2` that was never cut.
+
+### Security
+
+**Every allowed write's input surface is pinned.** `update_scan_config` widened
+in the `2026.08.21` refresh — a provider-side schema change that broadened what
+an allowed write accepts — and nothing in the suite caught it. The digest
+guards did not, because a refresh reseals them by design; that is the case they
+were never meant to cover. `ALLOWED_WRITE_INPUT_SURFACES` now pins all eleven
+allowed writes by exact property set and required set, written as literals, and
+asserts each declares `additionalProperties: false`.
+
+The limit is worth stating precisely: **this pins property *names*, not the
+schemas behind them.** Three mutations confirm the gap, each with all four
+digest families resealed and every document pin rewritten — the state a real
+refresh arrives in: loosening `sorting_direction.type` to
+`["string","object","array"]`, dropping the `items` constraint on `columns`,
+and replacing `columns` with `{}` all pass the full suite. `schema.py`
+validates `type` and `items` at call time, so each genuinely widens what the
+write accepts. Constraining the schemas is the next step and is not taken here:
+a table of eleven full schemas moves whenever the provider edits a nested
+description, which is the pressure that gets a check deleted.
+
+### Added
+
+**`security-review/0.3.3/`** — an in-project adversarial review of *source*,
+carrying `INTERNAL_ADVERSARIAL_REVIEW_PASS_WITH_CONDITIONS`. It is deliberately
+**not** an external released-artifact review and does not discharge §12.4. The
+directory now holds three dossiers of two different kinds, and a guard asserts
+the source review can never record `APPROVED_FOR_AINVEST_INTEGRATION` for
+itself — that label belongs to `v0.2.0`.
 
 ### Manifest
 
@@ -763,7 +798,7 @@ description changed. No disposition moved.
 
 <!-- manifest-automation:release-links-start -->
 [Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...HEAD
-[0.3.3]: https://github.com/likefudan/rh-mcp/compare/v0.3.2...v0.3.3
+[0.3.3]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.3
 [0.3.2]: https://github.com/likefudan/rh-mcp/compare/v0.3.1...v0.3.2
 <!-- manifest-automation:release-links-end -->
 [0.2.0]: https://github.com/likefudan/rh-mcp/compare/v0.1.0...v0.2.0

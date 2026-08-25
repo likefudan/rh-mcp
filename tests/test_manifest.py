@@ -817,11 +817,22 @@ class TestManifestSource:
 # `update_watchlist` survived a full simulated refresh, digests resealed, all
 # green.
 #
-# Reads are excluded deliberately. A widened read is drift to notice, not a
-# permission change: `mutates=false` still bounds it, and pinning all 54 would
-# turn every provider description tweak into a failing build, which is the
-# pressure that gets a check deleted. These eleven are where a widened input is
-# a widened *write*.
+# Reads are excluded deliberately, and the first reason given for it was wrong.
+# It said "`mutates=false` still bounds it". It does not: `mutates` is reported,
+# never consulted on the enforcement path, so it bounds nothing at runtime. What
+# actually bounds a widened read is that the provider tool behind it is a `get_*`
+# whose disposition was reviewed as a read — a weaker guarantee, and worth
+# naming as the weaker one.
+#
+# The real reason to stop at eleven is scope, not safety: these are where a
+# widened input is a widened *write*, and a table of fifty-four moves whenever
+# the provider edits a nested description, which is the pressure that gets a
+# check deleted. Pinning the thirty-five reads by property *name* only — which
+# no wording tweak moves — is a cheap next step and is recorded as one rather
+# than taken here.
+#
+# The repository already pins two reads, in `TestTheTwoUpgradeLinkToolsStayAligned`,
+# so "reads are never pinned" was never the project's position either.
 #
 # Written as literals rather than derived from the manifest: a table built from
 # the thing it checks agrees with every change to it.
@@ -980,9 +991,16 @@ class TestTheShippedManifest:
         # The source review must not be dressed as a released-artifact one.
         source_review = (root / "security-review" / "0.3.3" / "README.md").read_text()
         assert "INTERNAL_ADVERSARIAL_REVIEW_PASS_WITH_CONDITIONS" in source_review
-        assert (
-            "APPROVED_FOR_AINVEST_INTEGRATION" not in source_review.split("## This is not what")[0]
-        )
+        # Scoped to the whole file, not to the header. An earlier version
+        # excluded the approval string only from the text *before* the
+        # "This is not what..." heading, so appending an approval section to the
+        # end passed: the check read where the claim was expected rather than
+        # everywhere it could be made. The string may be *named* — the dossier
+        # says it does not carry it — but every mention must sit in a sentence
+        # about `v0.2.0`, which is the only artifact that does.
+        for line in source_review.splitlines():
+            if "APPROVED_FOR_AINVEST_INTEGRATION" in line:
+                assert "v0.2.0" in line, line
         assert "does **not** discharge" in source_review or "not** discharge" in source_review
 
         readme = " ".join((root / "README.md").read_text().split()).lower()
@@ -1144,8 +1162,17 @@ class TestTheShippedManifest:
         """The eleven writes, each an exact property and required set.
 
         `update_scan_config` widened in the 2026.08.21 refresh with nothing to
-        catch it. This is the class, not that instance: a widened input on a
-        `mutates: true` capability is a widened write, whoever it happens to.
+        catch it. This generalises that instance to all eleven, but only along
+        one axis, and the limit is worth stating precisely: **this pins property
+        *names*, not the schemas behind them.**
+
+        Measured, not inferred. Dropping the `enum` from
+        `update_scan_config.sorting_direction` passes all 203 tests in this file
+        with no digest resealing at all, and `schema.py` enforces `enum` at call
+        time — so that is a genuinely widened write this table does not see.
+        Constraining the schemas too is the obvious next step and is not taken
+        here; a table of eleven full schemas moves whenever the provider edits a
+        nested description, which is the pressure that gets a check deleted.
         """
         manifest = load_active_manifest()
         writes = {
@@ -1189,9 +1216,15 @@ class TestTheShippedManifest:
         the corrected rationale quoted it in order to say it had been wrong —
         that assertion was about a string, not about a claim. Asserting that
         every allowed write's rationale names every property it accepts is the
-        right general rule, but nine of the eleven existing rationales are
-        prose summaries that do not, and rewriting a reviewer's decision text
-        wholesale to satisfy a test is not a change a test may drive.
+        right general rule, but **all eleven** rationales are prose summaries
+        that do not — including this one, which says "sort column, sort
+        direction" and never the identifiers `sorting_column` and
+        `sorting_direction` — and rewriting a reviewer's decision text wholesale
+        to satisfy a test is not a change a test may drive.
+
+        An earlier version of this docstring said "nine of the eleven". That
+        number was never measured; it was inferred from the first failure the
+        general form produced. It is eleven.
 
         So the general invariant is left unenforced and stated here instead:
         `ALLOWED_WRITE_INPUT_SURFACES` is the mechanical control, and this is

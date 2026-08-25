@@ -35,8 +35,10 @@ The report binds to full-manifest digest
 Finding **P2-2** was that `update_scan_config`'s shipped rationale claimed it
 "overwrites those two fields only" after the tool had gained `columns` and
 stopped requiring the two fields it named. Correcting that rationale — in the
-same change that commits this report — moves the digest to
-`sha256:79ae864355be48818030eaf534b6db6cd9a5993b48f3a0e2cebc736ecde85cda`.
+same change that commits this report, and then correcting the correction, which
+first narrated its own history and tripped this dossier's own suite — moves the
+digest to
+`sha256:df71febf46c1e594da56f7e0205357af091a5b1fc7726bdf05259cd53f289bdc`.
 
 So this report describes the artifact **as reviewed**, which is one rationale
 and one digest behind the artifact that ships. That ordering is deliberate: a

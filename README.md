@@ -70,11 +70,11 @@ tool surface; like the five existing dangling tool references, it is inert in
 this gateway but must not be forwarded into a model or user-facing context.
 
 <!-- manifest-automation:current-start -->
-The current source declares package version `v0.3.2` and carries
-manifest `2026.08.21`. Its full-manifest digest is:
+The current source declares package version `v0.3.3` and carries
+manifest `2026.08.22`. Its full-manifest digest is:
 
 ```
-sha256:fe484a8b6c3ba7dad6ae2f462e41eb39f64349285012c92f672d341d75d2a30a
+sha256:2ea0954b4a52d9469837bc2b167904ab871de893475e68b43dc2a8fb02e7f886
 ```
 
 The version and digest belong to this source tree. A GitHub release exists only

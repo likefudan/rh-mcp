@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dispatches the Robinhood manifest refresh from the credential-bearing Mac.
+
+  Two things here are deliberate.
+
+  There is no SessionCreate key. Setting it gives the agent its own macOS
+  security session, which does not inherit the GUI session's unlocked login
+  keychain. That is what broke the Actions runner for fifteen consecutive runs:
+  `security` returned status 36, "User interaction is not allowed", and the
+  failure surfaced as a cancelled MCP handshake rather than as a credential
+  error. `gh` also keeps its token in the keychain, so this agent would fail
+  the same way for the same reason.
+
+  StartCalendarInterval rather than a GitHub cron. launchd re-runs a missed
+  calendar interval at the next wake; GitHub's scheduler queues a job and lets
+  it time out. That difference is the entire point of this file.
+
+  Install:
+    cp contrib/com.likefudan.rh-mcp.refresh-trigger.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.likefudan.rh-mcp.refresh-trigger.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.likefudan.rh-mcp.refresh-trigger</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/kel/codebase/rh-mcp/contrib/local_refresh_trigger.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>10</integer>
+    <key>Minute</key><integer>17</integer>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/kel/Library/Logs/rh-mcp/local-refresh-trigger.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/kel/Library/Logs/rh-mcp/local-refresh-trigger.err.log</string>
+</dict>
+</plist>

@@ -956,17 +956,41 @@ class TestTheShippedManifest:
         assert "a6725f9c…` — one block up" not in history_note
 
     def test_review_history_distinguishes_release_dossiers_from_pr_reviews(self) -> None:
-        """The review count must not erase the two pre-merge manifest reviews."""
+        """The review count must not blur three different kinds of review.
+
+        `security-review/` now holds three dossiers and they are not the same
+        thing. `v0.1.0` and `v0.2.0` are by parties external to this project,
+        on immutable published artifacts, and `v0.2.0` carries
+        `APPROVED_FOR_AINVEST_INTEGRATION`. `0.3.3` is an in-project
+        adversarial review of *source* — no tag, no release, no attestation —
+        and carries a deliberately different disposition. PRs #34 and #35 are a
+        third kind again: pre-merge manifest-change reviews recorded on the
+        pull requests and not under this directory at all.
+
+        A reader who takes "three reports" as "three of the same" has been
+        misled by a count, which is why the directory name, the disposition and
+        both notices are asserted here rather than the number alone.
+        """
         root = Path(__file__).resolve().parents[1]
         dossiers = sorted(
             path.parent.name for path in (root / "security-review").glob("*/REPORT.md")
         )
-        assert dossiers == ["v0.1.0", "v0.2.0"]
+        assert dossiers == ["0.3.3", "v0.1.0", "v0.2.0"]
+
+        # The source review must not be dressed as a released-artifact one.
+        source_review = (root / "security-review" / "0.3.3" / "README.md").read_text()
+        assert "INTERNAL_ADVERSARIAL_REVIEW_PASS_WITH_CONDITIONS" in source_review
+        assert (
+            "APPROVED_FOR_AINVEST_INTEGRATION" not in source_review.split("## This is not what")[0]
+        )
+        assert "does **not** discharge" in source_review or "not** discharge" in source_review
 
         readme = " ".join((root / "README.md").read_text().split()).lower()
         assert (
-            "two released-artifact review reports, plus two pre-merge manifest-change reviews"
+            "two released-artifact review reports, plus two pre-merge manifest-change "
+            "reviews, plus one in-project source review"
         ) in readme
+        assert "not** an external released-artifact review" in readme
         assert (
             "pr #34 independently reviewed the `2026.08.09` permission expansion, "
             "and pr #35 independently reviewed this `2026.08.12` scanner refresh "
@@ -976,7 +1000,10 @@ class TestTheShippedManifest:
         notice = " ".join((root / "NOTICE").read_text().split()).lower()
         assert (
             "two committed released-artifact review reports, plus two pre-merge "
-            "manifest-change reviews"
+            "manifest-change reviews, plus one in-project source review"
+        ) in notice
+        assert (
+            "the 0.3.3 source review is in-project and is not an external released-artifact review"
         ) in notice
         assert (
             "prs 34 and 35 reviewed the 2026.08.09 and 2026.08.12 manifest changes before merge"

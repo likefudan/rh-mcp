@@ -35,7 +35,7 @@ that carries them.
 #### `2026.08.22` — automated provider refresh candidate
 
 ```
-sha256:2ea0954b4a52d9469837bc2b167904ab871de893475e68b43dc2a8fb02e7f886
+sha256:df71febf46c1e594da56f7e0205357af091a5b1fc7726bdf05259cd53f289bdc
 ```
 
 The provider tool set and every reviewed `capability`, `disposition`, `mutates`
@@ -65,11 +65,32 @@ authenticated discoveries returned byte-equivalent tool payloads after the
 observation timestamp was removed. Provider-derived schema or metadata moved
 for `create_scan`, `get_accounts`, `get_earnings_calendar`, `get_earnings_results`, `get_equity_fundamentals`, `get_equity_historicals`, `get_equity_orders`, `get_equity_positions`, `get_equity_price_book`, `get_equity_quotes`, `get_equity_tax_lots`, `get_equity_technical_indicators`, `get_equity_tradability`, `get_financials`, `get_index_historicals`, `get_index_quotes`, `get_indexes`, `get_limited_margin_upgrade_info`, `get_option_chains`, `get_option_historicals`, `get_option_instruments`, `get_option_level_upgrade_info`, `get_option_orders`, `get_option_positions`, `get_option_quotes`, `get_option_watchlist`, `get_pnl_trade_history`, `get_popular_watchlists`, `get_portfolio`, `get_realized_pnl`, `get_scanner_filter_specs`, `get_scans`, `get_watchlist_items`, `get_watchlists`, `run_scan`, `search`, `update_scan_config`, `update_scan_filters`.
 
-**One of those 38 is not like the others, and the flat list above cannot show
-it.** `create_scan` is an *allowed write* (`mutates: true`), and this refresh
-widened its input surface: a new optional `columns` array of display-column
-definitions, on top of the saved-scan fields the `2026-08-12` refresh added.
-Every other moved entry is a description or a read schema.
+**Two of those 38 widened an allowed write, and the flat list above cannot
+show it.** `create_scan` and `update_scan_config` are both `mutates: true`.
+`create_scan` gained an optional `columns` array of display-column definitions,
+on top of the `scan_id` the `2026-08-12` refresh added. `update_scan_config`
+gained `columns` too — with REPLACE semantics over the scan's entire
+extra-column set — and dropped `sorting_column` and `sorting_direction` from
+`required`.
+
+**The sentence that stood here said `create_scan` was the only one, and that
+"every other moved entry is a description or a read schema".** That was false
+when it was written. `create_scan` had a pinned property set and failed loudly;
+`update_scan_config` had none and passed in silence, so the entry describes
+what CI showed rather than what changed. Three of fifty-four entries were
+pinned. All eleven allowed writes are pinned now, by property set, required
+set, and `additionalProperties: false`, and `update_scan_config`'s rationale —
+which still claimed it overwrote two named fields and nothing else — has been
+corrected to describe the tool the manifest actually authorises.
+
+The corrected rationale is purely descriptive, and briefly was not. A first
+version narrated its own correction, quoting the sentence it replaced. That
+tripped the 0.3.3 reviewer's own check, which asserts the absence of the old
+wording — an assertion about a string rather than about a claim, the same trap
+the test added here documents. The right fix was not to edit an auditor's
+evidence but to notice that a manifest rationale is a decision record about a
+capability, not a changelog for itself. The history belongs in this entry, and
+is here.
 
 Accepted as in scope. `columns` is optional, nothing in this tool's input is
 required, and by the provider's own wording "columns display values, filters

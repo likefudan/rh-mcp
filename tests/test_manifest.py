@@ -14,7 +14,7 @@ import re
 from collections.abc import Coroutine
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
@@ -172,8 +172,7 @@ class TestTheDiscoverySeamHasNoPermissiveDefaults:
             for f in dataclasses.fields(cls)
             if f.init
             and (
-                f.default is not dataclasses.MISSING
-                or f.default_factory is not dataclasses.MISSING
+                f.default is not dataclasses.MISSING or f.default_factory is not dataclasses.MISSING
             )
         ]
         assert not defaulted, (
@@ -205,13 +204,9 @@ class TestLoading:
     def test_golden_full_manifest_digest(self, manifest: ReviewedManifest) -> None:
         assert manifest.digest == BASE_DIGEST
 
-    def test_the_active_digest_is_recomputed_not_trusted(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_the_active_digest_is_recomputed_not_trusted(self, document: dict[str, Any]) -> None:
         """§7.1: the active digest is never a value trusted from the file."""
-        assert load_manifest_text(dumps(document)).digest == compute_full_manifest_digest(
-            document
-        )
+        assert load_manifest_text(dumps(document)).digest == compute_full_manifest_digest(document)
 
     def test_reports_reviewed_read_capabilities_only(self, manifest: ReviewedManifest) -> None:
         assert manifest.read_capabilities == ("alpha_reading", "beta_reading")
@@ -250,9 +245,7 @@ class TestLoading:
         spaced = load_manifest_text(json.dumps(document, indent=4))
         assert compact.digest == spaced.digest == BASE_DIGEST
 
-    def test_top_level_key_order_does_not_change_the_digest(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_top_level_key_order_does_not_change_the_digest(self, document: dict[str, Any]) -> None:
         reversed_document = dict(reversed(list(document.items())))
         assert load_manifest_text(dumps(reversed_document)).digest == BASE_DIGEST
 
@@ -474,9 +467,7 @@ class TestDocumentValidation:
             "full_manifest_digest",
         ],
     )
-    def test_rejects_a_missing_top_level_field(
-        self, document: dict[str, Any], field: str
-    ) -> None:
+    def test_rejects_a_missing_top_level_field(self, document: dict[str, Any], field: str) -> None:
         del document[field]
         expect_local_failure(document, "missing required field")
 
@@ -500,9 +491,7 @@ class TestDocumentValidation:
         expect_local_failure(build_manifest(observed_at="2026-01-15T00:00:00"), "observed_at")
 
     def test_rejects_a_non_utc_observation_timestamp(self) -> None:
-        expect_local_failure(
-            build_manifest(observed_at="2026-01-15T00:00:00+02:00"), "observed_at"
-        )
+        expect_local_failure(build_manifest(observed_at="2026-01-15T00:00:00+02:00"), "observed_at")
 
     def test_rejects_missing_reviewer_metadata(self) -> None:
         expect_local_failure(build_manifest(reviewer={"name": "someone"}), "reviewer is missing")
@@ -600,9 +589,7 @@ class TestDocumentValidation:
 
     def test_rejects_entries_out_of_canonical_order(self) -> None:
         entries = list(reversed(default_entries()))
-        expect_local_failure(
-            reseal(build_manifest(entries, sort_entries=False)), "canonical order"
-        )
+        expect_local_failure(reseal(build_manifest(entries, sort_entries=False)), "canonical order")
 
     def test_rejects_a_provider_surface_digest_that_does_not_match_the_entries(
         self, document: dict[str, Any]
@@ -672,19 +659,13 @@ class TestEntryValidation:
         manifest = load_manifest_text(dumps(reseal(build_manifest(entries))))
         assert "gamma_reading" not in manifest.capabilities
 
-    @pytest.mark.parametrize(
-        "name", ["", "has space", "a" * 129, "tab\tname", "ünïcode", 7, None]
-    )
+    @pytest.mark.parametrize("name", ["", "has space", "a" * 129, "tab\tname", "ünïcode", 7, None])
     def test_rejects_a_malformed_provider_tool_name(self, name: Any) -> None:
         entries = default_entries()
         entries[0]["provider_tool_name"] = name
-        expect_local_failure(
-            reseal(build_manifest(entries, sort_entries=False)), "printable ASCII"
-        )
+        expect_local_failure(reseal(build_manifest(entries, sort_entries=False)), "printable ASCII")
 
-    @pytest.mark.parametrize(
-        "disposition", ["read_allowed", "ALLOWED", "", None, True]
-    )
+    @pytest.mark.parametrize("disposition", ["read_allowed", "ALLOWED", "", None, True])
     def test_rejects_a_malformed_disposition(self, disposition: Any) -> None:
         expect_local_failure(
             reseal(self._with_entry(disposition=disposition)), "disposition must be one of"
@@ -777,8 +758,9 @@ class TestManifestSource:
     def test_rejects_non_standard_json_literals(
         self, document: dict[str, Any], literal: str
     ) -> None:
-        text = dumps(document).replace('"manifest_version": "2026.01.16"',
-                                       f'"manifest_version": {literal}', 1)
+        text = dumps(document).replace(
+            '"manifest_version": "2026.01.16"', f'"manifest_version": {literal}', 1
+        )
         expect_source_failure(lambda: load_manifest_text(text), "non-standard literal")
 
     def test_rejects_text_that_nests_too_deeply(self) -> None:
@@ -792,7 +774,7 @@ class TestManifestSource:
         entries[0] = build_entry(
             provider_tool_name="synthetic_alpha_read",
             capability="alpha_reading",
-            description="[" * 100 + '\\" {{{' ,
+            description="[" * 100 + '\\" {{{',
             input_schema=ALPHA_INPUT_SCHEMA,
             output_schema=ALPHA_OUTPUT_SCHEMA,
             annotations=entries[0]["annotations"],
@@ -815,6 +797,87 @@ class TestManifestSource:
         path.write_bytes(b'{"a": "\xff\xfe"}')
         expect_source_failure(lambda: load_manifest_file(path), "not valid UTF-8")
 
+
+# The eleven allowed writes, pinned as an exact input surface each.
+#
+# `create_scan` had a pin of its own and `update_scan_config` did not, and the
+# 2026.08.21 refresh widened both: `create_scan` gained `columns` and failed
+# loudly, `update_scan_config` gained `columns`, dropped `sorting_column` and
+# `sorting_direction` from `required`, and passed in silence. The CHANGELOG
+# entry written that day states that `create_scan` was the only widened write
+# and that "every other moved entry is a description or a read schema". That
+# was false when it was written, and nothing in 1210 tests contradicted it.
+#
+# A carried-forward `allowed` disposition on a tool whose schema moved beneath
+# it is the exact trade DESIGN §12.4 says the refresh mechanism makes. The
+# trade is only acceptable while a human reads the diff, and a human reads what
+# CI shows them. Three of fifty-four entries were pinned; an adversarial review
+# demonstrated that adding a property — including a *required* one — to
+# `update_scan_config`, `update_scan_filters`, `add_to_watchlist` or
+# `update_watchlist` survived a full simulated refresh, digests resealed, all
+# green.
+#
+# Reads are excluded deliberately, and the first reason given for it was wrong.
+# It said "`mutates=false` still bounds it". It does not: `mutates` is reported,
+# never consulted on the enforcement path, so it bounds nothing at runtime. What
+# actually bounds a widened read is that the provider tool behind it is a `get_*`
+# whose disposition was reviewed as a read — a weaker guarantee, and worth
+# naming as the weaker one.
+#
+# The real reason to stop at eleven is scope, not safety: these are where a
+# widened input is a widened *write*, and a table of fifty-four moves whenever
+# the provider edits a nested description, which is the pressure that gets a
+# check deleted. Pinning the thirty-five reads by property *name* only — which
+# no wording tweak moves — is a cheap next step and is recorded as one rather
+# than taken here.
+#
+# The repository already pins two reads, in `TestTheTwoUpgradeLinkToolsStayAligned`,
+# so "reads are never pinned" was never the project's position either.
+#
+# Written as literals rather than derived from the manifest: a table built from
+# the thing it checks agrees with every change to it.
+ALLOWED_WRITE_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[str]]]] = {
+    "add_option_to_watchlist": (
+        frozenset({"option_ids", "position_type"}),
+        frozenset({"option_ids"}),
+    ),
+    "add_to_watchlist": (
+        frozenset({"currency_pair_ids", "index_ids", "list_id", "symbols"}),
+        frozenset({"list_id"}),
+    ),
+    "create_scan": (
+        frozenset({"columns", "filters", "preset", "scan_id", "title"}),
+        frozenset(),
+    ),
+    "create_watchlist": (
+        frozenset({"display_description", "display_name", "icon_emoji"}),
+        frozenset({"display_name"}),
+    ),
+    "follow_watchlist": (frozenset({"list_id"}), frozenset({"list_id"})),
+    "remove_from_watchlist": (
+        frozenset({"currency_pair_ids", "index_ids", "list_id", "symbols"}),
+        frozenset({"list_id"}),
+    ),
+    "remove_option_from_watchlist": (
+        frozenset({"option_ids", "position_type"}),
+        frozenset({"option_ids"}),
+    ),
+    "unfollow_watchlist": (frozenset({"list_id"}), frozenset({"list_id"})),
+    "update_scan_config": (
+        frozenset({"columns", "scan_id", "sorting_column", "sorting_direction"}),
+        frozenset({"scan_id"}),
+    ),
+    "update_scan_filters": (
+        frozenset({"filters", "scan_id"}),
+        frozenset({"filters", "scan_id"}),
+    ),
+    "update_watchlist": (
+        frozenset({"display_description", "display_name", "icon_emoji", "list_id"}),
+        frozenset({"list_id"}),
+    ),
+}
+
+
 class TestTheShippedManifest:
     """Regression tests on the committed manifest itself (§6, §13).
 
@@ -827,7 +890,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:2ea0954b4a52d9469837bc2b167904ab871de893475e68b43dc2a8fb02e7f886"
+    SHIPPED_DIGEST = "sha256:df71febf46c1e594da56f7e0205357af091a5b1fc7726bdf05259cd53f289bdc"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -874,18 +937,18 @@ class TestTheShippedManifest:
         short = manifest.digest.split(":", 1)[1][:8]
 
         design = (root / "DESIGN.md").read_text()
-        current_source = design.split("<!-- manifest-automation:current-start -->", 1)[
-            1
-        ].split("<!-- manifest-automation:current-end -->", 1)[0]
+        current_source = design.split("<!-- manifest-automation:current-start -->", 1)[1].split(
+            "<!-- manifest-automation:current-end -->", 1
+        )[0]
         assert f"manifest `{manifest.manifest_version}` / `{short}…`" in " ".join(
             current_source.split()
         )
         assert f"`main` has since moved to `{manifest.manifest_version}`" not in design
 
         changelog = (root / "CHANGELOG.md").read_text()
-        current = changelog.split(f"#### `{manifest.manifest_version}`", 1)[1].split(
-            "\n#### ", 1
-        )[0]
+        current = changelog.split(f"#### `{manifest.manifest_version}`", 1)[1].split("\n#### ", 1)[
+            0
+        ]
         assert manifest.digest in current
 
         readme = (root / "README.md").read_text()
@@ -904,19 +967,100 @@ class TestTheShippedManifest:
         assert "a6725f9c…` — one block up" not in history_note
 
     def test_review_history_distinguishes_release_dossiers_from_pr_reviews(self) -> None:
-        """The review count must not erase the two pre-merge manifest reviews."""
+        """The review count must not blur three different kinds of review.
+
+        `security-review/` now holds three dossiers and they are not the same
+        thing. `v0.1.0` and `v0.2.0` are by parties external to this project,
+        on immutable published artifacts, and `v0.2.0` carries
+        `APPROVED_FOR_AINVEST_INTEGRATION`. `0.3.3` is an in-project
+        adversarial review of *source* — no tag, no release, no attestation —
+        and carries a deliberately different disposition. PRs #34 and #35 are a
+        third kind again: pre-merge manifest-change reviews recorded on the
+        pull requests and not under this directory at all.
+
+        A reader who takes "three reports" as "three of the same" has been
+        misled by a count, which is why the directory name, the disposition and
+        both notices are asserted here rather than the number alone.
+        """
         root = Path(__file__).resolve().parents[1]
         dossiers = sorted(
-            path.parent.name
-            for path in (root / "security-review").glob("*/REPORT.md")
+            path.parent.name for path in (root / "security-review").glob("*/REPORT.md")
         )
-        assert dossiers == ["v0.1.0", "v0.2.0"]
+        assert dossiers == ["0.3.3", "v0.1.0", "v0.2.0"]
+
+        # The source review must not be dressed as a released-artifact one.
+        source_review = (root / "security-review" / "0.3.3" / "README.md").read_text()
+        assert "INTERNAL_ADVERSARIAL_REVIEW_PASS_WITH_CONDITIONS" in source_review
+
+        # Every file in the dossier, case-insensitively, and a mention may not
+        # name this artifact.
+        #
+        # Three earlier versions were defeated. The first excluded the approval
+        # string only from the text before one heading, so appending a section
+        # passed. The second required `v0.2.0` on the same line, which is
+        # co-occurrence and not aboutness: `**0.3.3 is
+        # APPROVED_FOR_AINVEST_INTEGRATION.** (Recorded in the same form as
+        # v0.2.0.)` passed fully green. Both versions read only README.md, so an
+        # approval appended to REPORT.md — the file a consumer actually reads —
+        # passed both gates untouched, and a lowercase variant passed either.
+        # The third searched the whole line for a denial and globbed `*.md` at
+        # one level, and was defeated three ways: a negation in a later clause,
+        # an approval in this dossier's `.py`, and one in an `.md` a directory
+        # down. Each of those five bypasses is now a red test.
+        #
+        # What this still cannot catch is stated rather than implied: a Unicode
+        # lookalike for an ASCII letter, and a claim spread across sentences so
+        # that no single line carries both tokens. A dossier is prose, and prose
+        # asserted by a human is checked by a human; this stops the mechanical
+        # slips, not a determined author.
+        # A legitimate mention does one of two things: attributes the label to
+        # `v0.2.0`, or denies it. Anything else — above all a line that names
+        # this artifact and the label together without denying it — is the
+        # claim this dossier must never make.
+        # Word boundaries, not substrings: the first version of this list used
+        # `"not "` with a trailing space and missed `*not*`, because markdown
+        # emphasis sits between the word and the space.
+        denial = re.compile(r"\bnot\b|\bnever\b|n't|\bcannot\b|\bunlike\b|belongs to")
+        label = "approved_for_ainvest_integration"
+        # A denial only counts *before* the label. Searching the whole line
+        # accepted `0.3.3 is APPROVED_FOR_AINVEST_INTEGRATION, and this is not
+        # a draft.` — a sentence that approves this artifact, waved through by
+        # a negation belonging to a different clause. English negates forward,
+        # so only the text leading up to the label can deny it.
+        #
+        # Every directory entry, not `glob("*.md")`: an approval appended to
+        # this dossier's `.py`, or to any `.md` one directory down, passed the
+        # previous version untouched.
+        dossier = root / "security-review" / "0.3.3"
+        for path in sorted(dossier.rglob("*")):
+            if path.suffix not in {".md", ".py", ".txt"} or not path.is_file():
+                continue
+            lines = path.read_text().splitlines()
+            for number, line in enumerate(lines, start=1):
+                lowered = line.casefold()
+                if label not in lowered:
+                    continue
+                rel = path.relative_to(dossier)
+                where = f"{rel}:{number}"
+                # The label is long and wraps, so a denial may sit on the line
+                # above; both are read, and only what precedes the label counts.
+                before = (
+                    (lines[number - 2] if number > 1 else "").casefold()
+                    + " "
+                    + lowered.split(label)[0]
+                )
+                attributed = "v0.2.0" in before or "v0.2.0" in lowered
+                denied = denial.search(before) is not None
+                assert attributed or denied, where
+                assert "0.3.3" not in lowered or denied, where
+        assert "does **not** discharge" in source_review or "not** discharge" in source_review
 
         readme = " ".join((root / "README.md").read_text().split()).lower()
         assert (
-            "two released-artifact review reports, plus two pre-merge "
-            "manifest-change reviews"
+            "two released-artifact review reports, plus two pre-merge manifest-change "
+            "reviews, plus one in-project source review"
         ) in readme
+        assert "not** an external released-artifact review" in readme
         assert (
             "pr #34 independently reviewed the `2026.08.09` permission expansion, "
             "and pr #35 independently reviewed this `2026.08.12` scanner refresh "
@@ -926,15 +1070,15 @@ class TestTheShippedManifest:
         notice = " ".join((root / "NOTICE").read_text().split()).lower()
         assert (
             "two committed released-artifact review reports, plus two pre-merge "
-            "manifest-change reviews"
+            "manifest-change reviews, plus one in-project source review"
         ) in notice
         assert (
-            "prs 34 and 35 reviewed the 2026.08.09 and 2026.08.12 manifest changes "
-            "before merge"
+            "the 0.3.3 source review is in-project and is not an external released-artifact review"
         ) in notice
         assert (
-            "pr 35 independently reviewed the 2026.08.12 scanner refresh"
+            "prs 34 and 35 reviewed the 2026.08.09 and 2026.08.12 manifest changes before merge"
         ) in notice
+        assert ("pr 35 independently reviewed the 2026.08.12 scanner refresh") in notice
 
     def test_provider_prose_dangling_tool_names_are_exhaustively_recorded(self) -> None:
         """Provider prose is a prompt channel, including schema descriptions."""
@@ -1029,15 +1173,20 @@ class TestTheShippedManifest:
         the confusion the flag exists to remove.
         """
         allowed_mutations = {
-            e.capability
-            for e in load_active_manifest().entries
-            if e.read_allowed and e.mutates
+            e.capability for e in load_active_manifest().entries if e.read_allowed and e.mutates
         }
         assert allowed_mutations == {
-            "create_watchlist", "update_watchlist", "add_to_watchlist",
-            "remove_from_watchlist", "add_option_to_watchlist",
-            "remove_option_from_watchlist", "follow_watchlist", "unfollow_watchlist",
-            "create_scan", "update_scan_config", "update_scan_filters",
+            "create_watchlist",
+            "update_watchlist",
+            "add_to_watchlist",
+            "remove_from_watchlist",
+            "add_option_to_watchlist",
+            "remove_option_from_watchlist",
+            "follow_watchlist",
+            "unfollow_watchlist",
+            "create_scan",
+            "update_scan_config",
+            "update_scan_filters",
         }
 
     def test_no_read_capability_is_flagged_as_mutating(self) -> None:
@@ -1060,6 +1209,103 @@ class TestTheShippedManifest:
         }
         assert len(set(rationales.values())) == len(rationales)
         assert "REPLACE" in rationales["update_scan_filters"]
+
+    def test_every_allowed_write_input_surface_is_pinned(self) -> None:
+        """The eleven writes, each an exact property and required set.
+
+        `update_scan_config` widened in the 2026.08.21 refresh with nothing to
+        catch it. This generalises that instance to all eleven, but only along
+        one axis, and the limit is worth stating precisely: **this pins property
+        *names*, not the schemas behind them.**
+
+        Three measurements, each with all four digest families resealed, every
+        document pin rewritten, and `SHIPPED_DIGEST` re-pinned — the state a
+        real refresh would arrive in. All three pass 203/203:
+
+            update_scan_config.sorting_direction.type
+                "string" -> ["string", "object", "array"]
+            update_scan_config.columns
+                items constraint removed
+            update_scan_config.columns
+                replaced with {} — no constraint at all
+
+        `schema.py` validates `type` and `items` at call time, so each of these
+        genuinely widens what the write accepts, and this table sees none of
+        them. Constraining the schemas too is the obvious next step and is not
+        taken here: a table of eleven full schemas moves whenever the provider
+        edits a nested description, which is the pressure that gets a check
+        deleted.
+
+        An earlier version of this paragraph, headed "Measured, not inferred",
+        cited dropping an `enum` from `sorting_direction`. There is no `enum` in
+        that schema, or anywhere in the manifest — `grep -c \'"enum"\'` returns
+        zero across all 485 KB. The mutation removed nothing, the manifest bytes
+        did not change, and the "203 pass with no resealing" it reported was the
+        unmutated suite. A no-op was written up as a measurement, in a paragraph
+        whose first two words claimed it was one.
+        """
+        manifest = load_active_manifest()
+        writes = {
+            entry.capability: entry
+            for entry in manifest.entries
+            if entry.read_allowed and entry.mutates
+        }
+
+        assert set(writes) == set(ALLOWED_WRITE_INPUT_SURFACES)
+        assert len(writes) == 11
+
+        for capability, (properties, required) in ALLOWED_WRITE_INPUT_SURFACES.items():
+            schema = writes[capability].input_schema
+            assert set(schema["properties"]) == set(properties), capability
+            assert set(schema.get("required") or ()) == set(required), capability
+
+    def test_no_allowed_write_accepts_undeclared_arguments(self) -> None:
+        """`additionalProperties: false` is what makes the table above a bound.
+
+        Without it the pinned property set says what a caller may be *asked*
+        for, not what the tool will *accept*, and a provider could widen the
+        write without touching a single name this file checks.
+        """
+        for entry in load_active_manifest().entries:
+            if not (entry.read_allowed and entry.mutates):
+                continue
+            assert entry.input_schema.get("additionalProperties") is False, entry.capability
+
+    def test_update_scan_config_rationale_describes_what_it_now_accepts(self) -> None:
+        """A write's decision record must describe the surface it authorises.
+
+        This one read "Overwrites those two fields only" after the tool had
+        gained `columns` and stopped requiring the two fields it named. A
+        rationale narrower than the tool it authorises is an unpinned schema
+        one layer up: the reviewer's decision and the surface it was made about
+        drift apart, silently, and the decision is what a human reads when
+        deciding whether the write is still acceptable.
+
+        Two weaker forms were tried and rejected, which is why this one is
+        specific. Asserting the *absence* of the old wording failed as soon as
+        the corrected rationale quoted it in order to say it had been wrong —
+        that assertion was about a string, not about a claim. Asserting that
+        every allowed write's rationale names every property it accepts is the
+        right general rule, but **all eleven** rationales are prose summaries
+        that do not — including this one, which says "sort column, sort
+        direction" and never the identifiers `sorting_column` and
+        `sorting_direction` — and rewriting a reviewer's decision text wholesale
+        to satisfy a test is not a change a test may drive.
+
+        An earlier version of this docstring said "nine of the eleven". That
+        number was never measured; it was inferred from the first failure the
+        general form produced. It is eleven.
+
+        So the general invariant is left unenforced and stated here instead:
+        `ALLOWED_WRITE_INPUT_SURFACES` is the mechanical control, and this is
+        the one rationale known to have contradicted it.
+        """
+        entry = load_active_manifest().capabilities["update_scan_config"]
+
+        assert "columns" in set(entry.input_schema["properties"])
+        assert "columns" in entry.rationale
+        assert "REPLACE" in entry.rationale
+        assert "scan_id" in entry.rationale
 
     def test_create_scan_expanded_write_scope_is_explicit(self) -> None:
         """This allowed scanner writer has now widened twice.
@@ -1284,9 +1530,7 @@ class TestReadiness:
         assert not assessment.ready
 
     @pytest.mark.parametrize("digest", ["", "sha256:short", "not-a-digest", " " + BASE_DIGEST])
-    def test_a_malformed_pin_is_a_configuration_error_at_construction(
-        self, digest: str
-    ) -> None:
+    def test_a_malformed_pin_is_a_configuration_error_at_construction(self, digest: str) -> None:
         """§9: missing or malformed expected digests never reach readiness."""
         with pytest.raises(GatewayError) as excinfo:
             config_for(digest)
@@ -1301,9 +1545,7 @@ class TestReadiness:
 class TestDriftFailsClosed:
     """Every §6.2 drift condition, each proved to make readiness false."""
 
-    def _assess(
-        self, document: dict[str, Any], surface: ObservedSurface
-    ) -> ReadinessAssessment:
+    def _assess(self, document: dict[str, Any], surface: ObservedSurface) -> ReadinessAssessment:
         manifest = load_manifest_text(dumps(document))
         return run(establish_readiness(config_for(BASE_DIGEST), manifest, SpyDiscovery(surface)))
 
@@ -1414,9 +1656,7 @@ class TestDriftFailsClosed:
         assert assessment.findings[0].error_code is code
         assert assessment.findings[0].to_json_dict()["error_code"] == str(code)
 
-    def test_every_finding_carries_the_error_code_key(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_every_finding_carries_the_error_code_key(self, document: dict[str, Any]) -> None:
         """A stable shape: step 5 branches on a value, never on key existence."""
         tools = observed_tools(document)[:-1]
         findings = assess_surface(
@@ -1467,18 +1707,12 @@ class TestDriftFailsClosed:
         )
         assert DriftReason.PROVIDER_SURFACE_DIGEST_MISMATCH in {f.reason for f in findings}
 
-    def test_provider_tool_reordering_alone_is_not_drift(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_provider_tool_reordering_alone_is_not_drift(self, document: dict[str, Any]) -> None:
         """A re-ordered `tools/list` response is not a security-relevant change."""
-        surface = ObservedSurface(
-            tools=tuple(reversed(observed_tools(document))), complete=True
-        )
+        surface = ObservedSurface(tools=tuple(reversed(observed_tools(document))), complete=True)
         assert self._assess(document, surface).ready
 
-    def test_all_findings_are_collected_not_just_the_first(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_all_findings_are_collected_not_just_the_first(self, document: dict[str, Any]) -> None:
         tools = observed_tools(document)[:-1]
         tools.append(bare_tool("synthetic_unreviewed_tool"))
         assessment = self._assess(document, ObservedSurface(tools=tuple(tools), complete=True))
@@ -1488,9 +1722,7 @@ class TestDriftFailsClosed:
 
 
 class TestFindingsAreSafeToLog:
-    def test_an_unreviewed_tool_name_is_not_disclosed(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_an_unreviewed_tool_name_is_not_disclosed(self, document: dict[str, Any]) -> None:
         """§8 keeps `tools/list` response data out of logs."""
         surface = ObservedSurface(
             tools=(*observed_tools(document), bare_tool("synthetic_secret_tool")),
@@ -1633,9 +1865,7 @@ class TestPreflight:
         assert excinfo.value.code is ErrorCode.NOT_READY
 
     @pytest.mark.parametrize("field", ["schema_digest", "metadata_digest"])
-    def test_reverifies_each_pinned_digest(
-        self, ready: ReadinessAssessment, field: str
-    ) -> None:
+    def test_reverifies_each_pinned_digest(self, ready: ReadinessAssessment, field: str) -> None:
         """Defence in depth: the load-time check is not the only one.
 
         Each digest is tampered with on its own, so this fails if *either*
@@ -1688,7 +1918,7 @@ class TestPreflight:
         assert excinfo.value.code is ErrorCode.INPUT_INVALID
 
     def test_argument_validation_is_not_a_separate_call(self) -> None:
-        """"Resolved an entry" and "validated the input" are one event.
+        """ "Resolved an entry" and "validated the input" are one event.
 
         A caller cannot obtain a pinned entry without having had its arguments
         checked, so a returned entry can never read as permission to send

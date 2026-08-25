@@ -74,7 +74,7 @@ The current source declares package version `v0.3.3` and carries
 manifest `2026.08.22`. Its full-manifest digest is:
 
 ```
-sha256:2ea0954b4a52d9469837bc2b167904ab871de893475e68b43dc2a8fb02e7f886
+sha256:df71febf46c1e594da56f7e0205357af091a5b1fc7726bdf05259cd53f289bdc
 ```
 
 The version and digest belong to this source tree. A GitHub release exists only
@@ -91,10 +91,14 @@ error wire strings, the CLI exit codes, the manifest format fields, and the
 deliberately do not.
 
 **Two released-artifact review reports, plus two pre-merge manifest-change
-reviews.** The first found blocking defects in `v0.1.0`; the second approved
-`v0.2.0`. PR #34 independently reviewed the `2026.08.09` permission expansion,
-and PR #35 independently reviewed this `2026.08.12` scanner refresh before
-merge.
+reviews, plus one in-project source review.** The first found blocking defects
+in `v0.1.0`; the second approved `v0.2.0`. PR #34 independently reviewed the
+`2026.08.09` permission expansion, and PR #35 independently reviewed this
+`2026.08.12` scanner refresh before merge. `security-review/0.3.3/` holds an
+in-project adversarial review of `0.3.3` source — a fresh agent, no prior
+context, no tag and no attested artifact to examine — whose disposition is
+`INTERNAL_ADVERSARIAL_REVIEW_PASS_WITH_CONDITIONS` and which is **not** an
+external released-artifact review and does **not** discharge §12.4.
 
 An AI-assisted reviewer outside this project examined the exact `v0.1.0`
 artifacts and returned **CHANGES_REQUIRED**: a public transport export that

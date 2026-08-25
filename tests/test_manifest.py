@@ -14,7 +14,7 @@ import re
 from collections.abc import Coroutine
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
@@ -172,8 +172,7 @@ class TestTheDiscoverySeamHasNoPermissiveDefaults:
             for f in dataclasses.fields(cls)
             if f.init
             and (
-                f.default is not dataclasses.MISSING
-                or f.default_factory is not dataclasses.MISSING
+                f.default is not dataclasses.MISSING or f.default_factory is not dataclasses.MISSING
             )
         ]
         assert not defaulted, (
@@ -205,13 +204,9 @@ class TestLoading:
     def test_golden_full_manifest_digest(self, manifest: ReviewedManifest) -> None:
         assert manifest.digest == BASE_DIGEST
 
-    def test_the_active_digest_is_recomputed_not_trusted(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_the_active_digest_is_recomputed_not_trusted(self, document: dict[str, Any]) -> None:
         """§7.1: the active digest is never a value trusted from the file."""
-        assert load_manifest_text(dumps(document)).digest == compute_full_manifest_digest(
-            document
-        )
+        assert load_manifest_text(dumps(document)).digest == compute_full_manifest_digest(document)
 
     def test_reports_reviewed_read_capabilities_only(self, manifest: ReviewedManifest) -> None:
         assert manifest.read_capabilities == ("alpha_reading", "beta_reading")
@@ -250,9 +245,7 @@ class TestLoading:
         spaced = load_manifest_text(json.dumps(document, indent=4))
         assert compact.digest == spaced.digest == BASE_DIGEST
 
-    def test_top_level_key_order_does_not_change_the_digest(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_top_level_key_order_does_not_change_the_digest(self, document: dict[str, Any]) -> None:
         reversed_document = dict(reversed(list(document.items())))
         assert load_manifest_text(dumps(reversed_document)).digest == BASE_DIGEST
 
@@ -474,9 +467,7 @@ class TestDocumentValidation:
             "full_manifest_digest",
         ],
     )
-    def test_rejects_a_missing_top_level_field(
-        self, document: dict[str, Any], field: str
-    ) -> None:
+    def test_rejects_a_missing_top_level_field(self, document: dict[str, Any], field: str) -> None:
         del document[field]
         expect_local_failure(document, "missing required field")
 
@@ -500,9 +491,7 @@ class TestDocumentValidation:
         expect_local_failure(build_manifest(observed_at="2026-01-15T00:00:00"), "observed_at")
 
     def test_rejects_a_non_utc_observation_timestamp(self) -> None:
-        expect_local_failure(
-            build_manifest(observed_at="2026-01-15T00:00:00+02:00"), "observed_at"
-        )
+        expect_local_failure(build_manifest(observed_at="2026-01-15T00:00:00+02:00"), "observed_at")
 
     def test_rejects_missing_reviewer_metadata(self) -> None:
         expect_local_failure(build_manifest(reviewer={"name": "someone"}), "reviewer is missing")
@@ -600,9 +589,7 @@ class TestDocumentValidation:
 
     def test_rejects_entries_out_of_canonical_order(self) -> None:
         entries = list(reversed(default_entries()))
-        expect_local_failure(
-            reseal(build_manifest(entries, sort_entries=False)), "canonical order"
-        )
+        expect_local_failure(reseal(build_manifest(entries, sort_entries=False)), "canonical order")
 
     def test_rejects_a_provider_surface_digest_that_does_not_match_the_entries(
         self, document: dict[str, Any]
@@ -672,19 +659,13 @@ class TestEntryValidation:
         manifest = load_manifest_text(dumps(reseal(build_manifest(entries))))
         assert "gamma_reading" not in manifest.capabilities
 
-    @pytest.mark.parametrize(
-        "name", ["", "has space", "a" * 129, "tab\tname", "ünïcode", 7, None]
-    )
+    @pytest.mark.parametrize("name", ["", "has space", "a" * 129, "tab\tname", "ünïcode", 7, None])
     def test_rejects_a_malformed_provider_tool_name(self, name: Any) -> None:
         entries = default_entries()
         entries[0]["provider_tool_name"] = name
-        expect_local_failure(
-            reseal(build_manifest(entries, sort_entries=False)), "printable ASCII"
-        )
+        expect_local_failure(reseal(build_manifest(entries, sort_entries=False)), "printable ASCII")
 
-    @pytest.mark.parametrize(
-        "disposition", ["read_allowed", "ALLOWED", "", None, True]
-    )
+    @pytest.mark.parametrize("disposition", ["read_allowed", "ALLOWED", "", None, True])
     def test_rejects_a_malformed_disposition(self, disposition: Any) -> None:
         expect_local_failure(
             reseal(self._with_entry(disposition=disposition)), "disposition must be one of"
@@ -777,8 +758,9 @@ class TestManifestSource:
     def test_rejects_non_standard_json_literals(
         self, document: dict[str, Any], literal: str
     ) -> None:
-        text = dumps(document).replace('"manifest_version": "2026.01.16"',
-                                       f'"manifest_version": {literal}', 1)
+        text = dumps(document).replace(
+            '"manifest_version": "2026.01.16"', f'"manifest_version": {literal}', 1
+        )
         expect_source_failure(lambda: load_manifest_text(text), "non-standard literal")
 
     def test_rejects_text_that_nests_too_deeply(self) -> None:
@@ -792,7 +774,7 @@ class TestManifestSource:
         entries[0] = build_entry(
             provider_tool_name="synthetic_alpha_read",
             capability="alpha_reading",
-            description="[" * 100 + '\\" {{{' ,
+            description="[" * 100 + '\\" {{{',
             input_schema=ALPHA_INPUT_SCHEMA,
             output_schema=ALPHA_OUTPUT_SCHEMA,
             annotations=entries[0]["annotations"],
@@ -815,6 +797,76 @@ class TestManifestSource:
         path.write_bytes(b'{"a": "\xff\xfe"}')
         expect_source_failure(lambda: load_manifest_file(path), "not valid UTF-8")
 
+
+# The eleven allowed writes, pinned as an exact input surface each.
+#
+# `create_scan` had a pin of its own and `update_scan_config` did not, and the
+# 2026.08.21 refresh widened both: `create_scan` gained `columns` and failed
+# loudly, `update_scan_config` gained `columns`, dropped `sorting_column` and
+# `sorting_direction` from `required`, and passed in silence. The CHANGELOG
+# entry written that day states that `create_scan` was the only widened write
+# and that "every other moved entry is a description or a read schema". That
+# was false when it was written, and nothing in 1210 tests contradicted it.
+#
+# A carried-forward `allowed` disposition on a tool whose schema moved beneath
+# it is the exact trade DESIGN §12.4 says the refresh mechanism makes. The
+# trade is only acceptable while a human reads the diff, and a human reads what
+# CI shows them. Three of fifty-four entries were pinned; an adversarial review
+# demonstrated that adding a property — including a *required* one — to
+# `update_scan_config`, `update_scan_filters`, `add_to_watchlist` or
+# `update_watchlist` survived a full simulated refresh, digests resealed, all
+# green.
+#
+# Reads are excluded deliberately. A widened read is drift to notice, not a
+# permission change: `mutates=false` still bounds it, and pinning all 54 would
+# turn every provider description tweak into a failing build, which is the
+# pressure that gets a check deleted. These eleven are where a widened input is
+# a widened *write*.
+#
+# Written as literals rather than derived from the manifest: a table built from
+# the thing it checks agrees with every change to it.
+ALLOWED_WRITE_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[str]]]] = {
+    "add_option_to_watchlist": (
+        frozenset({"option_ids", "position_type"}),
+        frozenset({"option_ids"}),
+    ),
+    "add_to_watchlist": (
+        frozenset({"currency_pair_ids", "index_ids", "list_id", "symbols"}),
+        frozenset({"list_id"}),
+    ),
+    "create_scan": (
+        frozenset({"columns", "filters", "preset", "scan_id", "title"}),
+        frozenset(),
+    ),
+    "create_watchlist": (
+        frozenset({"display_description", "display_name", "icon_emoji"}),
+        frozenset({"display_name"}),
+    ),
+    "follow_watchlist": (frozenset({"list_id"}), frozenset({"list_id"})),
+    "remove_from_watchlist": (
+        frozenset({"currency_pair_ids", "index_ids", "list_id", "symbols"}),
+        frozenset({"list_id"}),
+    ),
+    "remove_option_from_watchlist": (
+        frozenset({"option_ids", "position_type"}),
+        frozenset({"option_ids"}),
+    ),
+    "unfollow_watchlist": (frozenset({"list_id"}), frozenset({"list_id"})),
+    "update_scan_config": (
+        frozenset({"columns", "scan_id", "sorting_column", "sorting_direction"}),
+        frozenset({"scan_id"}),
+    ),
+    "update_scan_filters": (
+        frozenset({"filters", "scan_id"}),
+        frozenset({"filters", "scan_id"}),
+    ),
+    "update_watchlist": (
+        frozenset({"display_description", "display_name", "icon_emoji", "list_id"}),
+        frozenset({"list_id"}),
+    ),
+}
+
+
 class TestTheShippedManifest:
     """Regression tests on the committed manifest itself (§6, §13).
 
@@ -827,7 +879,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:2ea0954b4a52d9469837bc2b167904ab871de893475e68b43dc2a8fb02e7f886"
+    SHIPPED_DIGEST = "sha256:79ae864355be48818030eaf534b6db6cd9a5993b48f3a0e2cebc736ecde85cda"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -874,18 +926,18 @@ class TestTheShippedManifest:
         short = manifest.digest.split(":", 1)[1][:8]
 
         design = (root / "DESIGN.md").read_text()
-        current_source = design.split("<!-- manifest-automation:current-start -->", 1)[
-            1
-        ].split("<!-- manifest-automation:current-end -->", 1)[0]
+        current_source = design.split("<!-- manifest-automation:current-start -->", 1)[1].split(
+            "<!-- manifest-automation:current-end -->", 1
+        )[0]
         assert f"manifest `{manifest.manifest_version}` / `{short}…`" in " ".join(
             current_source.split()
         )
         assert f"`main` has since moved to `{manifest.manifest_version}`" not in design
 
         changelog = (root / "CHANGELOG.md").read_text()
-        current = changelog.split(f"#### `{manifest.manifest_version}`", 1)[1].split(
-            "\n#### ", 1
-        )[0]
+        current = changelog.split(f"#### `{manifest.manifest_version}`", 1)[1].split("\n#### ", 1)[
+            0
+        ]
         assert manifest.digest in current
 
         readme = (root / "README.md").read_text()
@@ -907,15 +959,13 @@ class TestTheShippedManifest:
         """The review count must not erase the two pre-merge manifest reviews."""
         root = Path(__file__).resolve().parents[1]
         dossiers = sorted(
-            path.parent.name
-            for path in (root / "security-review").glob("*/REPORT.md")
+            path.parent.name for path in (root / "security-review").glob("*/REPORT.md")
         )
         assert dossiers == ["v0.1.0", "v0.2.0"]
 
         readme = " ".join((root / "README.md").read_text().split()).lower()
         assert (
-            "two released-artifact review reports, plus two pre-merge "
-            "manifest-change reviews"
+            "two released-artifact review reports, plus two pre-merge manifest-change reviews"
         ) in readme
         assert (
             "pr #34 independently reviewed the `2026.08.09` permission expansion, "
@@ -929,12 +979,9 @@ class TestTheShippedManifest:
             "manifest-change reviews"
         ) in notice
         assert (
-            "prs 34 and 35 reviewed the 2026.08.09 and 2026.08.12 manifest changes "
-            "before merge"
+            "prs 34 and 35 reviewed the 2026.08.09 and 2026.08.12 manifest changes before merge"
         ) in notice
-        assert (
-            "pr 35 independently reviewed the 2026.08.12 scanner refresh"
-        ) in notice
+        assert ("pr 35 independently reviewed the 2026.08.12 scanner refresh") in notice
 
     def test_provider_prose_dangling_tool_names_are_exhaustively_recorded(self) -> None:
         """Provider prose is a prompt channel, including schema descriptions."""
@@ -1029,15 +1076,20 @@ class TestTheShippedManifest:
         the confusion the flag exists to remove.
         """
         allowed_mutations = {
-            e.capability
-            for e in load_active_manifest().entries
-            if e.read_allowed and e.mutates
+            e.capability for e in load_active_manifest().entries if e.read_allowed and e.mutates
         }
         assert allowed_mutations == {
-            "create_watchlist", "update_watchlist", "add_to_watchlist",
-            "remove_from_watchlist", "add_option_to_watchlist",
-            "remove_option_from_watchlist", "follow_watchlist", "unfollow_watchlist",
-            "create_scan", "update_scan_config", "update_scan_filters",
+            "create_watchlist",
+            "update_watchlist",
+            "add_to_watchlist",
+            "remove_from_watchlist",
+            "add_option_to_watchlist",
+            "remove_option_from_watchlist",
+            "follow_watchlist",
+            "unfollow_watchlist",
+            "create_scan",
+            "update_scan_config",
+            "update_scan_filters",
         }
 
     def test_no_read_capability_is_flagged_as_mutating(self) -> None:
@@ -1060,6 +1112,70 @@ class TestTheShippedManifest:
         }
         assert len(set(rationales.values())) == len(rationales)
         assert "REPLACE" in rationales["update_scan_filters"]
+
+    def test_every_allowed_write_input_surface_is_pinned(self) -> None:
+        """The eleven writes, each an exact property and required set.
+
+        `update_scan_config` widened in the 2026.08.21 refresh with nothing to
+        catch it. This is the class, not that instance: a widened input on a
+        `mutates: true` capability is a widened write, whoever it happens to.
+        """
+        manifest = load_active_manifest()
+        writes = {
+            entry.capability: entry
+            for entry in manifest.entries
+            if entry.read_allowed and entry.mutates
+        }
+
+        assert set(writes) == set(ALLOWED_WRITE_INPUT_SURFACES)
+        assert len(writes) == 11
+
+        for capability, (properties, required) in ALLOWED_WRITE_INPUT_SURFACES.items():
+            schema = writes[capability].input_schema
+            assert set(schema["properties"]) == set(properties), capability
+            assert set(schema.get("required") or ()) == set(required), capability
+
+    def test_no_allowed_write_accepts_undeclared_arguments(self) -> None:
+        """`additionalProperties: false` is what makes the table above a bound.
+
+        Without it the pinned property set says what a caller may be *asked*
+        for, not what the tool will *accept*, and a provider could widen the
+        write without touching a single name this file checks.
+        """
+        for entry in load_active_manifest().entries:
+            if not (entry.read_allowed and entry.mutates):
+                continue
+            assert entry.input_schema.get("additionalProperties") is False, entry.capability
+
+    def test_update_scan_config_rationale_describes_what_it_now_accepts(self) -> None:
+        """A write's decision record must describe the surface it authorises.
+
+        This one read "Overwrites those two fields only" after the tool had
+        gained `columns` and stopped requiring the two fields it named. A
+        rationale narrower than the tool it authorises is an unpinned schema
+        one layer up: the reviewer's decision and the surface it was made about
+        drift apart, silently, and the decision is what a human reads when
+        deciding whether the write is still acceptable.
+
+        Two weaker forms were tried and rejected, which is why this one is
+        specific. Asserting the *absence* of the old wording failed as soon as
+        the corrected rationale quoted it in order to say it had been wrong —
+        that assertion was about a string, not about a claim. Asserting that
+        every allowed write's rationale names every property it accepts is the
+        right general rule, but nine of the eleven existing rationales are
+        prose summaries that do not, and rewriting a reviewer's decision text
+        wholesale to satisfy a test is not a change a test may drive.
+
+        So the general invariant is left unenforced and stated here instead:
+        `ALLOWED_WRITE_INPUT_SURFACES` is the mechanical control, and this is
+        the one rationale known to have contradicted it.
+        """
+        entry = load_active_manifest().capabilities["update_scan_config"]
+
+        assert "columns" in set(entry.input_schema["properties"])
+        assert "columns" in entry.rationale
+        assert "REPLACE" in entry.rationale
+        assert "scan_id" in entry.rationale
 
     def test_create_scan_expanded_write_scope_is_explicit(self) -> None:
         """This allowed scanner writer has now widened twice.
@@ -1284,9 +1400,7 @@ class TestReadiness:
         assert not assessment.ready
 
     @pytest.mark.parametrize("digest", ["", "sha256:short", "not-a-digest", " " + BASE_DIGEST])
-    def test_a_malformed_pin_is_a_configuration_error_at_construction(
-        self, digest: str
-    ) -> None:
+    def test_a_malformed_pin_is_a_configuration_error_at_construction(self, digest: str) -> None:
         """§9: missing or malformed expected digests never reach readiness."""
         with pytest.raises(GatewayError) as excinfo:
             config_for(digest)
@@ -1301,9 +1415,7 @@ class TestReadiness:
 class TestDriftFailsClosed:
     """Every §6.2 drift condition, each proved to make readiness false."""
 
-    def _assess(
-        self, document: dict[str, Any], surface: ObservedSurface
-    ) -> ReadinessAssessment:
+    def _assess(self, document: dict[str, Any], surface: ObservedSurface) -> ReadinessAssessment:
         manifest = load_manifest_text(dumps(document))
         return run(establish_readiness(config_for(BASE_DIGEST), manifest, SpyDiscovery(surface)))
 
@@ -1414,9 +1526,7 @@ class TestDriftFailsClosed:
         assert assessment.findings[0].error_code is code
         assert assessment.findings[0].to_json_dict()["error_code"] == str(code)
 
-    def test_every_finding_carries_the_error_code_key(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_every_finding_carries_the_error_code_key(self, document: dict[str, Any]) -> None:
         """A stable shape: step 5 branches on a value, never on key existence."""
         tools = observed_tools(document)[:-1]
         findings = assess_surface(
@@ -1467,18 +1577,12 @@ class TestDriftFailsClosed:
         )
         assert DriftReason.PROVIDER_SURFACE_DIGEST_MISMATCH in {f.reason for f in findings}
 
-    def test_provider_tool_reordering_alone_is_not_drift(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_provider_tool_reordering_alone_is_not_drift(self, document: dict[str, Any]) -> None:
         """A re-ordered `tools/list` response is not a security-relevant change."""
-        surface = ObservedSurface(
-            tools=tuple(reversed(observed_tools(document))), complete=True
-        )
+        surface = ObservedSurface(tools=tuple(reversed(observed_tools(document))), complete=True)
         assert self._assess(document, surface).ready
 
-    def test_all_findings_are_collected_not_just_the_first(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_all_findings_are_collected_not_just_the_first(self, document: dict[str, Any]) -> None:
         tools = observed_tools(document)[:-1]
         tools.append(bare_tool("synthetic_unreviewed_tool"))
         assessment = self._assess(document, ObservedSurface(tools=tuple(tools), complete=True))
@@ -1488,9 +1592,7 @@ class TestDriftFailsClosed:
 
 
 class TestFindingsAreSafeToLog:
-    def test_an_unreviewed_tool_name_is_not_disclosed(
-        self, document: dict[str, Any]
-    ) -> None:
+    def test_an_unreviewed_tool_name_is_not_disclosed(self, document: dict[str, Any]) -> None:
         """§8 keeps `tools/list` response data out of logs."""
         surface = ObservedSurface(
             tools=(*observed_tools(document), bare_tool("synthetic_secret_tool")),
@@ -1633,9 +1735,7 @@ class TestPreflight:
         assert excinfo.value.code is ErrorCode.NOT_READY
 
     @pytest.mark.parametrize("field", ["schema_digest", "metadata_digest"])
-    def test_reverifies_each_pinned_digest(
-        self, ready: ReadinessAssessment, field: str
-    ) -> None:
+    def test_reverifies_each_pinned_digest(self, ready: ReadinessAssessment, field: str) -> None:
         """Defence in depth: the load-time check is not the only one.
 
         Each digest is tampered with on its own, so this fails if *either*
@@ -1688,7 +1788,7 @@ class TestPreflight:
         assert excinfo.value.code is ErrorCode.INPUT_INVALID
 
     def test_argument_validation_is_not_a_separate_call(self) -> None:
-        """"Resolved an entry" and "validated the input" are one event.
+        """ "Resolved an entry" and "validated the input" are one event.
 
         A caller cannot obtain a pinned entry without having had its arguments
         checked, so a returned entry can never read as permission to send

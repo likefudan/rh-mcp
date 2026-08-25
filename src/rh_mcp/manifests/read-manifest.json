@@ -8811,7 +8811,7 @@
       "capability": "update_scan_config",
       "disposition": "allowed",
       "mutates": true,
-      "rationale": "Changes a saved scan's sort column and direction. Overwrites those two fields only.",
+      "rationale": "Changes a saved scan's sort column, sort direction, and extra display columns. The 2026.08.21 provider refresh added `columns` and dropped `sorting_column` and `sorting_direction` from `required`; `columns` uses REPLACE semantics over the scan's entire extra-column set, so a caller supplying it must supply the full intended set. Only `scan_id` is required. It never trades or moves funds. The earlier wording, \"overwrites those two fields only\", described a narrower tool than the one this manifest authorises.",
       "provider_tool_name": "update_scan_config",
       "description": "Change the sort order of a saved scan's results table, and/or replace its extra result columns. The scan's filters are always preserved.\n\nParameters:\n- scan_id (required) — the scan to modify.\n- sorting_column (required unless columns is provided) — display name of the column to sort by. Must match a column on the scan; the error response lists available columns when no match is found.\n- sorting_direction — \"asc\" or \"desc\". Required with sorting_column.\n- columns (optional) — REPLACE the scan's extra result columns (beyond the filters' own columns and the standard defaults). The scan keeps its current filters verbatim and gets a new configuration version — earlier versions are preserved. To add one column, pass the complete intended set (current columns from get_scans plus the new one). Columns display values, filters screen — to show a datapoint without restricting results, this is the tool, never a no-op filter.\n\nRestrictions:\n- Cortex-managed scans (cortex_managed: true in get_scans) are rejected.\n- Omitted/empty columns means sorting-only. To remove every extra column, use create_scan with this scan's scan_id and its current filters.\n- An expression matching a standard column's canonical form is saved as that standard column, canonical name included.\n\nReturns the scan with the changes applied and fresh live results.",
       "input_schema": {
@@ -9384,5 +9384,5 @@
       "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191"
     }
   ],
-  "full_manifest_digest": "sha256:2ea0954b4a52d9469837bc2b167904ab871de893475e68b43dc2a8fb02e7f886"
+  "full_manifest_digest": "sha256:79ae864355be48818030eaf534b6db6cd9a5993b48f3a0e2cebc736ecde85cda"
 }

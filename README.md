@@ -74,7 +74,7 @@ The current source declares package version `v0.3.3` and carries
 manifest `2026.08.22`. Its full-manifest digest is:
 
 ```
-sha256:2ea0954b4a52d9469837bc2b167904ab871de893475e68b43dc2a8fb02e7f886
+sha256:79ae864355be48818030eaf534b6db6cd9a5993b48f3a0e2cebc736ecde85cda
 ```
 
 The version and digest belong to this source tree. A GitHub release exists only

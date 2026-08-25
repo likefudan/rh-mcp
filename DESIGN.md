@@ -1169,7 +1169,7 @@ historical entries while refreshing the manifest. A consumer pinning the
 digest the artifact refuses readiness against.
 
 <!-- manifest-automation:current-start -->
-The current source declares package `0.3.3` and carries manifest `2026.08.22` / `2ea0954b…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
+The current source declares package `0.3.3` and carries manifest `2026.08.22` / `79ae8643…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
 <!-- manifest-automation:current-end -->
 That does not fix anything above and is
 not meant to read as though it did: both changelog entries still print

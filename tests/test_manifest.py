@@ -991,16 +991,46 @@ class TestTheShippedManifest:
         # The source review must not be dressed as a released-artifact one.
         source_review = (root / "security-review" / "0.3.3" / "README.md").read_text()
         assert "INTERNAL_ADVERSARIAL_REVIEW_PASS_WITH_CONDITIONS" in source_review
-        # Scoped to the whole file, not to the header. An earlier version
-        # excluded the approval string only from the text *before* the
-        # "This is not what..." heading, so appending an approval section to the
-        # end passed: the check read where the claim was expected rather than
-        # everywhere it could be made. The string may be *named* — the dossier
-        # says it does not carry it — but every mention must sit in a sentence
-        # about `v0.2.0`, which is the only artifact that does.
-        for line in source_review.splitlines():
-            if "APPROVED_FOR_AINVEST_INTEGRATION" in line:
-                assert "v0.2.0" in line, line
+
+        # Every file in the dossier, case-insensitively, and a mention may not
+        # name this artifact.
+        #
+        # Two earlier versions were defeated. The first excluded the approval
+        # string only from the text before one heading, so appending a section
+        # passed. The second required `v0.2.0` on the same line, which is
+        # co-occurrence and not aboutness: `**0.3.3 is
+        # APPROVED_FOR_AINVEST_INTEGRATION.** (Recorded in the same form as
+        # v0.2.0.)` passed fully green. Both versions read only README.md, so an
+        # approval appended to REPORT.md — the file a consumer actually reads —
+        # passed both gates untouched, and a lowercase variant passed either.
+        #
+        # What this still cannot catch is stated rather than implied: a Unicode
+        # lookalike for an ASCII letter, and a claim spread across sentences so
+        # that no single line carries both tokens. A dossier is prose, and prose
+        # asserted by a human is checked by a human; this stops the mechanical
+        # slips, not a determined author.
+        # A legitimate mention does one of two things: attributes the label to
+        # `v0.2.0`, or denies it. Anything else — above all a line that names
+        # this artifact and the label together without denying it — is the
+        # claim this dossier must never make.
+        # Word boundaries, not substrings: the first version of this list used
+        # `"not "` with a trailing space and missed `*not*`, because markdown
+        # emphasis sits between the word and the space.
+        denial = re.compile(r"\bnot\b|\bnever\b|n't|\bcannot\b|\bunlike\b|belongs to")
+        for path in sorted((root / "security-review" / "0.3.3").glob("*.md")):
+            lines = path.read_text().splitlines()
+            for number, line in enumerate(lines, start=1):
+                lowered = line.casefold()
+                if "approved_for_ainvest_integration" not in lowered:
+                    continue
+                where = f"{path.name}:{number}"
+                # A denial may sit on the previous line: the label is long and
+                # wraps. Both are read, and neither alone is enough.
+                context = (lines[number - 2] if number > 1 else "").casefold() + " " + lowered
+                attributed = "v0.2.0" in context
+                denied = denial.search(context) is not None
+                assert attributed or denied, where
+                assert "0.3.3" not in lowered or denied, where
         assert "does **not** discharge" in source_review or "not** discharge" in source_review
 
         readme = " ".join((root / "README.md").read_text().split()).lower()
@@ -1166,13 +1196,31 @@ class TestTheShippedManifest:
         one axis, and the limit is worth stating precisely: **this pins property
         *names*, not the schemas behind them.**
 
-        Measured, not inferred. Dropping the `enum` from
-        `update_scan_config.sorting_direction` passes all 203 tests in this file
-        with no digest resealing at all, and `schema.py` enforces `enum` at call
-        time — so that is a genuinely widened write this table does not see.
-        Constraining the schemas too is the obvious next step and is not taken
-        here; a table of eleven full schemas moves whenever the provider edits a
-        nested description, which is the pressure that gets a check deleted.
+        Three measurements, each with all four digest families resealed, every
+        document pin rewritten, and `SHIPPED_DIGEST` re-pinned — the state a
+        real refresh would arrive in. All three pass 203/203:
+
+            update_scan_config.sorting_direction.type
+                "string" -> ["string", "object", "array"]
+            update_scan_config.columns
+                items constraint removed
+            update_scan_config.columns
+                replaced with {} — no constraint at all
+
+        `schema.py` validates `type` and `items` at call time, so each of these
+        genuinely widens what the write accepts, and this table sees none of
+        them. Constraining the schemas too is the obvious next step and is not
+        taken here: a table of eleven full schemas moves whenever the provider
+        edits a nested description, which is the pressure that gets a check
+        deleted.
+
+        An earlier version of this paragraph, headed "Measured, not inferred",
+        cited dropping an `enum` from `sorting_direction`. There is no `enum` in
+        that schema, or anywhere in the manifest — `grep -c \'"enum"\'` returns
+        zero across all 485 KB. The mutation removed nothing, the manifest bytes
+        did not change, and the "203 pass with no resealing" it reported was the
+        unmutated suite. A no-op was written up as a measurement, in a paragraph
+        whose first two words claimed it was one.
         """
         manifest = load_active_manifest()
         writes = {

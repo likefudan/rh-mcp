@@ -35,7 +35,7 @@ that carries them.
 #### `2026.08.22` — automated provider refresh candidate
 
 ```
-sha256:79ae864355be48818030eaf534b6db6cd9a5993b48f3a0e2cebc736ecde85cda
+sha256:df71febf46c1e594da56f7e0205357af091a5b1fc7726bdf05259cd53f289bdc
 ```
 
 The provider tool set and every reviewed `capability`, `disposition`, `mutates`
@@ -80,8 +80,17 @@ when it was written. `create_scan` had a pinned property set and failed loudly;
 what CI showed rather than what changed. Three of fifty-four entries were
 pinned. All eleven allowed writes are pinned now, by property set, required
 set, and `additionalProperties: false`, and `update_scan_config`'s rationale —
-which still claimed it "overwrites those two fields only" — has been corrected
-to describe the tool the manifest actually authorises.
+which still claimed it overwrote two named fields and nothing else — has been
+corrected to describe the tool the manifest actually authorises.
+
+The corrected rationale is purely descriptive, and briefly was not. A first
+version narrated its own correction, quoting the sentence it replaced. That
+tripped the 0.3.3 reviewer's own check, which asserts the absence of the old
+wording — an assertion about a string rather than about a claim, the same trap
+the test added here documents. The right fix was not to edit an auditor's
+evidence but to notice that a manifest rationale is a decision record about a
+capability, not a changelog for itself. The history belongs in this entry, and
+is here.
 
 Accepted as in scope. `columns` is optional, nothing in this tool's input is
 required, and by the provider's own wording "columns display values, filters

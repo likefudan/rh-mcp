@@ -7,7 +7,6 @@ Deliverables of an **in-project adversarial review** of source commit
 |---|---|
 | `REPORT.md` | Full report, in the shape `v0.2.0`'s used |
 | `test_adversarial_review_v033.py` | Reviewer-authored adversarial tests |
-| `test_v010_pin_isolated.py` | Isolates the one `v0.1.0` suite failure as a version pin, not a regression |
 
 ## This is not what `v0.1.0` and `v0.2.0` are
 
@@ -56,6 +55,18 @@ PYTHONPATH=/tmp/rh-mcp-0.3.3-review uv run --frozen pytest \
   security-review/v0.2.0/test_adversarial_review_v020.py -v
 ```
 
-The `v0.1.0` suite fails one test at that commit. `test_v010_pin_isolated.py`
-demonstrates that the failure is its pinned manifest version and digest, and
-that the assertion's substance passes with only the pin removed.
+The `v0.1.0` suite fails exactly one test at that commit,
+`test_exact_8_trading_denied_and_11_mutations_allowed`. The report shows the
+failure is its pinned manifest version and digest — the assertion aborts on its
+first line and never reaches the property its name is about — and that the
+property itself holds: 8 denied, 11 allowed mutations, and 35 rather than 34
+allowed reads, the one addition being `get_limited_margin_upgrade_info`, which
+DESIGN §2.1 documents.
+
+The reviewer wrote a throwaway script to isolate that, and it is deliberately
+not committed here. It carried absolute paths into their own scratch copy, and
+one of its assertions compared a set difference against a comprehension
+expressing the same difference — true by construction, and exactly the shape of
+vacuous check the rest of this repository exists to keep out. The finding is
+recorded in `REPORT.md`; the demonstration is reproducible from the commands
+above without it.

@@ -1081,17 +1081,27 @@ def constraint_only(schema: object) -> object:
     keyword from applicator to annotation cannot silently widen what these
     digests stop covering.
 
-    Annotation keys are dropped only where they are schema keywords. Under
-    `properties` the keys are property *names* — a tool may legitimately take
-    an argument called `description`, and dropping it there would make two
-    schemas with different constraints on that property hash identically.
+    Annotation keys are dropped only where they are schema keywords, and two
+    places hold keys that are not. Under `properties` they are property
+    *names* — a tool may legitimately take an argument called `description`.
+    Under `enum` and `const` they are ordinary instance data: those keywords
+    carry values a caller must match, not subschemas, so recursing into them
+    would let `{"const": {"title": "alpha"}}` and `{"const": {"title":
+    "beta"}}` hash alike while permitting different inputs.
+
+    Neither keyword appears in any shipped schema today. Both are enforced by
+    `validate_instance` and accepted at load, so the day one arrives is the
+    day the collision becomes real, and nothing else here would notice.
     """
     if isinstance(schema, Mapping):
         stripped: dict[str, object] = {}
         for key, value in schema.items():
             if key in _ANNOTATION_KEYWORDS:
                 continue
-            if key == "properties" and isinstance(value, Mapping):
+            if key in {"enum", "const"}:
+                # Instance data, not a subschema. Kept whole.
+                stripped[key] = value
+            elif key == "properties" and isinstance(value, Mapping):
                 stripped[key] = {name: constraint_only(sub) for name, sub in value.items()}
             else:
                 stripped[key] = constraint_only(value)
@@ -1713,6 +1723,32 @@ class TestTheShippedManifest:
         # And the keyword form is still stripped, at the same nesting depth.
         assert canonical_digest(constraint_only({"type": "string", "description": "a"})) == (
             canonical_digest(constraint_only({"type": "string", "description": "b"}))
+        )
+
+    def test_enum_and_const_values_are_data_and_are_not_stripped(self) -> None:
+        """The same collision as the `properties` one, a keyword over.
+
+        `enum` and `const` carry values a caller must match, not subschemas.
+        A stripper that walked into them would erase an annotation-shaped key
+        from the *data* and hash two schemas alike that permit different
+        inputs — the guard manufacturing the collision it exists to prevent.
+
+        Neither keyword is in any shipped schema, which is why this is written
+        against constructed ones. Both are enforced by `validate_instance` and
+        accepted at load, so this is a latent case, not an impossible one.
+        """
+        alpha = {"type": "object", "const": {"title": "alpha"}}
+        beta = {"type": "object", "const": {"title": "beta"}}
+        assert canonical_digest(constraint_only(alpha)) != canonical_digest(constraint_only(beta))
+
+        one = {"type": "object", "enum": [{"description": "x"}]}
+        two = {"type": "object", "enum": [{"description": "y"}]}
+        assert canonical_digest(constraint_only(one)) != canonical_digest(constraint_only(two))
+
+        # The keyword form is still stripped in the same object, so this
+        # exempts the values and nothing else.
+        assert canonical_digest(constraint_only({"const": 1, "description": "a"})) == (
+            canonical_digest(constraint_only({"const": 1, "description": "b"}))
         )
 
     def test_rewording_a_description_moves_no_constraint_digest(self) -> None:

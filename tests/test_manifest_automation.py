@@ -526,13 +526,20 @@ def test_the_comparison_link_names_a_tag_that_exists(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
     ).stdout.split()
+    # Both sides. The first version of this assertion captured only the base,
+    # which is how a link whose *head* names a tag that was never cut passed
+    # it — the exact defect this test is named for, checked on one half.
     released = re.findall(
-        r"(?m)^\[\d[^\]]*\]: https://github\.com/likefudan/rh-mcp/compare/(\S+?)\.\.\.",
+        r"(?m)^\[(\d[^\]]*)\]: https://github\.com/likefudan/rh-mcp/compare/(\S+?)\.\.\.(\S+)$",
         changelog,
     )
     assert released, "no released comparison links were emitted at all"
-    for base in released:
-        assert base in existing, base
+    for name, base, head in released:
+        assert base in existing, f"[{name}] base {base}"
+        # The newest line's head is the tag this refresh proposes, which
+        # cannot exist yet. Every other retained line's head must.
+        if name != "0.3.1":
+            assert head in existing, f"[{name}] head {head}"
 
 
 def test_it_falls_back_when_the_repository_has_no_tags(tmp_path: Path) -> None:
@@ -689,3 +696,45 @@ def test_a_tag_that_is_not_a_version_is_never_the_comparison_base(tmp_path: Path
     _tagged_repo(root, "v0.1.0", "v0.2.0", "vnext", "verified-build")
 
     assert automation._latest_existing_tag(root) == "v0.2.0"
+
+
+def test_a_link_whose_release_never_happened_is_not_retained(tmp_path: Path) -> None:
+    """Two refreshes without a release in between, which is the real history.
+
+    A refresh writes `[{new}]: ...v{new}`, naming a tag that does not exist
+    yet — correct, the release is pending. If that release is never cut, the
+    line is carried into the next refresh and now names a tag that will never
+    exist. That is exactly how `[0.3.1]` and `[0.3.2]` became 404s, and the
+    fix for them was a hand edit; this is the code path that produced them.
+
+    Review reproduced it against the supposedly fixed script: two automated
+    refreshes regenerated `[0.3.4]` with a head of `v0.3.4` and nothing red.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+
+    for expected in ("0.3.1", "0.3.2"):
+        candidate = candidate_from_active()
+        candidate["tools"][0]["description"] += f" changed for {expected}"
+        candidate_path = write_json(tmp_path / f"candidate-{expected}.json", candidate)
+        assert prepare_refresh(candidate_path, root, tmp_path / "report.md") == expected
+
+    changelog = (root / "CHANGELOG.md").read_text()
+    existing = subprocess.run(
+        ["git", "-C", str(root), "tag", "--list"],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+
+    # `0.3.1` was never tagged, so after the second refresh its line is gone
+    # rather than left pointing at a tag that will never exist.
+    assert "[0.3.1]: " not in changelog
+    for name, base, head in re.findall(
+        r"(?m)^\[(\d[^\]]*)\]: https://github\.com/likefudan/rh-mcp/compare/(\S+?)\.\.\.(\S+)$",
+        changelog,
+    ):
+        assert base in existing, f"[{name}] base {base}"
+        if name != "0.3.2":  # the pending release
+            assert head in existing, f"[{name}] head {head}"

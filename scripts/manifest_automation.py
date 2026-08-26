@@ -542,6 +542,14 @@ def _git_or_fail(repo_root: Path, *args: str, what: str) -> subprocess.Completed
         raise AutomationError(f"git is not available, so this run cannot {what}") from exc
 
 
+def _tag_exists(repo_root: Path, tag: str) -> bool:
+    """Whether `tag` resolves in this repository."""
+    completed = _git_or_fail(
+        repo_root, "rev-parse", "-q", "--verify", f"refs/tags/{tag}", what="check for a tag"
+    )
+    return completed.returncode == 0
+
+
 def _comparison_base(repo_root: Path, old_version: str) -> str:
     """The tag a new release's comparison link runs from.
 
@@ -642,11 +650,26 @@ same tagged artifact."""
     # `v{old_version}` when there are no tags at all keeps the shape the
     # `old_link` regex above expects on the next run.
     base = comparison_base
+    # The retained line is dropped when its own head tag never appeared.
+    #
+    # Only the base was ever considered, and the head is the half that broke:
+    # a refresh writes `[{new}]: ...v{new}`, naming a tag that does not exist
+    # yet and correctly so, but if that release is never cut the line is
+    # carried forward for one more refresh and then points at a tag that will
+    # never exist. That is precisely how `[0.3.1]` and `[0.3.2]` became 404s.
+    #
+    # The newest line is exempt because its head is pending by construction.
+    # If that release does not happen either, this same check drops it on the
+    # following refresh, so the window heals itself rather than accumulating.
+    retained = old_link
+    old_head = re.search(r"\.\.\.(\S+)$", old_link)
+    if old_head is not None and not _tag_exists(repo_root, old_head.group(1)):
+        retained = ""
     links = (
         f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v{new_version}...HEAD\n"
         f"[{new_version}]: https://github.com/likefudan/rh-mcp/compare/"
         f"{base}...v{new_version}\n"
-        f"{old_link}"
+        f"{retained}"
     )
     _replace_marked(changelog, LINKS_START, LINKS_END, links)
 

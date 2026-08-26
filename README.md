@@ -19,7 +19,12 @@ Eleven of the forty-six allowed capabilities mutate state — watchlists and
 saved scans, never orders or funds. Since `0.4.0` they are **refused by
 default**: `GatewayConfig.allow_mutations` gates them and defaults to `False`,
 so a consumer that only reads gets that enforced in code rather than by
-trusting the manifest's contents. Set `allow_mutations=True` to use them. A
+trusting the manifest's contents. Set `allow_mutations=True` on `GatewayConfig` to use them — **through the
+Python API only**. `GatewayConfig.from_env` reads no variable for it, so every
+CLI command is read-only by construction and `rh-mcp read` on any of the
+eleven is refused with no way to override it from the environment. That is
+deliberate: the CLI is an operator tool run against a live credential, and a
+switch that turns on writes is not one to expose to a stray shell variable. A
 refused write is indistinguishable from an unknown capability, so the error
 channel cannot be used to map the write surface; `capabilities()` reports
 `mutates` openly instead.

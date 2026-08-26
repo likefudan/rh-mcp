@@ -53,6 +53,25 @@ hole but a thinness: one enforced boundary with nothing behind it. A consumer
 who wants reads only can now say so in code, and a widened or substituted
 manifest does not reach a write while the flag is false.
 
+`GatewayConfig.allow_mutations` is keyword-only and strictly `bool`, and both
+of those were found by review rather than written correctly the first time.
+Added as an ordinary field it landed second, ahead of `mode`, so the existing
+positional call `GatewayConfig(digest, "development")` bound `"development"`
+to the switch — truthy, gate open — while `mode` silently stayed
+`"production"`. Untyped, it was read by a truthiness test, so `"false"`,
+`"no"` and `"0"` — what a YAML, JSON, env or argparse layer hands over — all
+opened it. Both failed open, and neither was visible to the suite: every
+construction in this repository passes keywords and a real bool.
+
+The CLI cannot enable mutations at all. `GatewayConfig.from_env` reads no
+variable for the switch, so `rh-mcp read` on any of the eleven is refused with
+no environment override.
+
+`capabilities()` still reports the *reviewed disposition* in `allowed`, which
+is now not the same as "this gateway will accept it". The key set of that
+listing is part of what a consumer pins, so it is not made gateway-aware;
+`allowed && !mutates` is the effective read permission under the default.
+
 A refused write returns the same `CAPABILITY_DENIED` as an unknown name, and
 the identical message. A distinct code would let a caller probe names and map
 the write surface through the error channel without being allowed to call one.

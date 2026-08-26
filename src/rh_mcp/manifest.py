@@ -417,9 +417,7 @@ class ReviewedManifest:
 # --------------------------------------------------------------------------
 
 
-def _surface_digest(
-    records: Sequence[tuple[str, Any, Any, Any, Any]], code: ErrorCode
-) -> str:
+def _surface_digest(records: Sequence[tuple[str, Any, Any, Any, Any]], code: ErrorCode) -> str:
     """The one definition of the provider-surface digest (§6).
 
     Sorted by provider tool name so the digest describes the observed *set*
@@ -507,9 +505,7 @@ def compute_full_manifest_digest(document: Mapping[str, Any]) -> str:
     payload = {key: value for key, value in document.items() if key != FULL_MANIFEST_DIGEST_FIELD}
     entries = payload.get("entries")
     if isinstance(entries, (list, tuple)):
-        payload["entries"] = tuple(
-            sorted(entries, key=lambda entry: _entry_sort_key(entry))
-        )
+        payload["entries"] = tuple(sorted(entries, key=lambda entry: _entry_sort_key(entry)))
     return canonical_digest(
         {
             "digest_kind": "full_manifest",
@@ -712,8 +708,7 @@ def _validate_document(decoded: Mapping[str, Any]) -> ReviewedManifest:
     require_nonempty("manifest_version", manifest_version, _LOCAL)
     if len(manifest_version) > _MAX_MANIFEST_VERSION_LENGTH or not manifest_version.isprintable():
         invalid(
-            f"manifest_version must be at most {_MAX_MANIFEST_VERSION_LENGTH} printable "
-            "characters",
+            f"manifest_version must be at most {_MAX_MANIFEST_VERSION_LENGTH} printable characters",
             _LOCAL,
         )
 
@@ -788,12 +783,11 @@ def _validate_entries(value: Any) -> tuple[ManifestEntry, ...]:
         invalid(f"entries name the same provider tool more than once: {duplicate_names}", _LOCAL)
 
     capabilities = [entry.capability for entry in entries if entry.capability is not None]
-    duplicate_capabilities = sorted(
-        {name for name in capabilities if capabilities.count(name) > 1}
-    )
+    duplicate_capabilities = sorted({name for name in capabilities if capabilities.count(name) > 1})
     if duplicate_capabilities:
-        invalid(f"entries declare the same capability more than once: {duplicate_capabilities}",
-                _LOCAL)
+        invalid(
+            f"entries declare the same capability more than once: {duplicate_capabilities}", _LOCAL
+        )
 
     if names != sorted(names):
         invalid(
@@ -828,8 +822,9 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
     if not isinstance(description, str):
         invalid(f"entries[{index}].description must be a string", _LOCAL)
 
-    input_schema = _require_json_object(f"entries[{index}].input_schema", entry["input_schema"],
-                                        _LOCAL)
+    input_schema = _require_json_object(
+        f"entries[{index}].input_schema", entry["input_schema"], _LOCAL
+    )
     # An empty schema constrains nothing, so it would make step 5's argument
     # validation vacuous for this entry — a reviewed capability whose input is
     # in practice unvalidated. A tool that genuinely takes no arguments still
@@ -857,8 +852,9 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
             _LOCAL,
         )
 
-    annotations = _require_json_object(f"entries[{index}].annotations", entry["annotations"],
-                                       _LOCAL)
+    annotations = _require_json_object(
+        f"entries[{index}].annotations", entry["annotations"], _LOCAL
+    )
 
     disposition = entry["disposition"]
     if disposition not in _DISPOSITIONS:
@@ -884,9 +880,7 @@ def _validate_entry(index: int, value: Any) -> ManifestEntry:
     if disposition == "allowed":
         ensure_schema_supported(input_schema, _LOCAL, path=f"entries[{index}].input_schema")
         if output_schema is not None:
-            ensure_schema_supported(
-                output_schema, _LOCAL, path=f"entries[{index}].output_schema"
-            )
+            ensure_schema_supported(output_schema, _LOCAL, path=f"entries[{index}].output_schema")
 
     mutates = entry["mutates"]
     if not isinstance(mutates, bool):
@@ -1048,7 +1042,7 @@ def _safe_tool_label(name: str, reviewed: Collection[str]) -> str:
     if name in reviewed:
         return name
     digest = canonical_digest(name, code=ErrorCode.PROTOCOL_ERROR)
-    return f"<unreviewed:{digest[len(DIGEST_PREFIX):][:_UNREVIEWED_LABEL_LENGTH]}>"
+    return f"<unreviewed:{digest[len(DIGEST_PREFIX) :][:_UNREVIEWED_LABEL_LENGTH]}>"
 
 
 def assess_surface(
@@ -1239,6 +1233,8 @@ def preflight_read(
     assessment: ReadinessAssessment,
     capability: object,
     arguments: Mapping[str, Any],
+    *,
+    allow_mutations: bool = False,
 ) -> PreflightResult:
     """Resolve a capability and validate its arguments, as one event (§6.2).
 
@@ -1281,6 +1277,21 @@ def preflight_read(
 
     entry = manifest.capabilities.get(capability) if isinstance(capability, str) else None
     if entry is None or not entry.read_allowed:
+        invalid(
+            "capability is not a reviewed read capability of the active manifest",
+            ErrorCode.CAPABILITY_DENIED,
+        )
+
+    # The branch that reads `mutates`. Before 0.4.0 there was none: the field
+    # was declared, validated at load and reported, and no code decided
+    # anything by it.
+    #
+    # The error is the same `CAPABILITY_DENIED` an unknown name gets, and that
+    # is the point rather than laziness — a distinct code would let a caller
+    # ask "is this a write?" and get an answer, turning a refusal into an
+    # oracle over the reviewed surface. A caller that wants to know reads
+    # `capabilities()`, which reports `mutates` openly.
+    if entry.mutates and not allow_mutations:
         invalid(
             "capability is not a reviewed read capability of the active manifest",
             ErrorCode.CAPABILITY_DENIED,
@@ -1495,7 +1506,6 @@ __all__ = [
     "assess_surface",
     "compute_full_manifest_digest",
     "establish_readiness",
-
     "load_active_manifest",
     "load_manifest_file",
     "load_manifest_text",

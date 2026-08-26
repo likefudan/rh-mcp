@@ -225,7 +225,11 @@ class RobinhoodGateway:
         assessment = await self.readiness()
         _raise_originating_error(assessment)
         preflight: PreflightResult = preflight_read(
-            self.__manifest, assessment, capability, arguments or {}
+            self.__manifest,
+            assessment,
+            capability,
+            arguments or {},
+            allow_mutations=self.__config.allow_mutations,
         )
         entry: ManifestEntry = preflight.entry
 

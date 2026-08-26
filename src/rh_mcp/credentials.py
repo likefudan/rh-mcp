@@ -780,9 +780,7 @@ class FileCredentialStore(_BytesBackedStore):
         # mutation testing showed removing it changed nothing, which is how the
         # misunderstanding surfaced. `O_EXCL` means this is always a fresh
         # file, so there is no pre-existing mode to inherit either.
-        descriptor = os.open(
-            temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
-        )
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
         try:
             written = os.write(descriptor, payload)
             if written != len(payload):  # pragma: no cover - short write on a local file

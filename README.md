@@ -15,6 +15,15 @@ The public surfaces are:
 - **CLI** — `rh-mcp`, for authentication, readiness diagnostics,
   owner-assisted manifest discovery, and reviewed read capabilities.
 
+Eleven of the forty-six allowed capabilities mutate state — watchlists and
+saved scans, never orders or funds. Since `0.4.0` they are **refused by
+default**: `GatewayConfig.allow_mutations` gates them and defaults to `False`,
+so a consumer that only reads gets that enforced in code rather than by
+trusting the manifest's contents. Set `allow_mutations=True` to use them. A
+refused write is indistinguishable from an unknown capability, so the error
+channel cannot be used to map the write surface; `capabilities()` reports
+`mutates` openly instead.
+
 There is deliberately no arbitrary `call_tool` or raw MCP session interface.
 (In `v0.1.0` there was one, via `rh_mcp.transport`; see Status below.)
 OAuth credentials are capable of trading because Robinhood does not advertise
@@ -70,7 +79,7 @@ tool surface; like the five existing dangling tool references, it is inert in
 this gateway but must not be forwarded into a model or user-facing context.
 
 <!-- manifest-automation:current-start -->
-The current source declares package version `v0.3.3` and carries
+The current source declares package version `v0.4.0` and carries
 manifest `2026.08.22`. Its full-manifest digest is:
 
 ```

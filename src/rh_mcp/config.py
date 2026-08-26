@@ -289,6 +289,23 @@ class GatewayConfig:
     """
 
     expected_manifest_digest: str
+    #: Whether the gateway may invoke a capability whose reviewed entry says
+    #: `mutates: true`. Defaults to refusing them.
+    #:
+    #: Until 0.4.0 `mutates` was declared in the manifest, validated at load,
+    #: and reported to callers — and read by no branch that decided anything.
+    #: An external review of v0.3.3 put it plainly: writes were gated exactly
+    #: as reads were, and "confirm with the user first" was advice to the
+    #: calling model, not a control. This is the branch that was missing.
+    #:
+    #: It is deliberately a second control that does not live in the manifest.
+    #: Every other restraint here is one reviewed data file plus the digest a
+    #: consumer pins to it; a consumer who wants reads only had nothing to say
+    #: so in code, and had to trust that the eleven allowed writes stayed
+    #: benign across refreshes. This is enforced against `mutates` regardless
+    #: of what the manifest allows, so a widened or substituted manifest does
+    #: not reach a write while it is false.
+    allow_mutations: bool = False
     mode: Mode = "production"
     credential_adapter: CredentialAdapter = "keychain"
     credential_namespace: str = "rh-mcp"

@@ -496,6 +496,26 @@ def _latest_existing_tag(repo_root: Path) -> str | None:
     return None
 
 
+def _is_shallow_checkout(repo_root: Path) -> bool:
+    """Whether this checkout is one git deliberately truncated.
+
+    `actions/checkout` defaults to a depth-1 clone, which fetches **no tags at
+    all**. Left alone, `_latest_existing_tag` would find none there and fall
+    back — silently emitting exactly the dangling comparison link it exists to
+    prevent, in the one environment that actually runs this script, and with
+    every local test still green. "No tags" and "no tags visible from here"
+    are different facts and only one of them licenses a guess.
+    """
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), "rev-parse", "--is-shallow-repository"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    return completed.returncode == 0 and completed.stdout.strip() == "true"
+
+
 def prepare_refresh(candidate_path: Path, repo_root: Path, report_path: Path) -> str:
     manifest_path = repo_root / "src/rh_mcp/manifests/read-manifest.json"
     previous = load_manifest_file(manifest_path)
@@ -568,7 +588,16 @@ same tagged artifact."""
     # previous version may never have been released. Falling back to
     # `v{old_version}` when there are no tags at all keeps the shape the
     # `old_link` regex above expects on the next run.
-    base = _latest_existing_tag(repo_root) or f"v{old_version}"
+    base = _latest_existing_tag(repo_root)
+    if base is None:
+        if _is_shallow_checkout(repo_root):
+            raise AutomationError(
+                "this checkout is shallow, so no tag is visible and the comparison link "
+                "would be a guess; fetch tags (actions/checkout fetch-depth: 0) and rerun"
+            )
+        # Genuinely tagless: fall back to `v{old_version}`, which keeps the
+        # shape the next run's `old_link` regex is anchored on.
+        base = f"v{old_version}"
     links = (
         f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v{new_version}...HEAD\n"
         f"[{new_version}]: https://github.com/likefudan/rh-mcp/compare/"

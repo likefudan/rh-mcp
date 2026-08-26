@@ -553,3 +553,54 @@ def test_it_falls_back_when_the_repository_has_no_tags(tmp_path: Path) -> None:
         "[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.1"
         in (root / "CHANGELOG.md").read_text()
     )
+
+
+def test_a_shallow_checkout_refuses_to_guess_the_comparison_base(tmp_path: Path) -> None:
+    """The environment this script actually runs in fetches no tags.
+
+    `actions/checkout` defaults to a depth-1 clone. A depth-1 clone of this
+    repository reports `--is-shallow-repository true` and `git tag --list`
+    returns nothing, so a resolver that fell back on "no tags found" would
+    emit `compare/v{old_version}...` — the dangling link this whole change
+    exists to prevent — in CI, silently, with every local test still green.
+
+    "No tags" and "no tags visible from here" are different facts. The second
+    one is not a licence to guess, so it raises.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+    # A later commit, so the tags sit behind HEAD. This matters: `git clone
+    # --depth 1` *does* carry a tag that points at the commit it fetched, so a
+    # repository whose only commit is also its tag would not reproduce the
+    # situation at all — which is how the first version of this test passed
+    # for the wrong reason.
+    (root / "later.txt").write_text("later\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "later")
+
+    # A depth-1 clone of that repository: shallow, and carrying no tags.
+    shallow = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{root}", str(shallow)],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+    )
+    assert (
+        subprocess.run(
+            ["git", "-C", str(shallow), "rev-parse", "--is-shallow-repository"],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        == "true"
+    )
+    assert automation._latest_existing_tag(shallow) is None
+
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    with pytest.raises(AutomationError, match="shallow"):
+        prepare_refresh(candidate_path, shallow, tmp_path / "report.md")

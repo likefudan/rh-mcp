@@ -1266,7 +1266,7 @@ def preflight_read(
     The validator is this package's strict subset, not `jsonschema`, which
     ignores keywords it does not recognise — default-allow on precisely the
     axis this package is default-deny. Unsupported keywords are refused at
-    manifest *load* time (see `_validate_entry_schemas`), so an unenforceable
+    manifest *load* time (see `ensure_schema_supported`), so an unenforceable
     schema fails closed before readiness rather than at the first call that
     happens to exercise the keyword.
     """

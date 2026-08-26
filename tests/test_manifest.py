@@ -11,7 +11,7 @@ import asyncio
 import dataclasses
 import json
 import re
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final
@@ -44,6 +44,7 @@ from rh_mcp.manifest import (
     manifest_to_json_dict,
     preflight_read,
 )
+from rh_mcp.schema import _ANNOTATION_KEYWORDS
 from tests.support import (
     ALPHA_INPUT_SCHEMA,
     ALPHA_OUTPUT_SCHEMA,
@@ -1056,6 +1057,180 @@ ALLOWED_READ_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[str
 }
 
 
+def _plain(node: object) -> object:
+    """A loaded schema as plain containers, so it can round-trip through JSON."""
+    if isinstance(node, Mapping):
+        return {k: _plain(v) for k, v in node.items()}
+    if isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
+        return [_plain(v) for v in node]
+    return node
+
+
+def constraint_only(schema: object) -> object:
+    """A schema with everything it *explains* removed, and everything it
+    *constrains* kept.
+
+    The exclusion is `schema._ANNOTATION_KEYWORDS` — the package's own list of
+    keywords `validate_instance` ignores — not a hand-picked `description`.
+    All seven are prose or provenance, so a provider adding a `title` or an
+    `examples` widens nothing and must not force a re-pin; that churn is the
+    whole reason this repository argued against pinning schemas at all.
+
+    It is imported rather than copied so the strip follows the package's real
+    definition, and asserted against a literal below so that *reclassifying* a
+    keyword from applicator to annotation cannot silently widen what these
+    digests stop covering.
+
+    Annotation keys are dropped only where they are schema keywords, and two
+    places hold keys that are not. Under `properties` they are property
+    *names* — a tool may legitimately take an argument called `description`.
+    Under `enum` and `const` they are ordinary instance data: those keywords
+    carry values a caller must match, not subschemas, so recursing into them
+    would let `{"const": {"title": "alpha"}}` and `{"const": {"title":
+    "beta"}}` hash alike while permitting different inputs.
+
+    Neither keyword appears in any shipped schema today. Both are enforced by
+    `validate_instance` and accepted at load, so the day one arrives is the
+    day the collision becomes real, and nothing else here would notice.
+    """
+    if isinstance(schema, Mapping):
+        stripped: dict[str, object] = {}
+        for key, value in schema.items():
+            if key in _ANNOTATION_KEYWORDS:
+                continue
+            if key in {"enum", "const"}:
+                # Instance data, not a subschema. Kept whole.
+                stripped[key] = value
+            elif key == "properties" and isinstance(value, Mapping):
+                stripped[key] = {name: constraint_only(sub) for name, sub in value.items()}
+            else:
+                stripped[key] = constraint_only(value)
+        return stripped
+    # `Mapping`/`Sequence`, not `dict`/`list`. A loaded entry's `input_schema`
+    # is a `mappingproxy` and its arrays are tuples; no `dict` and no `list`
+    # appears anywhere in one. The first version of this helper tested for
+    # `dict`, so every loaded schema fell through completely unchanged — a
+    # total no-op producing a wrong but perfectly stable digest, which a table
+    # generated through the same helper would have agreed with forever. What
+    # caught it was generating the table from the raw JSON and checking it
+    # against the loaded model: two routes to one number.
+    if isinstance(schema, Sequence) and not isinstance(schema, (str, bytes)):
+        return [constraint_only(v) for v in schema]
+    return schema
+
+
+# The name-and-required tables above pin *which* arguments a capability takes.
+# This pins what those arguments may be. Three mutations proved the gap when
+# the write table shipped and two more when the read table did: loosening a
+# `type`, dropping an `items`, and replacing a property schema with `{}` all
+# passed a fully resealed manifest, and each genuinely widened the surface
+# because `schema.py` validates `type` and `items` at call time.
+#
+# It is a digest per capability rather than a table of schemas on purpose. The
+# stated reason for not doing this earlier was that a table of forty-six full
+# schemas moves whenever the provider edits a nested description, "which is
+# the pressure that gets a check deleted". Stripping `description` removes
+# exactly that pressure: a re-worded manifest leaves all forty-six digests
+# untouched, and `test_rewording_a_description_moves_no_constraint_digest`
+# is what holds that property rather than the claim.
+ALLOWED_INPUT_CONSTRAINT_DIGESTS: Final[dict[str, str]] = {
+    "add_option_to_watchlist": (
+        "sha256:ea8347506a650452e1a53198c368b68f852304cf488f512d4f80b71b79d2cea7"
+    ),
+    "add_to_watchlist": "sha256:a166ce5a1ac69beebdfa288ca55b9170157b7dd67508249742a5829bb1b6a626",
+    "create_scan": "sha256:7ebc3a0fdbb03a7d2ae338b4a02536a530a067afda7192abe9fec8c5bbe6e2ee",
+    "create_watchlist": "sha256:d17a4542aa1e1b1a207a6bc3353783885871989e0abc34008746f64e73f99561",
+    "follow_watchlist": "sha256:30ad2f3359cb9e533b44de9c625c0bd1f62dd147d9bbfaa9c634130a8aa921d5",
+    "get_accounts": "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e",
+    "get_earnings_calendar": (
+        "sha256:2a8fe1f94f540d018c4bb5f34025e96b0d3010ec8ba1f5d70c7878eb31c39291"
+    ),
+    "get_earnings_results": (
+        "sha256:aa4867fca1aa569b7332e68b20ba3e260626018f3c4ffbc0390a78fb8bba6c22"
+    ),
+    "get_equity_fundamentals": (
+        "sha256:3b5f7796539797183a0a044e29f40e5d47594cf0c4f5d9df9dc1d760e9443137"
+    ),
+    "get_equity_historicals": (
+        "sha256:a437c4b4a0c6ebf9b65cc42196f9b6ad828e6875b4e6373e2edf8342c10b4e1f"
+    ),
+    "get_equity_orders": "sha256:89f18a20f56dd8a8bb0ab18b2cdcbe6166cd450cebaf2b8c7aa9dee2945d6051",
+    "get_equity_positions": (
+        "sha256:c0754f6e7bb8213bb4d71e90b148936003692cc1d3293ac13c179c2f15aa1aea"
+    ),
+    "get_equity_price_book": (
+        "sha256:18cdf4f81ef58701083bc35fbba3bbd52e587a4e900682b2d6f399deaaf288e1"
+    ),
+    "get_equity_quotes": "sha256:18cdf4f81ef58701083bc35fbba3bbd52e587a4e900682b2d6f399deaaf288e1",
+    "get_equity_tax_lots": (
+        "sha256:f3cb0c2ef745adf8566a89a5ec46cedeaa2ab697c112b81310060c60a2d7e822"
+    ),
+    "get_equity_technical_indicators": (
+        "sha256:b118c95edc1baa439f1ab4e33b1217605fefdca2f9fbb7613b7f946aacd6f44a"
+    ),
+    "get_equity_tradability": (
+        "sha256:63f162da8a9bf9bcd3844bd8d07e7eac61cfdda183bdef89e416381d5d4f0e17"
+    ),
+    "get_financials": "sha256:1d32191e2b2574dc52a0985f48ca05c6f5a694ff32fc5f9728c5ebe513645a85",
+    "get_index_historicals": (
+        "sha256:bfd6da2b0254c491adecbcbdee476e3a2dcae1c7b59dfd542e6ff5e33699f9dc"
+    ),
+    "get_index_quotes": "sha256:d3fd203cec9d3ba7143980b3d538ffd0182d4651ac4917ee4ea478c3cab48c51",
+    "get_indexes": "sha256:7db8bad4f4a42dc57491972bbd4dbac195cfdf9600a7a260dda6a3b5699a9853",
+    "get_limited_margin_upgrade_info": (
+        "sha256:d76fb882227d90792be3eeb92c2253a12fb5668d3f910be26152bd03bb49bc6e"
+    ),
+    "get_option_chains": "sha256:89d6a17e3c75fafadba49c094253e34a3a009bef0b5d7392a97fc720caaee4c9",
+    "get_option_historicals": (
+        "sha256:bf0d0779111adf8bbd00fdc80efe56fdcd18272540fd69924f3537a1bb1d6b10"
+    ),
+    "get_option_instruments": (
+        "sha256:28371ea0344f0ba87ace52b7781bd6ce059069c9a67a74cf47e87e3591720a2e"
+    ),
+    "get_option_level_upgrade_info": (
+        "sha256:d76fb882227d90792be3eeb92c2253a12fb5668d3f910be26152bd03bb49bc6e"
+    ),
+    "get_option_orders": "sha256:0536c553f8e916c5447b403d42b176607b822aef3068e917c13c4d00d88ff70f",
+    "get_option_positions": (
+        "sha256:80783319e1302b4a187a2f6853d1f928369e738f990b61f43bbc35a80aa07185"
+    ),
+    "get_option_quotes": "sha256:d3fd203cec9d3ba7143980b3d538ffd0182d4651ac4917ee4ea478c3cab48c51",
+    "get_option_watchlist": (
+        "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"
+    ),
+    "get_pnl_trade_history": (
+        "sha256:6ac3d0781fd41fd3c45980aaa4aec78ae0d00e9569959f04a520c5153e37fdfb"
+    ),
+    "get_popular_watchlists": (
+        "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"
+    ),
+    "get_portfolio": "sha256:d76fb882227d90792be3eeb92c2253a12fb5668d3f910be26152bd03bb49bc6e",
+    "get_realized_pnl": "sha256:48262b7d12df6407108bec15b41a1d2433b773b9ab6150453c209be00ec589b2",
+    "get_scanner_filter_specs": (
+        "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"
+    ),
+    "get_scans": "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e",
+    "get_watchlist_items": (
+        "sha256:30ad2f3359cb9e533b44de9c625c0bd1f62dd147d9bbfaa9c634130a8aa921d5"
+    ),
+    "get_watchlists": "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e",
+    "remove_from_watchlist": (
+        "sha256:a166ce5a1ac69beebdfa288ca55b9170157b7dd67508249742a5829bb1b6a626"
+    ),
+    "remove_option_from_watchlist": (
+        "sha256:ea8347506a650452e1a53198c368b68f852304cf488f512d4f80b71b79d2cea7"
+    ),
+    "run_scan": "sha256:d4c096726986d3700dc08d2a7a44e96d732229fe50d7a3c5de9b681f201e8170",
+    "search": "sha256:72e7b0b402fbee0aad17f80023307c0eb643ff5ec2bab3648fd3f9a0836cf4f9",
+    "unfollow_watchlist": "sha256:30ad2f3359cb9e533b44de9c625c0bd1f62dd147d9bbfaa9c634130a8aa921d5",
+    "update_scan_config": "sha256:8435fafac64246eb5e44821e4a406ba19744c0897a49082258d151c1555b8eeb",
+    "update_scan_filters": (
+        "sha256:fdd59c9a2fa87faf6b26c6f12c7c07b6afd2c7810684280d4f2acc2a62e2151f"
+    ),
+    "update_watchlist": "sha256:a9fc7ec31f0ba777c2ff6a1efd40286e23f64d77e1f23e42042725c5752a73b8",
+}
+
+
 class TestTheShippedManifest:
     """Regression tests on the committed manifest itself (§6, §13).
 
@@ -1466,6 +1641,162 @@ class TestTheShippedManifest:
             schema = reads[capability].input_schema
             assert set(schema.get("properties") or ()) == set(properties), capability
             assert set(schema.get("required") or ()) == set(required), capability
+
+    def test_every_allowed_capability_input_constraint_is_pinned(self) -> None:
+        """What the arguments may *be*, not just what they are called.
+
+        The two name tables leave a real gap and it was measured, not
+        supposed: with a fully resealed manifest — every digest family
+        recomputed, every document pin rewritten, the state a genuine provider
+        refresh arrives in — loosening `update_scan_config.sorting_direction`
+        from `"string"` to `["string", "object", "array"]`, dropping the
+        `items` constraint on `columns`, or replacing `columns` with `{}` all
+        passed. `schema.py` validates `type` and `items` when the call is
+        made, so each of those widened what the gateway would accept while
+        every name stayed identical.
+        """
+        manifest = load_active_manifest()
+        allowed = {entry.capability: entry for entry in manifest.entries if entry.read_allowed}
+
+        assert set(allowed) == set(ALLOWED_INPUT_CONSTRAINT_DIGESTS)
+        assert len(allowed) == 46
+
+        for capability, pinned in ALLOWED_INPUT_CONSTRAINT_DIGESTS.items():
+            observed = canonical_digest(constraint_only(allowed[capability].input_schema))
+            assert observed == pinned, capability
+
+    def test_the_excluded_keywords_are_the_package_s_own_annotation_set(self) -> None:
+        """Reclassifying a keyword must not silently widen the exclusion.
+
+        `constraint_only` imports `_ANNOTATION_KEYWORDS` so the strip follows
+        what `validate_instance` actually ignores rather than a copy that can
+        drift. The cost of importing it is that moving a keyword out of the
+        applicator set would quietly stop these digests covering it, so the
+        set is pinned here as a literal: the import keeps the two in step, and
+        this keeps a reclassification loud.
+
+        An earlier version of `constraint_only`'s docstring claimed a ninth
+        keyword would be "refused at manifest load time by
+        `_validate_entry_schemas`". No such function exists, and the real path
+        — `ensure_schema_supported` — accepts 28 keywords including `enum`,
+        `pattern`, `title` and `default`. Nothing is refused at load for being
+        new. What actually stops silent growth is this: anything not in the
+        set below stays inside the digest.
+        """
+        assert set(_ANNOTATION_KEYWORDS) == {
+            "$comment",
+            "$id",
+            "$schema",
+            "default",
+            "description",
+            "examples",
+            "title",
+        }
+
+    def test_a_property_named_like_an_annotation_is_not_stripped(self) -> None:
+        """The strip is by key name, and `properties` keys are not keywords.
+
+        This is not hypothetical here. `create_scan` takes a property named
+        `title`, and `title` is in the annotation set — so a stripper that
+        dropped annotation keys at every depth would have removed a real
+        argument from `create_scan`'s digest and stopped covering its
+        constraints entirely. Measured: `create_scan` is the one capability of
+        the forty-six whose digest differs between the two strippers.
+
+        The `description` case below is the general form: two schemas that
+        constrain an argument of that name completely differently must not
+        hash alike — a collision manufactured by the guard itself.
+        """
+        tight = {
+            "type": "object",
+            "properties": {"description": {"type": "string", "maxLength": 10}},
+            "additionalProperties": False,
+        }
+        loose = {
+            "type": "object",
+            "properties": {"description": {"type": "object", "additionalProperties": True}},
+            "additionalProperties": False,
+        }
+
+        assert canonical_digest(constraint_only(tight)) != canonical_digest(constraint_only(loose))
+
+        # And the keyword form is still stripped, at the same nesting depth.
+        assert canonical_digest(constraint_only({"type": "string", "description": "a"})) == (
+            canonical_digest(constraint_only({"type": "string", "description": "b"}))
+        )
+
+    def test_enum_and_const_values_are_data_and_are_not_stripped(self) -> None:
+        """The same collision as the `properties` one, a keyword over.
+
+        `enum` and `const` carry values a caller must match, not subschemas.
+        A stripper that walked into them would erase an annotation-shaped key
+        from the *data* and hash two schemas alike that permit different
+        inputs — the guard manufacturing the collision it exists to prevent.
+
+        Neither keyword is in any shipped schema, which is why this is written
+        against constructed ones. Both are enforced by `validate_instance` and
+        accepted at load, so this is a latent case, not an impossible one.
+        """
+        alpha = {"type": "object", "const": {"title": "alpha"}}
+        beta = {"type": "object", "const": {"title": "beta"}}
+        assert canonical_digest(constraint_only(alpha)) != canonical_digest(constraint_only(beta))
+
+        one = {"type": "object", "enum": [{"description": "x"}]}
+        two = {"type": "object", "enum": [{"description": "y"}]}
+        assert canonical_digest(constraint_only(one)) != canonical_digest(constraint_only(two))
+
+        # The keyword form is still stripped in the same object, so this
+        # exempts the values and nothing else.
+        assert canonical_digest(constraint_only({"const": 1, "description": "a"})) == (
+            canonical_digest(constraint_only({"const": 1, "description": "b"}))
+        )
+
+    def test_rewording_a_description_moves_no_constraint_digest(self) -> None:
+        """The property that decides whether the table above survives.
+
+        A pin that has to be rewritten every time the provider edits prose is
+        a pin someone eventually deletes, and this repository already wrote
+        that reasoning down as the argument for *not* pinning schemas at all.
+        The digests exclude `description` precisely so that argument no longer
+        applies — so the exclusion is asserted here rather than trusted, on
+        every allowed entry, against a description that has certainly changed.
+        """
+        actually_reworded = 0
+        for entry in load_active_manifest().entries:
+            if not entry.read_allowed:
+                continue
+            original = _plain(entry.input_schema)
+            reworded = json.loads(json.dumps(original))
+            self._reword_every_description(reworded)
+            if reworded != original:
+                actually_reworded += 1
+            assert (
+                canonical_digest(constraint_only(reworded))
+                == (ALLOWED_INPUT_CONSTRAINT_DIGESTS[entry.capability])
+            ), entry.capability
+
+        # Without this the test passes just as well on a manifest where no
+        # schema carries a description at all, which would make it a check on
+        # nothing. Forty of the forty-six do; the six that do not are exactly
+        # the no-argument reads, whose schemas are `{"type": "object",
+        # "additionalProperties": false}` and have no prose to reword.
+        # `>=`, not `==`. The guarantee wanted here is that the test is not
+        # vacuous, and `==` additionally asserts that no schema ever *gains*
+        # prose — which a provider may do at any time, and which would red
+        # this test for a drift it is specifically designed to tolerate.
+        assert actually_reworded >= 40
+
+    @staticmethod
+    def _reword_every_description(node: object) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "description" and isinstance(value, str):
+                    node[key] = f"REWORDED BY THE PROVIDER: {value}"
+                else:
+                    TestTheShippedManifest._reword_every_description(value)
+        elif isinstance(node, list):
+            for value in node:
+                TestTheShippedManifest._reword_every_description(value)
 
     def test_no_allowed_read_accepts_undeclared_arguments(self) -> None:
         """Same reason as the write form: a pinned name set bounds nothing without it.

@@ -24,7 +24,12 @@ from rh_mcp.gateway import (
     open_admin_discovery,
     open_gateway,
 )
-from rh_mcp.manifest import ObservedSurface, ObservedTool, load_manifest_text
+from rh_mcp.manifest import (
+    ObservedSurface,
+    ObservedTool,
+    load_manifest_text,
+    preflight_read,
+)
 from rh_mcp.models import ResultEnvelope
 from rh_mcp.transport import ToolPayload
 from tests.support import (
@@ -910,6 +915,44 @@ class TestMutationsAreRefusedUnlessEnabled:
         run(gateway.invoke("synthetic_writing", VALID_ARGS))
 
         assert [name for name, _ in recorder.call_tool_calls] == ["synthetic_write"]
+
+    def test_the_exported_gate_refuses_a_non_bool_directly(self) -> None:
+        """The check has to be at the gate, not only at the config boundary.
+
+        `GatewayConfig` validating the flag protects callers who go through
+        `RobinhoodGateway`. `preflight_read` is in `manifest.__all__`, and this
+        package's history records a reviewer who ignored the gateway and
+        imported the exported function; reached that way with the string
+        `"false"` — truthy — the gate opened and returned a `PreflightResult`
+        authorising the write. A control that holds only when approached
+        through one caller is a convention.
+        """
+        document = self._document_with_a_write()
+        manifest = load_manifest_text(dumps(document))
+        gateway = RobinhoodGateway(
+            GatewayConfig(expected_manifest_digest=manifest.digest),
+            manifest,
+            SpyTransport(document),
+        )
+        assessment = run(gateway.readiness())
+
+        for value in ("false", "no", "0", 1, [1]):
+            with pytest.raises(GatewayError) as raised:
+                preflight_read(
+                    manifest,
+                    assessment,
+                    "synthetic_writing",
+                    VALID_ARGS,
+                    allow_mutations=value,  # type: ignore[arg-type]
+                )
+            assert raised.value.code is not ErrorCode.CAPABILITY_DENIED, value
+
+        # The control: a real bool still authorises, so the loop above is not
+        # passing on a function that refuses everything.
+        allowed = preflight_read(
+            manifest, assessment, "synthetic_writing", VALID_ARGS, allow_mutations=True
+        )
+        assert allowed.entry.capability == "synthetic_writing"
 
     def test_enabling_mutations_does_not_unlock_a_denied_capability(self) -> None:
         """`allow_mutations` is a second lock, never a key to the first.

@@ -369,11 +369,7 @@ def _check_number(
 
 
 def _check_object(
-    instance: Mapping[str, Any],
-    schema: Mapping[str, Any],
-    *,
-    code: ErrorCode,
-    path: str,
+    instance: Mapping[str, Any], schema: Mapping[str, Any], *, code: ErrorCode, path: str,
     depth: int,
 ) -> None:
     required = schema.get("required")
@@ -403,7 +399,9 @@ def _check_object(
                 )
         else:
             for name in extra:
-                _check(instance[name], additional, code=code, path=f"{path}.*", depth=depth + 1)
+                _check(
+                    instance[name], additional, code=code, path=f"{path}.*", depth=depth + 1
+                )
 
 
 def _check_array(

@@ -63,6 +63,11 @@ to the switch — truthy, gate open — while `mode` silently stayed
 opened it. Both failed open, and neither was visible to the suite: every
 construction in this repository passes keywords and a real bool.
 
+The check is at the gate as well as at the config boundary.
+`preflight_read` is exported, and reached directly with the string `"false"`
+it authorised the write — a control that holds only when approached through
+one caller is a convention.
+
 The CLI cannot enable mutations at all. `GatewayConfig.from_env` reads no
 variable for the switch, so `rh-mcp read` on any of the eleven is refused with
 no environment override.

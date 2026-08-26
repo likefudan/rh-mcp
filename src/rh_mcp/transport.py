@@ -349,7 +349,8 @@ def bound_json(value: Any, budget: _Budget, code: ErrorCode, *, label: str = "pa
             if len(item) > budget.max_string_length:
                 _fail(
                     code,
-                    f"{label} contains a string longer than {budget.max_string_length} characters",
+                    f"{label} contains a string longer than "
+                    f"{budget.max_string_length} characters",
                 )
             if not is_encodable(item):
                 _fail(code, f"{label} may not contain unpaired surrogates")
@@ -956,7 +957,9 @@ class _GuardedJsonClient:
             headers["content-type"] = content_type
         try:
             with _anyio.fail_after(self._limits.total_timeout_s):
-                response = await self._client.request(method, url, content=content, headers=headers)
+                response = await self._client.request(
+                    method, url, content=content, headers=headers
+                )
         except GatewayError:
             # Clear the recorded fault so it cannot be attributed to the *next*
             # request on this client.
@@ -1073,7 +1076,9 @@ class _PrivateSession:
     property of the class rather than a convention.
     """
 
-    def __init__(self, session: _ClientSession, limits: ResourceLimits, fault: _Fault) -> None:
+    def __init__(
+        self, session: _ClientSession, limits: ResourceLimits, fault: _Fault
+    ) -> None:
         self.__session = session
         self._limits = limits
         self._fault = fault

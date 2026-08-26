@@ -84,7 +84,9 @@ logger = logging.getLogger(__name__)
 PRODUCTION_ISSUER: Final[str] = PRODUCTION_RESOURCE_URL
 PRODUCTION_AUTHORIZATION_ENDPOINT: Final[str] = "https://robinhood.com/oauth"
 PRODUCTION_TOKEN_ENDPOINT: Final[str] = "https://api.robinhood.com/oauth2/token/"
-PRODUCTION_REGISTRATION_ENDPOINT: Final[str] = "https://agent.robinhood.com/oauth/trading/register"
+PRODUCTION_REGISTRATION_ENDPOINT: Final[str] = (
+    "https://agent.robinhood.com/oauth/trading/register"
+)
 
 PRODUCTION_AUTHORIZATION_SERVERS: Final[frozenset[str]] = frozenset({PRODUCTION_ISSUER})
 PRODUCTION_BEARER_METHODS: Final[frozenset[str]] = frozenset({"header"})
@@ -405,7 +407,9 @@ def parse_authorization_server_metadata(
     return metadata
 
 
-def parse_protected_resource_metadata(document: Mapping[str, Any], config: GatewayConfig) -> str:
+def parse_protected_resource_metadata(
+    document: Mapping[str, Any], config: GatewayConfig
+) -> str:
     """Validate the protected-resource document and return its issuer (§5.0).
 
     RFC 9728 allows several authorization servers; this gateway accepts exactly
@@ -666,7 +670,9 @@ class _CallbackListener:
     — and is answered 404 without ending the login, up to a bounded count.
     """
 
-    def __init__(self, transaction: AuthorizationTransaction, *, path: str, authority: str) -> None:
+    def __init__(
+        self, transaction: AuthorizationTransaction, *, path: str, authority: str
+    ) -> None:
         self._transaction = transaction
         self._path = path
         self._authority = authority.lower()
@@ -677,7 +683,9 @@ class _CallbackListener:
     def future(self) -> asyncio.Future[str]:
         return self._future
 
-    async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    async def handle(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
         try:
             await self._handle(reader, writer)
         except (TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, OSError):
@@ -713,7 +721,9 @@ class _CallbackListener:
             )
             await _close(writer)
 
-    async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    async def _handle(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
         request_line = await asyncio.wait_for(
             reader.readuntil(b"\r\n"), timeout=_REQUEST_READ_TIMEOUT_S
         )
@@ -815,10 +825,13 @@ class _CallbackListener:
             _auth_required("the authorization server refused the login request")
 
         state = seen.get("state")
-        if not isinstance(state, str) or not _constant_time_equal(state, self._transaction.state):
+        if not isinstance(state, str) or not _constant_time_equal(
+            state, self._transaction.state
+        ):
             _fail(
                 ErrorCode.PROTOCOL_ERROR,
-                "the login callback carried a state that does not match this authorization request",
+                "the login callback carried a state that does not match this authorization "
+                "request",
             )
 
         issuer = seen.get("iss")
@@ -847,14 +860,8 @@ class _CallbackListener:
             self._future.set_exception(error)
 
     async def _respond(self, writer: asyncio.StreamWriter, status: int, body: bytes) -> None:
-        reason = {
-            200: "OK",
-            400: "Bad Request",
-            404: "Not Found",
-            405: "Method Not Allowed",
-            409: "Conflict",
-            431: "Request Header Fields Too Large",
-        }.get(status, "Error")
+        reason = {200: "OK", 400: "Bad Request", 404: "Not Found", 405: "Method Not Allowed",
+                  409: "Conflict", 431: "Request Header Fields Too Large"}.get(status, "Error")
         head = (
             f"HTTP/1.1 {status} {reason}\r\n"
             "Content-Type: text/html; charset=utf-8\r\n"
@@ -917,7 +924,9 @@ async def _callback_listener(
             pass
 
 
-async def await_authorization_code(config: GatewayConfig, future: asyncio.Future[str]) -> str:
+async def await_authorization_code(
+    config: GatewayConfig, future: asyncio.Future[str]
+) -> str:
     """Wait out the §8 callback budget for exactly one code."""
     try:
         return await asyncio.wait_for(future, timeout=config.limits.oauth_callback_timeout_s)

@@ -11,7 +11,7 @@ import asyncio
 import dataclasses
 import json
 import re
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Final
@@ -1056,6 +1056,154 @@ ALLOWED_READ_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[str
 }
 
 
+def _plain(node: object) -> object:
+    """A loaded schema as plain containers, so it can round-trip through JSON."""
+    if isinstance(node, Mapping):
+        return {k: _plain(v) for k, v in node.items()}
+    if isinstance(node, Sequence) and not isinstance(node, (str, bytes)):
+        return [_plain(v) for v in node]
+    return node
+
+
+def constraint_only(schema: object) -> object:
+    """A schema with everything it *explains* removed, and everything it
+    *constrains* kept.
+
+    `description` is the whole of the exclusion, and that is measured rather
+    than assumed: the shipped manifest's input schemas contain exactly eight
+    distinct keywords — `type`, `description`, `additionalProperties`,
+    `properties`, `required`, `items`, `minimum`, `maximum` — and seven of
+    them bound what a caller may send. A ninth appearing later is refused at
+    manifest *load* time by `_validate_entry_schemas`, so this set cannot grow
+    silently; if one is ever added, it lands inside the digest and forces a
+    re-pin, which is the correct direction to fail.
+    """
+    # `Mapping`/`Sequence`, not `dict`/`list`. A loaded entry's `input_schema`
+    # is a `mappingproxy`, which is not a `dict` — the first version of this
+    # helper tested for `dict`, so a loaded schema fell through unchanged with
+    # every description still in it. It produced a wrong but perfectly stable
+    # digest, and a table generated through the same helper would have agreed
+    # with it forever. What caught it was generating the table from the raw
+    # JSON and checking it against the loaded model: two routes to one number.
+    if isinstance(schema, Mapping):
+        return {k: constraint_only(v) for k, v in schema.items() if k != "description"}
+    if isinstance(schema, Sequence) and not isinstance(schema, (str, bytes)):
+        return [constraint_only(v) for v in schema]
+    return schema
+
+
+# The name-and-required tables above pin *which* arguments a capability takes.
+# This pins what those arguments may be. Three mutations proved the gap when
+# the write table shipped and two more when the read table did: loosening a
+# `type`, dropping an `items`, and replacing a property schema with `{}` all
+# passed a fully resealed manifest, and each genuinely widened the surface
+# because `schema.py` validates `type` and `items` at call time.
+#
+# It is a digest per capability rather than a table of schemas on purpose. The
+# stated reason for not doing this earlier was that a table of forty-six full
+# schemas moves whenever the provider edits a nested description, "which is
+# the pressure that gets a check deleted". Stripping `description` removes
+# exactly that pressure: a re-worded manifest leaves all forty-six digests
+# untouched, and `test_rewording_a_description_moves_no_constraint_digest`
+# is what holds that property rather than the claim.
+ALLOWED_INPUT_CONSTRAINT_DIGESTS: Final[dict[str, str]] = {
+    "add_option_to_watchlist": (
+        "sha256:ea8347506a650452e1a53198c368b68f852304cf488f512d4f80b71b79d2cea7"
+    ),
+    "add_to_watchlist": "sha256:a166ce5a1ac69beebdfa288ca55b9170157b7dd67508249742a5829bb1b6a626",
+    "create_scan": "sha256:7ebc3a0fdbb03a7d2ae338b4a02536a530a067afda7192abe9fec8c5bbe6e2ee",
+    "create_watchlist": "sha256:d17a4542aa1e1b1a207a6bc3353783885871989e0abc34008746f64e73f99561",
+    "follow_watchlist": "sha256:30ad2f3359cb9e533b44de9c625c0bd1f62dd147d9bbfaa9c634130a8aa921d5",
+    "get_accounts": "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e",
+    "get_earnings_calendar": (
+        "sha256:2a8fe1f94f540d018c4bb5f34025e96b0d3010ec8ba1f5d70c7878eb31c39291"
+    ),
+    "get_earnings_results": (
+        "sha256:aa4867fca1aa569b7332e68b20ba3e260626018f3c4ffbc0390a78fb8bba6c22"
+    ),
+    "get_equity_fundamentals": (
+        "sha256:3b5f7796539797183a0a044e29f40e5d47594cf0c4f5d9df9dc1d760e9443137"
+    ),
+    "get_equity_historicals": (
+        "sha256:a437c4b4a0c6ebf9b65cc42196f9b6ad828e6875b4e6373e2edf8342c10b4e1f"
+    ),
+    "get_equity_orders": "sha256:89f18a20f56dd8a8bb0ab18b2cdcbe6166cd450cebaf2b8c7aa9dee2945d6051",
+    "get_equity_positions": (
+        "sha256:c0754f6e7bb8213bb4d71e90b148936003692cc1d3293ac13c179c2f15aa1aea"
+    ),
+    "get_equity_price_book": (
+        "sha256:18cdf4f81ef58701083bc35fbba3bbd52e587a4e900682b2d6f399deaaf288e1"
+    ),
+    "get_equity_quotes": "sha256:18cdf4f81ef58701083bc35fbba3bbd52e587a4e900682b2d6f399deaaf288e1",
+    "get_equity_tax_lots": (
+        "sha256:f3cb0c2ef745adf8566a89a5ec46cedeaa2ab697c112b81310060c60a2d7e822"
+    ),
+    "get_equity_technical_indicators": (
+        "sha256:b118c95edc1baa439f1ab4e33b1217605fefdca2f9fbb7613b7f946aacd6f44a"
+    ),
+    "get_equity_tradability": (
+        "sha256:63f162da8a9bf9bcd3844bd8d07e7eac61cfdda183bdef89e416381d5d4f0e17"
+    ),
+    "get_financials": "sha256:1d32191e2b2574dc52a0985f48ca05c6f5a694ff32fc5f9728c5ebe513645a85",
+    "get_index_historicals": (
+        "sha256:bfd6da2b0254c491adecbcbdee476e3a2dcae1c7b59dfd542e6ff5e33699f9dc"
+    ),
+    "get_index_quotes": "sha256:d3fd203cec9d3ba7143980b3d538ffd0182d4651ac4917ee4ea478c3cab48c51",
+    "get_indexes": "sha256:7db8bad4f4a42dc57491972bbd4dbac195cfdf9600a7a260dda6a3b5699a9853",
+    "get_limited_margin_upgrade_info": (
+        "sha256:d76fb882227d90792be3eeb92c2253a12fb5668d3f910be26152bd03bb49bc6e"
+    ),
+    "get_option_chains": "sha256:89d6a17e3c75fafadba49c094253e34a3a009bef0b5d7392a97fc720caaee4c9",
+    "get_option_historicals": (
+        "sha256:bf0d0779111adf8bbd00fdc80efe56fdcd18272540fd69924f3537a1bb1d6b10"
+    ),
+    "get_option_instruments": (
+        "sha256:28371ea0344f0ba87ace52b7781bd6ce059069c9a67a74cf47e87e3591720a2e"
+    ),
+    "get_option_level_upgrade_info": (
+        "sha256:d76fb882227d90792be3eeb92c2253a12fb5668d3f910be26152bd03bb49bc6e"
+    ),
+    "get_option_orders": "sha256:0536c553f8e916c5447b403d42b176607b822aef3068e917c13c4d00d88ff70f",
+    "get_option_positions": (
+        "sha256:80783319e1302b4a187a2f6853d1f928369e738f990b61f43bbc35a80aa07185"
+    ),
+    "get_option_quotes": "sha256:d3fd203cec9d3ba7143980b3d538ffd0182d4651ac4917ee4ea478c3cab48c51",
+    "get_option_watchlist": (
+        "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"
+    ),
+    "get_pnl_trade_history": (
+        "sha256:6ac3d0781fd41fd3c45980aaa4aec78ae0d00e9569959f04a520c5153e37fdfb"
+    ),
+    "get_popular_watchlists": (
+        "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"
+    ),
+    "get_portfolio": "sha256:d76fb882227d90792be3eeb92c2253a12fb5668d3f910be26152bd03bb49bc6e",
+    "get_realized_pnl": "sha256:48262b7d12df6407108bec15b41a1d2433b773b9ab6150453c209be00ec589b2",
+    "get_scanner_filter_specs": (
+        "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e"
+    ),
+    "get_scans": "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e",
+    "get_watchlist_items": (
+        "sha256:30ad2f3359cb9e533b44de9c625c0bd1f62dd147d9bbfaa9c634130a8aa921d5"
+    ),
+    "get_watchlists": "sha256:cd1a463c46d6264134447db17a8c3c7abe5b9a2488c6d759fea66da1f96b133e",
+    "remove_from_watchlist": (
+        "sha256:a166ce5a1ac69beebdfa288ca55b9170157b7dd67508249742a5829bb1b6a626"
+    ),
+    "remove_option_from_watchlist": (
+        "sha256:ea8347506a650452e1a53198c368b68f852304cf488f512d4f80b71b79d2cea7"
+    ),
+    "run_scan": "sha256:d4c096726986d3700dc08d2a7a44e96d732229fe50d7a3c5de9b681f201e8170",
+    "search": "sha256:72e7b0b402fbee0aad17f80023307c0eb643ff5ec2bab3648fd3f9a0836cf4f9",
+    "unfollow_watchlist": "sha256:30ad2f3359cb9e533b44de9c625c0bd1f62dd147d9bbfaa9c634130a8aa921d5",
+    "update_scan_config": "sha256:8435fafac64246eb5e44821e4a406ba19744c0897a49082258d151c1555b8eeb",
+    "update_scan_filters": (
+        "sha256:fdd59c9a2fa87faf6b26c6f12c7c07b6afd2c7810684280d4f2acc2a62e2151f"
+    ),
+    "update_watchlist": "sha256:a9fc7ec31f0ba777c2ff6a1efd40286e23f64d77e1f23e42042725c5752a73b8",
+}
+
+
 class TestTheShippedManifest:
     """Regression tests on the committed manifest itself (§6, §13).
 
@@ -1466,6 +1614,72 @@ class TestTheShippedManifest:
             schema = reads[capability].input_schema
             assert set(schema.get("properties") or ()) == set(properties), capability
             assert set(schema.get("required") or ()) == set(required), capability
+
+    def test_every_allowed_capability_input_constraint_is_pinned(self) -> None:
+        """What the arguments may *be*, not just what they are called.
+
+        The two name tables leave a real gap and it was measured, not
+        supposed: with a fully resealed manifest — every digest family
+        recomputed, every document pin rewritten, the state a genuine provider
+        refresh arrives in — loosening `update_scan_config.sorting_direction`
+        from `"string"` to `["string", "object", "array"]`, dropping the
+        `items` constraint on `columns`, or replacing `columns` with `{}` all
+        passed. `schema.py` validates `type` and `items` when the call is
+        made, so each of those widened what the gateway would accept while
+        every name stayed identical.
+        """
+        manifest = load_active_manifest()
+        allowed = {entry.capability: entry for entry in manifest.entries if entry.read_allowed}
+
+        assert set(allowed) == set(ALLOWED_INPUT_CONSTRAINT_DIGESTS)
+        assert len(allowed) == 46
+
+        for capability, pinned in ALLOWED_INPUT_CONSTRAINT_DIGESTS.items():
+            observed = canonical_digest(constraint_only(allowed[capability].input_schema))
+            assert observed == pinned, capability
+
+    def test_rewording_a_description_moves_no_constraint_digest(self) -> None:
+        """The property that decides whether the table above survives.
+
+        A pin that has to be rewritten every time the provider edits prose is
+        a pin someone eventually deletes, and this repository already wrote
+        that reasoning down as the argument for *not* pinning schemas at all.
+        The digests exclude `description` precisely so that argument no longer
+        applies — so the exclusion is asserted here rather than trusted, on
+        every allowed entry, against a description that has certainly changed.
+        """
+        actually_reworded = 0
+        for entry in load_active_manifest().entries:
+            if not entry.read_allowed:
+                continue
+            original = _plain(entry.input_schema)
+            reworded = json.loads(json.dumps(original))
+            self._reword_every_description(reworded)
+            if reworded != original:
+                actually_reworded += 1
+            assert (
+                canonical_digest(constraint_only(reworded))
+                == (ALLOWED_INPUT_CONSTRAINT_DIGESTS[entry.capability])
+            ), entry.capability
+
+        # Without this the test passes just as well on a manifest where no
+        # schema carries a description at all, which would make it a check on
+        # nothing. Forty of the forty-six do; the six that do not are exactly
+        # the no-argument reads, whose schemas are `{"type": "object",
+        # "additionalProperties": false}` and have no prose to reword.
+        assert actually_reworded == 40
+
+    @staticmethod
+    def _reword_every_description(node: object) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "description" and isinstance(value, str):
+                    node[key] = f"REWORDED BY THE PROVIDER: {value}"
+                else:
+                    TestTheShippedManifest._reword_every_description(value)
+        elif isinstance(node, list):
+            for value in node:
+                TestTheShippedManifest._reword_every_description(value)
 
     def test_no_allowed_read_accepts_undeclared_arguments(self) -> None:
         """Same reason as the write form: a pinned name set bounds nothing without it.

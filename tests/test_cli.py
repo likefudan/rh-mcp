@@ -288,9 +288,7 @@ class TestLogoutConfirmation:
 
 
 class TestSuccessfulOutputIsParseable:
-    def test_stdout_is_exactly_one_json_document(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_stdout_is_exactly_one_json_document(self, monkeypatch: pytest.MonkeyPatch) -> None:
         async def succeeding(_: Any, out: Any, err: Any) -> int:
             err.write("a diagnostic that must not pollute stdout\n")
             cli._emit({"ok": True, "nested": {"a": [1, 2]}}, out)
@@ -490,9 +488,7 @@ class TestLogoutAsksBeforeItPrepares:
         assert opened == []
         assert out == ""
 
-    def test_a_declined_confirmation_opens_nothing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_a_declined_confirmation_opens_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
         opened: list[Any] = []
 
         class Tty(io.StringIO):

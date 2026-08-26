@@ -55,8 +55,7 @@ CANONICAL_FORM_VECTORS: list[tuple[str, Any, str]] = [
         {"￿": 1, "\U00010000": 2},
         '{"￿":1,"\U00010000":2}',
     ),
-    ("non-ASCII is emitted literally", {"k": "é中\U0001f600"},
-     '{"k":"é中\U0001f600"}'),
+    ("non-ASCII is emitted literally", {"k": "é中\U0001f600"}, '{"k":"é中\U0001f600"}'),
     ("literals", [True, False, None], "[true,false,null]"),
 ]
 

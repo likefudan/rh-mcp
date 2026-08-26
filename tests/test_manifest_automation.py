@@ -731,6 +731,17 @@ def test_a_link_whose_release_never_happened_is_not_retained(tmp_path: Path) -> 
     # `0.3.1` was never tagged, so after the second refresh its line is gone
     # rather than left pointing at a tag that will never exist.
     assert "[0.3.1]: " not in changelog
+
+    # `[Unreleased]` too. It carried the same assumption one line above the
+    # fix, and it is the only link here that cannot heal — a released line
+    # dangles until the next refresh notices, `v{new}...HEAD` stays wrong
+    # forever. This repository shipped it twice.
+    unreleased = re.search(
+        r"(?m)^\[Unreleased\]: https://github\.com/likefudan/rh-mcp/compare/(\S+)\.\.\.HEAD$",
+        changelog,
+    )
+    assert unreleased is not None
+    assert unreleased.group(1) in existing, f"[Unreleased] base {unreleased.group(1)}"
     for name, base, head in re.findall(
         r"(?m)^\[(\d[^\]]*)\]: https://github\.com/likefudan/rh-mcp/compare/(\S+?)\.\.\.(\S+)$",
         changelog,

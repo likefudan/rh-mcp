@@ -665,8 +665,20 @@ same tagged artifact."""
     old_head = re.search(r"\.\.\.(\S+)$", old_link)
     if old_head is not None and not _tag_exists(repo_root, old_head.group(1)):
         retained = ""
+    # `[Unreleased]` runs from the same real tag, not from `v{new_version}`.
+    #
+    # It carried the identical assumption this change exists to remove, one
+    # line above the fix, and it is the only link here that cannot heal: a
+    # released line dangles until the next refresh notices the tag never
+    # appeared, while `v{new_version}...HEAD` stays wrong forever. This
+    # repository has already shipped it twice — `v0.3.1...HEAD` and
+    # `v0.3.2...HEAD`, neither tag ever cut.
+    #
+    # Running from the newest existing release is also what the heading
+    # means: work not yet in a release is everything since the last one, and
+    # a version bumped in source but never tagged is unreleased too.
     links = (
-        f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v{new_version}...HEAD\n"
+        f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/{base}...HEAD\n"
         f"[{new_version}]: https://github.com/likefudan/rh-mcp/compare/"
         f"{base}...v{new_version}\n"
         f"{retained}"

@@ -204,6 +204,7 @@ def test_the_annotation_sweep_can_actually_detect_a_leak() -> None:
     `__annotations__` literally would pass on this signature. This proves it
     does not.
     """
+
     def leaky(client: httpx2.AsyncClient) -> None: ...
 
     leaked = set()

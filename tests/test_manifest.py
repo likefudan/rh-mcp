@@ -824,14 +824,13 @@ class TestManifestSource:
 # whose disposition was reviewed as a read — a weaker guarantee, and worth
 # naming as the weaker one.
 #
-# The real reason to stop at eleven is scope, not safety: these are where a
-# widened input is a widened *write*, and a table of fifty-four moves whenever
-# the provider edits a nested description, which is the pressure that gets a
-# check deleted. Pinning the thirty-five reads by property *name* only — which
-# no wording tweak moves — is a cheap next step and is recorded as one rather
-# than taken here.
+# The reason the two tables are separate is scope, not safety: a widened *write*
+# input is a widened write, which is the sharper edge, and it was pinned first.
+# The thirty-five reads are pinned below by property *name* only, which is what
+# a nested description edit cannot move — the cheap step this comment used to
+# record as deferred.
 #
-# The repository already pins two reads, in `TestTheTwoUpgradeLinkToolsStayAligned`,
+# The repository already pinned two reads, in `TestTheTwoUpgradeLinkToolsStayAligned`,
 # so "reads are never pinned" was never the project's position either.
 #
 # Written as literals rather than derived from the manifest: a table built from
@@ -875,6 +874,185 @@ ALLOWED_WRITE_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[st
         frozenset({"display_description", "display_name", "icon_emoji", "list_id"}),
         frozenset({"list_id"}),
     ),
+}
+
+
+# The same control for the thirty-five allowed reads, and the reason it is a
+# separate table is that it buys something weaker. A widened write accepts new
+# instructions; a widened read accepts new *selectors* — a new filter, a new
+# cursor, a new account field — which changes what leaves the account, not what
+# happens to it. That is the lesser harm, and it is still the harm this gateway
+# exists to bound.
+#
+# Property names only, and required sets. Not the schemas behind them: the same
+# limit the write table carries, for the same reason, and it is not narrowed by
+# repeating it here.
+#
+# The shape of that limit was measured rather than left to imagination. Swapping
+# two reads' input schemas wholesale is caught — unless the two name sets are
+# identical, in which case it passes: `get_equity_quotes` and
+# `get_equity_price_book` both take exactly `{symbols}`, and exchanging their
+# schemas moves the full digest and still passes all 205. What survives there is
+# a changed `type`/`items` body and changed description text, which is the
+# already-stated gap, arrived at from a direction that was not obvious.
+#
+# All thirty-five already declare `additionalProperties: false`; the assertion
+# below is what keeps that true rather than a description of today.
+ALLOWED_READ_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[str]]]] = {
+    "get_accounts": (frozenset(), frozenset()),
+    "get_earnings_calendar": (frozenset({"days", "filter", "start_date"}), frozenset()),
+    "get_earnings_results": (frozenset({"symbol"}), frozenset({"symbol"})),
+    "get_equity_fundamentals": (frozenset({"bounds", "symbols"}), frozenset({"symbols"})),
+    "get_equity_historicals": (
+        frozenset({"adjustment_type", "bounds", "end_time", "interval", "start_time", "symbols"}),
+        frozenset({"start_time", "symbols"}),
+    ),
+    "get_equity_orders": (
+        frozenset(
+            {
+                "account_number",
+                "created_at_gte",
+                "cursor",
+                "order_id",
+                "placed_agent",
+                "state",
+                "symbol",
+            }
+        ),
+        frozenset({"account_number"}),
+    ),
+    "get_equity_positions": (
+        frozenset({"account_number", "cursor"}),
+        frozenset({"account_number"}),
+    ),
+    "get_equity_price_book": (frozenset({"symbols"}), frozenset({"symbols"})),
+    "get_equity_quotes": (frozenset({"symbols"}), frozenset({"symbols"})),
+    "get_equity_tax_lots": (
+        frozenset({"account_number", "cursor", "symbol"}),
+        frozenset({"account_number", "symbol"}),
+    ),
+    "get_equity_technical_indicators": (
+        frozenset(
+            {
+                "adjustment_type",
+                "bounds",
+                "end_time",
+                "fast_period",
+                "interval",
+                "method",
+                "multiplier",
+                "num_std",
+                "output",
+                "period",
+                "signal_period",
+                "slow_period",
+                "start_time",
+                "symbol",
+                "type",
+            }
+        ),
+        frozenset({"interval", "start_time", "symbol", "type"}),
+    ),
+    "get_equity_tradability": (
+        frozenset({"account_number", "symbols"}),
+        frozenset({"account_number", "symbols"}),
+    ),
+    "get_financials": (frozenset({"limit", "period", "symbols"}), frozenset({"symbols"})),
+    "get_index_historicals": (
+        frozenset({"end_time", "instrument_ids", "interval", "start_time"}),
+        frozenset({"instrument_ids", "interval", "start_time"}),
+    ),
+    "get_index_quotes": (frozenset({"instrument_ids"}), frozenset({"instrument_ids"})),
+    "get_indexes": (frozenset({"symbols"}), frozenset()),
+    "get_limited_margin_upgrade_info": (
+        frozenset({"account_number"}),
+        frozenset({"account_number"}),
+    ),
+    "get_option_chains": (frozenset({"ids", "underlying_symbol"}), frozenset()),
+    "get_option_historicals": (
+        frozenset({"bounds", "end_time", "instrument_ids", "interval", "start_time"}),
+        frozenset({"instrument_ids", "start_time"}),
+    ),
+    "get_option_instruments": (
+        frozenset(
+            {
+                "chain_id",
+                "chain_symbol",
+                "cursor",
+                "expiration_dates",
+                "ids",
+                "state",
+                "strike_price",
+                "tradability",
+                "type",
+            }
+        ),
+        frozenset(),
+    ),
+    "get_option_level_upgrade_info": (
+        frozenset({"account_number"}),
+        frozenset({"account_number"}),
+    ),
+    "get_option_orders": (
+        frozenset(
+            {
+                "account_number",
+                "chain_ids",
+                "created_at_gte",
+                "cursor",
+                "order_id",
+                "placed_agent",
+                "state",
+                "underlying_type",
+            }
+        ),
+        frozenset({"account_number"}),
+    ),
+    "get_option_positions": (
+        frozenset(
+            {
+                "account_number",
+                "chain_ids",
+                "cursor",
+                "expiration_date",
+                "expiration_date_gte",
+                "expiration_date_lte",
+                "nonzero",
+                "option_ids",
+                "option_type",
+                "type",
+            }
+        ),
+        frozenset({"account_number"}),
+    ),
+    "get_option_quotes": (frozenset({"instrument_ids"}), frozenset({"instrument_ids"})),
+    "get_option_watchlist": (frozenset(), frozenset()),
+    "get_pnl_trade_history": (
+        frozenset({"account_number", "cursor", "span", "symbol"}),
+        frozenset({"account_number"}),
+    ),
+    "get_popular_watchlists": (frozenset(), frozenset()),
+    "get_portfolio": (frozenset({"account_number"}), frozenset({"account_number"})),
+    "get_realized_pnl": (
+        frozenset(
+            {
+                "account_number",
+                "asset_classes",
+                "display_currency",
+                "end_date",
+                "span",
+                "start_date",
+                "timezone",
+            }
+        ),
+        frozenset({"account_number"}),
+    ),
+    "get_scanner_filter_specs": (frozenset(), frozenset()),
+    "get_scans": (frozenset(), frozenset()),
+    "get_watchlist_items": (frozenset({"list_id"}), frozenset({"list_id"})),
+    "get_watchlists": (frozenset(), frozenset()),
+    "run_scan": (frozenset({"scan_id"}), frozenset({"scan_id"})),
+    "search": (frozenset({"asset_type", "limit", "query"}), frozenset({"query"})),
 }
 
 
@@ -1258,6 +1436,49 @@ class TestTheShippedManifest:
             schema = writes[capability].input_schema
             assert set(schema["properties"]) == set(properties), capability
             assert set(schema.get("required") or ()) == set(required), capability
+
+    def test_every_allowed_read_input_surface_is_pinned(self) -> None:
+        """The reads get the same table the writes got, for the lesser harm.
+
+        `update_scan_config` widened under a carried-forward `allowed`
+        disposition and nothing failed. Nothing structural about that was
+        specific to writes: the refresh carries every disposition forward
+        verbatim and reseals every digest, so a read that gains a property
+        arrives the same way — reviewed decision intact, surface changed,
+        suite green.
+
+        What a widened read costs is different, and smaller. A new property on
+        a `get_*` is a new selector: more of the account becomes reachable in
+        one call, or reachable at all. It does not move funds. That is why the
+        writes were pinned first and why this is not the same finding.
+        """
+        manifest = load_active_manifest()
+        reads = {
+            entry.capability: entry
+            for entry in manifest.entries
+            if entry.read_allowed and not entry.mutates
+        }
+
+        assert set(reads) == set(ALLOWED_READ_INPUT_SURFACES)
+        assert len(reads) == 35
+
+        for capability, (properties, required) in ALLOWED_READ_INPUT_SURFACES.items():
+            schema = reads[capability].input_schema
+            assert set(schema.get("properties") or ()) == set(properties), capability
+            assert set(schema.get("required") or ()) == set(required), capability
+
+    def test_no_allowed_read_accepts_undeclared_arguments(self) -> None:
+        """Same reason as the write form: a pinned name set bounds nothing without it.
+
+        Six of the thirty-five take no arguments at all and carry no
+        `properties` key. Those are the ones where this assertion does the most
+        work — an empty pinned set and an open schema would be a tool that
+        accepts anything while the table above says it accepts nothing.
+        """
+        for entry in load_active_manifest().entries:
+            if not (entry.read_allowed and not entry.mutates):
+                continue
+            assert entry.input_schema.get("additionalProperties") is False, entry.capability
 
     def test_no_allowed_write_accepts_undeclared_arguments(self) -> None:
         """`additionalProperties: false` is what makes the table above a bound.

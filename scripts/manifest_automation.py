@@ -469,6 +469,33 @@ to merge, tag and publish this exact source.
 """
 
 
+def _latest_existing_tag(repo_root: Path) -> str | None:
+    """The newest `v*` tag that actually exists, or None if there are none.
+
+    The comparison link used to be built as `compare/v{old_version}...v{new}`,
+    which assumes every version bump eventually becomes a tag. It does not:
+    `0.3.1` and `0.3.2` were written into the changelog by this function and
+    never released, so the links pointed at `v0.3.1` and `v0.3.2`, neither of
+    which exists, and GitHub answers them with a 404. A release record whose
+    own diff link is dead is the kind of small false statement this project
+    spends its time removing.
+    """
+    completed = subprocess.run(
+        ["git", "-C", str(repo_root), "tag", "--list", "v*", "--sort=-v:refname"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    if completed.returncode != 0:
+        return None
+    for line in completed.stdout.splitlines():
+        tag = line.strip()
+        if tag:
+            return tag
+    return None
+
+
 def prepare_refresh(candidate_path: Path, repo_root: Path, report_path: Path) -> str:
     manifest_path = repo_root / "src/rh_mcp/manifests/read-manifest.json"
     previous = load_manifest_file(manifest_path)
@@ -537,10 +564,15 @@ same tagged artifact."""
     )
     text = text.replace(insertion_point, f"{insertion_point}\n{entry}\n", 1)
     changelog.write_text(text, encoding="utf-8")
+    # Compare from the newest tag that exists, not from `v{old_version}` — the
+    # previous version may never have been released. Falling back to
+    # `v{old_version}` when there are no tags at all keeps the shape the
+    # `old_link` regex above expects on the next run.
+    base = _latest_existing_tag(repo_root) or f"v{old_version}"
     links = (
         f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v{new_version}...HEAD\n"
         f"[{new_version}]: https://github.com/likefudan/rh-mcp/compare/"
-        f"v{old_version}...v{new_version}\n"
+        f"{base}...v{new_version}\n"
         f"{old_link}"
     )
     _replace_marked(changelog, LINKS_START, LINKS_END, links)

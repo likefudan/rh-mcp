@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -463,3 +464,92 @@ def test_the_configuration_exit_code_matches_the_gateway_contract() -> None:
     from rh_mcp.errors import EXIT_CODE_CONFIGURATION_ERROR
 
     assert automation._CLI_CONFIGURATION_ERROR == EXIT_CODE_CONFIGURATION_ERROR == 3
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(root), *args],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+    )
+
+
+def _tagged_repo(root: Path, *tags: str) -> None:
+    """A real git repository carrying exactly `tags`."""
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "test@example.invalid")
+    _git(root, "config", "user.name", "test")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "base")
+    for tag in tags:
+        _git(root, "tag", tag)
+
+
+def test_the_comparison_link_names_a_tag_that_exists(tmp_path: Path) -> None:
+    """The link used to assume every version bump becomes a tag.
+
+    It does not. `0.3.1` and `0.3.2` were written into the changelog by this
+    function and never released, so it emitted
+    `compare/v0.3.2...v0.3.3` and `compare/v0.3.1...v0.3.2` — neither base
+    exists, and GitHub answers both with a 404. A release record whose own
+    diff link is dead is exactly the class of small false statement this
+    repository spends its effort removing, so it is now a test rather than a
+    convention.
+
+    Here the source says `0.3.0` while the newest real tag is `v0.2.0`,
+    reproducing that situation directly.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    assert prepare_refresh(candidate_path, root, tmp_path / "report.md") == "0.3.1"
+
+    changelog = (root / "CHANGELOG.md").read_text()
+    assert "[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...v0.3.1" in changelog
+    assert "compare/v0.3.0...v0.3.1" not in changelog
+
+    # Every base a *released* line compares from must be a tag that exists.
+    #
+    # `[Unreleased]` is deliberately excluded rather than overlooked: it reads
+    # `compare/v{new}...HEAD`, and `v{new}` is the tag this refresh is
+    # proposing, which correctly does not exist until the release workflow
+    # creates it. Asserting over every line would have failed on that, which
+    # is a check about the wrong thing.
+    existing = subprocess.run(
+        ["git", "-C", str(root), "tag", "--list"],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    released = re.findall(
+        r"(?m)^\[\d[^\]]*\]: https://github\.com/likefudan/rh-mcp/compare/(\S+?)\.\.\.",
+        changelog,
+    )
+    assert released, "no released comparison links were emitted at all"
+    for base in released:
+        assert base in existing, base
+
+
+def test_it_falls_back_when_the_repository_has_no_tags(tmp_path: Path) -> None:
+    """A tagless checkout must still produce the shape the next run parses.
+
+    `prepare_refresh` finds the previous link with a regex anchored on
+    `...v{old_version}`, so emitting nothing, or something differently shaped,
+    would break the following refresh rather than this one.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root)
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    assert prepare_refresh(candidate_path, root, tmp_path / "report.md") == "0.3.1"
+    assert (
+        "[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.1"
+        in (root / "CHANGELOG.md").read_text()
+    )

@@ -44,6 +44,7 @@ from rh_mcp.manifest import (
     manifest_to_json_dict,
     preflight_read,
 )
+from rh_mcp.schema import _ANNOTATION_KEYWORDS
 from tests.support import (
     ALPHA_INPUT_SCHEMA,
     ALPHA_OUTPUT_SCHEMA,
@@ -1069,24 +1070,40 @@ def constraint_only(schema: object) -> object:
     """A schema with everything it *explains* removed, and everything it
     *constrains* kept.
 
-    `description` is the whole of the exclusion, and that is measured rather
-    than assumed: the shipped manifest's input schemas contain exactly eight
-    distinct keywords — `type`, `description`, `additionalProperties`,
-    `properties`, `required`, `items`, `minimum`, `maximum` — and seven of
-    them bound what a caller may send. A ninth appearing later is refused at
-    manifest *load* time by `_validate_entry_schemas`, so this set cannot grow
-    silently; if one is ever added, it lands inside the digest and forces a
-    re-pin, which is the correct direction to fail.
+    The exclusion is `schema._ANNOTATION_KEYWORDS` — the package's own list of
+    keywords `validate_instance` ignores — not a hand-picked `description`.
+    All seven are prose or provenance, so a provider adding a `title` or an
+    `examples` widens nothing and must not force a re-pin; that churn is the
+    whole reason this repository argued against pinning schemas at all.
+
+    It is imported rather than copied so the strip follows the package's real
+    definition, and asserted against a literal below so that *reclassifying* a
+    keyword from applicator to annotation cannot silently widen what these
+    digests stop covering.
+
+    Annotation keys are dropped only where they are schema keywords. Under
+    `properties` the keys are property *names* — a tool may legitimately take
+    an argument called `description`, and dropping it there would make two
+    schemas with different constraints on that property hash identically.
     """
-    # `Mapping`/`Sequence`, not `dict`/`list`. A loaded entry's `input_schema`
-    # is a `mappingproxy`, which is not a `dict` — the first version of this
-    # helper tested for `dict`, so a loaded schema fell through unchanged with
-    # every description still in it. It produced a wrong but perfectly stable
-    # digest, and a table generated through the same helper would have agreed
-    # with it forever. What caught it was generating the table from the raw
-    # JSON and checking it against the loaded model: two routes to one number.
     if isinstance(schema, Mapping):
-        return {k: constraint_only(v) for k, v in schema.items() if k != "description"}
+        stripped: dict[str, object] = {}
+        for key, value in schema.items():
+            if key in _ANNOTATION_KEYWORDS:
+                continue
+            if key == "properties" and isinstance(value, Mapping):
+                stripped[key] = {name: constraint_only(sub) for name, sub in value.items()}
+            else:
+                stripped[key] = constraint_only(value)
+        return stripped
+    # `Mapping`/`Sequence`, not `dict`/`list`. A loaded entry's `input_schema`
+    # is a `mappingproxy` and its arrays are tuples; no `dict` and no `list`
+    # appears anywhere in one. The first version of this helper tested for
+    # `dict`, so every loaded schema fell through completely unchanged — a
+    # total no-op producing a wrong but perfectly stable digest, which a table
+    # generated through the same helper would have agreed with forever. What
+    # caught it was generating the table from the raw JSON and checking it
+    # against the loaded model: two routes to one number.
     if isinstance(schema, Sequence) and not isinstance(schema, (str, bytes)):
         return [constraint_only(v) for v in schema]
     return schema
@@ -1638,6 +1655,66 @@ class TestTheShippedManifest:
             observed = canonical_digest(constraint_only(allowed[capability].input_schema))
             assert observed == pinned, capability
 
+    def test_the_excluded_keywords_are_the_package_s_own_annotation_set(self) -> None:
+        """Reclassifying a keyword must not silently widen the exclusion.
+
+        `constraint_only` imports `_ANNOTATION_KEYWORDS` so the strip follows
+        what `validate_instance` actually ignores rather than a copy that can
+        drift. The cost of importing it is that moving a keyword out of the
+        applicator set would quietly stop these digests covering it, so the
+        set is pinned here as a literal: the import keeps the two in step, and
+        this keeps a reclassification loud.
+
+        An earlier version of `constraint_only`'s docstring claimed a ninth
+        keyword would be "refused at manifest load time by
+        `_validate_entry_schemas`". No such function exists, and the real path
+        — `ensure_schema_supported` — accepts 28 keywords including `enum`,
+        `pattern`, `title` and `default`. Nothing is refused at load for being
+        new. What actually stops silent growth is this: anything not in the
+        set below stays inside the digest.
+        """
+        assert set(_ANNOTATION_KEYWORDS) == {
+            "$comment",
+            "$id",
+            "$schema",
+            "default",
+            "description",
+            "examples",
+            "title",
+        }
+
+    def test_a_property_named_like_an_annotation_is_not_stripped(self) -> None:
+        """The strip is by key name, and `properties` keys are not keywords.
+
+        This is not hypothetical here. `create_scan` takes a property named
+        `title`, and `title` is in the annotation set — so a stripper that
+        dropped annotation keys at every depth would have removed a real
+        argument from `create_scan`'s digest and stopped covering its
+        constraints entirely. Measured: `create_scan` is the one capability of
+        the forty-six whose digest differs between the two strippers.
+
+        The `description` case below is the general form: two schemas that
+        constrain an argument of that name completely differently must not
+        hash alike — a collision manufactured by the guard itself.
+        """
+        tight = {
+            "type": "object",
+            "properties": {"description": {"type": "string", "maxLength": 10}},
+            "additionalProperties": False,
+        }
+        loose = {
+            "type": "object",
+            "properties": {"description": {"type": "object", "additionalProperties": True}},
+            "additionalProperties": False,
+        }
+
+        assert canonical_digest(constraint_only(tight)) != canonical_digest(constraint_only(loose))
+
+        # And the keyword form is still stripped, at the same nesting depth.
+        assert canonical_digest(constraint_only({"type": "string", "description": "a"})) == (
+            canonical_digest(constraint_only({"type": "string", "description": "b"}))
+        )
+
     def test_rewording_a_description_moves_no_constraint_digest(self) -> None:
         """The property that decides whether the table above survives.
 
@@ -1667,7 +1744,11 @@ class TestTheShippedManifest:
         # nothing. Forty of the forty-six do; the six that do not are exactly
         # the no-argument reads, whose schemas are `{"type": "object",
         # "additionalProperties": false}` and have no prose to reword.
-        assert actually_reworded == 40
+        # `>=`, not `==`. The guarantee wanted here is that the test is not
+        # vacuous, and `==` additionally asserts that no schema ever *gains*
+        # prose — which a provider may do at any time, and which would red
+        # this test for a drift it is specifically designed to tolerate.
+        assert actually_reworded >= 40
 
     @staticmethod
     def _reword_every_description(node: object) -> None:

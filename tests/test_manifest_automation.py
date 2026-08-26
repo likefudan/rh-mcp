@@ -604,3 +604,32 @@ def test_a_shallow_checkout_refuses_to_guess_the_comparison_base(tmp_path: Path)
 
     with pytest.raises(AutomationError, match="shallow"):
         prepare_refresh(candidate_path, shallow, tmp_path / "report.md")
+
+
+def test_a_tag_on_another_branch_is_not_the_comparison_base(tmp_path: Path) -> None:
+    """Reachability, not recency across the whole repository.
+
+    A tag on a branch this commit is not on describes a lineage that never
+    led here, and a comparison link against it renders a diff that never
+    happened. `v9.0.0` below is newer by every version ordering and sits on a
+    sidetrack; the base must still be `v0.2.0`.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+    _git(root, "checkout", "-q", "-b", "sidetrack")
+    (root / "sidetrack.txt").write_text("elsewhere\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "sidetrack")
+    _git(root, "tag", "v9.0.0")
+    _git(root, "checkout", "-q", "-")
+
+    assert automation._latest_existing_tag(root) == "v0.2.0"
+
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    assert prepare_refresh(candidate_path, root, tmp_path / "report.md") == "0.3.1"
+    changelog = (root / "CHANGELOG.md").read_text()
+    assert "[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...v0.3.1" in changelog
+    assert "v9.0.0" not in changelog

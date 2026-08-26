@@ -470,7 +470,7 @@ to merge, tag and publish this exact source.
 
 
 def _latest_existing_tag(repo_root: Path) -> str | None:
-    """The newest `v*` tag that actually exists, or None if there are none.
+    """The newest `v*` tag reachable from HEAD, or None if there is none.
 
     The comparison link used to be built as `compare/v{old_version}...v{new}`,
     which assumes every version bump eventually becomes a tag. It does not:
@@ -481,7 +481,21 @@ def _latest_existing_tag(repo_root: Path) -> str | None:
     spends its time removing.
     """
     completed = subprocess.run(
-        ["git", "-C", str(repo_root), "tag", "--list", "v*", "--sort=-v:refname"],
+        # `--merged HEAD`: a tag on some other branch describes a lineage this
+        # commit is not on, and a comparison link against it would render a
+        # diff that never happened. Reachability is the property wanted, not
+        # recency across the whole repository.
+        [
+            "git",
+            "-C",
+            str(repo_root),
+            "tag",
+            "--list",
+            "v*",
+            "--merged",
+            "HEAD",
+            "--sort=-v:refname",
+        ],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         check=False,

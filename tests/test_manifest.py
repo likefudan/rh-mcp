@@ -888,6 +888,14 @@ ALLOWED_WRITE_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[st
 # limit the write table carries, for the same reason, and it is not narrowed by
 # repeating it here.
 #
+# The shape of that limit was measured rather than left to imagination. Swapping
+# two reads' input schemas wholesale is caught — unless the two name sets are
+# identical, in which case it passes: `get_equity_quotes` and
+# `get_equity_price_book` both take exactly `{symbols}`, and exchanging their
+# schemas moves the full digest and still passes all 205. What survives there is
+# a changed `type`/`items` body and changed description text, which is the
+# already-stated gap, arrived at from a direction that was not obvious.
+#
 # All thirty-five already declare `additionalProperties: false`; the assertion
 # below is what keeps that true rather than a description of today.
 ALLOWED_READ_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[str]]]] = {

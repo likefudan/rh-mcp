@@ -31,9 +31,9 @@ that carries them.
 ## [0.3.3] — 2026-08-25
 
 **`0.3.1` and `0.3.2` were never tagged or published**, so this release carries
-them. The comparison link below runs from `v0.3.0`, the last tag that exists;
-the automation that maintains these links assumes every version bump becomes a
-tag, which is why the previous link named a `v0.3.2` that was never cut.
+them. The comparison link below runs from `v0.3.0`, the last tag that exists.
+Their own headings carry no comparison link at all, and cannot: a link needs a
+tag on both sides, and neither version has one.
 
 ### Security
 
@@ -799,7 +799,6 @@ description changed. No disposition moved.
 <!-- manifest-automation:release-links-start -->
 [Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...HEAD
 [0.3.3]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.3
-[0.3.2]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.2
 <!-- manifest-automation:release-links-end -->
 [0.2.0]: https://github.com/likefudan/rh-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/likefudan/rh-mcp/releases/tag/v0.1.0

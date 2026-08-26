@@ -480,26 +480,22 @@ def _latest_existing_tag(repo_root: Path) -> str | None:
     own diff link is dead is the kind of small false statement this project
     spends its time removing.
     """
-    completed = subprocess.run(
+    completed = _git_or_fail(
+        repo_root,
         # `--merged HEAD`: a tag on some other branch describes a lineage this
         # commit is not on, and a comparison link against it would render a
         # diff that never happened. Reachability is the property wanted, not
         # recency across the whole repository.
-        [
-            "git",
-            "-C",
-            str(repo_root),
-            "tag",
-            "--list",
-            "v*",
-            "--merged",
-            "HEAD",
-            "--sort=-v:refname",
-        ],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        check=False,
-        text=True,
+        "tag",
+        "--list",
+        # `v[0-9]*`, not `v*`: `-v:refname` sorts a non-version like `vnext`
+        # or `verified-build` ahead of every real tag, and it would then be
+        # chosen as the base.
+        "v[0-9]*",
+        "--merged",
+        "HEAD",
+        "--sort=-v:refname",
+        what="resolve the newest release tag",
     )
     if completed.returncode != 0:
         return None
@@ -520,14 +516,51 @@ def _is_shallow_checkout(repo_root: Path) -> bool:
     every local test still green. "No tags" and "no tags visible from here"
     are different facts and only one of them licenses a guess.
     """
-    completed = subprocess.run(
-        ["git", "-C", str(repo_root), "rev-parse", "--is-shallow-repository"],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        check=False,
-        text=True,
+    completed = _git_or_fail(
+        repo_root, "rev-parse", "--is-shallow-repository", what="detect a shallow checkout"
     )
     return completed.returncode == 0 and completed.stdout.strip() == "true"
+
+
+def _git_or_fail(repo_root: Path, *args: str, what: str) -> subprocess.CompletedProcess[str]:
+    """Run git, turning an absent binary into an `AutomationError`.
+
+    A non-zero exit is left to the caller — "not a repository" is a real
+    answer and each caller decides what it means. `git` missing entirely is
+    not an answer at all, and surfaced as `FileNotFoundError` it reads like a
+    bug in this script rather than a machine without git on `PATH`.
+    """
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo_root), *args],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except FileNotFoundError as exc:  # pragma: no cover - environment failure
+        raise AutomationError(f"git is not available, so this run cannot {what}") from exc
+
+
+def _comparison_base(repo_root: Path, old_version: str) -> str:
+    """The tag a new release's comparison link runs from.
+
+    Three cases, and they are different facts rather than one. A tag is
+    found: use it. No tag and the checkout is shallow: refuse, because
+    "no tags" and "no tags visible from here" are not the same claim and
+    only the first licenses a guess. No tag and the checkout is whole:
+    fall back to `v{old_version}`, which keeps the shape the next run's
+    `old_link` regex is anchored on.
+    """
+    found = _latest_existing_tag(repo_root)
+    if found is not None:
+        return found
+    if _is_shallow_checkout(repo_root):
+        raise AutomationError(
+            "this checkout is shallow, so no tag is visible and the comparison link "
+            "would be a guess; fetch tags (actions/checkout fetch-depth: 0) and rerun"
+        )
+    return f"v{old_version}"
 
 
 def prepare_refresh(candidate_path: Path, repo_root: Path, report_path: Path) -> str:
@@ -537,6 +570,12 @@ def prepare_refresh(candidate_path: Path, repo_root: Path, report_path: Path) ->
     summary = classify_candidate(candidate, manifest_path)
     if summary.state != "refresh":
         raise AutomationError(f"candidate is {summary.state}, not a same-set refresh")
+
+    # Resolved here, before a single file is written. It used to run at the
+    # end, next to the link it feeds, so a shallow checkout raised only after
+    # seven files had already been rewritten — a refusal that still left the
+    # tree half-refreshed.
+    comparison_base = _comparison_base(repo_root, _read_version(repo_root / "pyproject.toml"))
 
     try:
         document = refresh(candidate_path, manifest_path)
@@ -602,16 +641,7 @@ same tagged artifact."""
     # previous version may never have been released. Falling back to
     # `v{old_version}` when there are no tags at all keeps the shape the
     # `old_link` regex above expects on the next run.
-    base = _latest_existing_tag(repo_root)
-    if base is None:
-        if _is_shallow_checkout(repo_root):
-            raise AutomationError(
-                "this checkout is shallow, so no tag is visible and the comparison link "
-                "would be a guess; fetch tags (actions/checkout fetch-depth: 0) and rerun"
-            )
-        # Genuinely tagless: fall back to `v{old_version}`, which keeps the
-        # shape the next run's `old_link` regex is anchored on.
-        base = f"v{old_version}"
+    base = comparison_base
     links = (
         f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v{new_version}...HEAD\n"
         f"[{new_version}]: https://github.com/likefudan/rh-mcp/compare/"

@@ -633,3 +633,59 @@ def test_a_tag_on_another_branch_is_not_the_comparison_base(tmp_path: Path) -> N
     changelog = (root / "CHANGELOG.md").read_text()
     assert "[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...v0.3.1" in changelog
     assert "v9.0.0" not in changelog
+
+
+def test_the_shallow_refusal_leaves_the_tree_untouched(tmp_path: Path) -> None:
+    """Refusing late is refusing after the damage.
+
+    The guard first ran beside the link it feeds, at the end of the function,
+    so a shallow checkout raised only once the manifest, `pyproject.toml`,
+    `uv.lock`, `README.md`, `DESIGN.md`, `CHANGELOG.md` and the pinned test
+    had all been rewritten. The run failed and the tree was still half
+    refreshed, which is the worst of both outcomes.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+    (root / "later.txt").write_text("later\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "later")
+
+    shallow = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{root}", str(shallow)],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+    )
+    before = {
+        path.relative_to(shallow): path.read_bytes()
+        for path in sorted(shallow.rglob("*"))
+        if path.is_file() and ".git" not in path.parts
+    }
+    assert before, "the fixture wrote nothing to compare"
+
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    with pytest.raises(AutomationError, match="shallow"):
+        prepare_refresh(candidate_path, shallow, tmp_path / "report.md")
+
+    after = {
+        path.relative_to(shallow): path.read_bytes()
+        for path in sorted(shallow.rglob("*"))
+        if path.is_file() and ".git" not in path.parts
+    }
+    assert after == before
+
+
+def test_a_tag_that_is_not_a_version_is_never_the_comparison_base(tmp_path: Path) -> None:
+    """`v*` matches more than versions, and `-v:refname` puts them first.
+
+    `vnext` and `verified-build` both begin with `v`, sort ahead of every
+    real release under `-v:refname`, and name nothing a diff can run from.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0", "vnext", "verified-build")
+
+    assert automation._latest_existing_tag(root) == "v0.2.0"

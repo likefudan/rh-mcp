@@ -867,7 +867,7 @@ description changed. No disposition moved.
   than during, unlike the HTTP path.
 
 <!-- manifest-automation:release-links-start -->
-[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...HEAD
 [0.4.0]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.3
 <!-- manifest-automation:release-links-end -->

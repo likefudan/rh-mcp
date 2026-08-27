@@ -1233,8 +1233,9 @@ ALLOWED_INPUT_CONSTRAINT_DIGESTS: Final[dict[str, str]] = {
 
 # And the same for what comes back. `transport.py` validates every result
 # against the pinned output schema before it reaches a caller, so that schema
-# is the gateway's only constraint on what leaves the account — widen it and
-# unreviewed fields flow back unnoticed.
+# is the gateway's only constraint on the *shape* of what leaves the account
+# — widen it and unreviewed fields flow back unnoticed. A response budget
+# bounds volume separately, and bounds nothing about which fields appear.
 #
 # The gap was measured, not assumed: replacing `get_equity_quotes`'s output
 # schema with `{"type": "object", "additionalProperties": true}` and resealing
@@ -1866,8 +1867,10 @@ class TestTheShippedManifest:
 
         `transport.py` validates every structured result against the pinned
         output schema before a caller sees it, so that schema is the only
-        thing bounding what leaves the account. The input tables say nothing
-        about it: replacing `get_equity_quotes`'s output schema with
+        thing bounding the *shape* of what leaves the account — its field
+        set. A response budget bounds the volume (bytes, depth, node count,
+        string length), and nothing else bounds either. The input tables say
+        nothing about it: replacing `get_equity_quotes`'s output schema with
         `{"type": "object", "additionalProperties": true}` and resealing all
         four digest families passed the whole suite silently.
 

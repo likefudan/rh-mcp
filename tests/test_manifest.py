@@ -2525,23 +2525,32 @@ class TestTheWriteGateAgainstTheShippedManifest:
     `TestMutationsAreRefusedUnlessEnabled` in `test_gateway.py` covers the
     branch, the exported-function type check, and that the flag never unlocks
     a denied capability — all against synthetic fixtures. Until this class,
-    `allow_mutations` appeared nowhere in this file.
+    `allow_mutations` appeared nowhere in this file, so the claim a consumer
+    cares about — *the eleven writes that really ship are refused by default,
+    through the ordinary entry point* — was held by two test files that never
+    met.
 
-    So the claim a consumer cares about — *the eleven writes that really ship
-    are refused by default, through the ordinary entry point* — was held by
-    two test files that never met. The §12.4 review of the change measured it
-    and it passed; nothing in the suite would have caught it regressing. The
-    gate reads `entry.mutates` and is manifest-independent by construction,
-    which is an argument that it cannot break, not a measurement that it has
-    not.
+    Refusal is asserted at the wire, and the first version of this class did
+    not manage it. Every capability was invoked with `{}`, and ten of the
+    eleven shipped writes declare required properties, so with the gate
+    removed they were refused by *argument validation* — the loop aborted on
+    the error code and `assert sent == []` never ran. Exactly one write,
+    `create_scan`, has no required list and reached the transport unnoticed.
+    A test whose whole argument is the difference between an assertion and
+    the property it claims was asserting the other thing.
 
-    Refusal is asserted at the wire. An exception says the caller saw an
-    error; only an empty transport log says the provider was left alone, and
-    for a credential that can trade those are different facts.
+    So the arguments are valid now, built from each entry's own pinned
+    schema. With valid arguments the gate is the only thing between the call
+    and the provider, which is the property being measured.
     """
 
     class _Recorder:
-        """A `ProviderTransport` that answers discovery and records sends."""
+        """A `ProviderTransport` that answers discovery and records sends.
+
+        Records arguments as well as names. This package's history includes a
+        `MutableMapping` that read clean during validation and mutated before
+        the send, and a name-only log cannot see that.
+        """
 
         def __init__(self, document: dict[str, Any]) -> None:
             self.tools = tuple(
@@ -2554,7 +2563,7 @@ class TestTheWriteGateAgainstTheShippedManifest:
                 )
                 for entry in document["entries"]
             )
-            self.sent: list[str] = []
+            self.sent: list[tuple[str, Mapping[str, Any]]] = []
 
         async def discover(self) -> ObservedSurface:
             return ObservedSurface(tools=self.tools, complete=True)
@@ -2566,10 +2575,33 @@ class TestTheWriteGateAgainstTheShippedManifest:
             *,
             output_schema: Mapping[str, Any] | None,
         ) -> Any:
-            self.sent.append(provider_tool_name)
+            self.sent.append((provider_tool_name, dict(arguments)))
             from rh_mcp.transport import ToolPayload
 
             return ToolPayload(data={}, source="structured_content")
+
+    @staticmethod
+    def _minimal_arguments(entry: ManifestEntry) -> dict[str, Any]:
+        """The smallest input this entry's own pinned schema accepts.
+
+        Built from the schema rather than written out, because a table of
+        nineteen argument sets is a second copy of the manifest that drifts
+        from it. Nothing here checks the schema — these values only have to
+        get past validation so the gate is what refuses.
+        """
+        schema = entry.input_schema
+        properties = schema.get("properties") or {}
+        arguments: dict[str, Any] = {}
+        for name in schema.get("required") or ():
+            declared = properties[name].get("type")
+            kinds = {declared} if isinstance(declared, str) else set(declared or ())
+            if "array" in kinds:
+                arguments[name] = []
+            elif "integer" in kinds or "number" in kinds:
+                arguments[name] = properties[name].get("minimum", 1)
+            else:
+                arguments[name] = "0" * 36
+        return arguments
 
     @staticmethod
     def _gateway(**config: Any) -> tuple[Any, Any, ReviewedManifest]:
@@ -2586,21 +2618,32 @@ class TestTheWriteGateAgainstTheShippedManifest:
         return gateway, recorder, manifest
 
     def test_no_shipped_write_reaches_the_provider_by_default(self) -> None:
-        """Every `mutates` entry of the real manifest, through `invoke`."""
-        gateway, recorder, manifest = self._gateway()
-        mutating = [
-            entry.capability
-            for entry in manifest.entries
-            if entry.mutates and entry.capability is not None
-        ]
-        assert len(mutating) == 19  # 11 allowed writes, 8 denied trading tools
+        """The eleven allowed writes, with arguments their schemas accept.
 
-        for capability in mutating:
-            with pytest.raises(GatewayError) as raised:
-                asyncio.run(gateway.invoke(capability, {}))
-            assert raised.value.code is ErrorCode.CAPABILITY_DENIED, capability
+        Valid arguments are what makes this a measurement of the gate. With
+        `{}` the schema check refuses ten of them first, and removing the
+        gate would leave this test green on everything but `create_scan`.
+        """
+        gateway, recorder, manifest = self._gateway()
+        writes = [entry for entry in manifest.entries if entry.read_allowed and entry.mutates]
+        assert len(writes) == 11
+
+        # The wire is asserted first, and every call runs before anything is
+        # asserted at all. `pytest.raises` inside the loop would abort on the
+        # first capability — on the *exception*, or on its absence — and the
+        # log assertion below would never execute. That is what the previous
+        # version did while claiming the opposite.
+        outcomes: list[tuple[str | None, ErrorCode | None]] = []
+        for entry in writes:
+            try:
+                asyncio.run(gateway.invoke(entry.capability, self._minimal_arguments(entry)))
+            except GatewayError as refused:
+                outcomes.append((entry.capability, refused.code))
+            else:
+                outcomes.append((entry.capability, None))
 
         assert recorder.sent == []
+        assert outcomes == [(entry.capability, ErrorCode.CAPABILITY_DENIED) for entry in writes]
 
     def test_a_shipped_read_still_reaches_the_provider(self) -> None:
         """The control. Without it the test above passes on a gateway that
@@ -2609,29 +2652,35 @@ class TestTheWriteGateAgainstTheShippedManifest:
 
         asyncio.run(gateway.invoke("get_accounts", {}))
 
-        assert recorder.sent == ["get_accounts"]
+        assert [name for name, _ in recorder.sent] == ["get_accounts"]
 
-    def test_enabling_mutations_reaches_only_the_reviewed_writes(self) -> None:
-        """`allow_mutations` is a second lock, never a key to the first.
+    def test_the_denied_writes_are_refused_by_disposition_not_by_the_gate(self) -> None:
+        """Said plainly, because the distinction is the whole security story.
 
-        With it set, an allowed write reaches the provider and every denied
-        trading tool still does not — the reviewed disposition decides
-        membership, and this flag only decides whether the mutating part of
-        what was already allowed may be called.
+        The eight trading tools were unreachable before the gate existed and
+        would be unreachable if it were deleted: their reviewed disposition
+        is `denied`. The gate closes the *watchlist and saved-scan* writes.
+        Counting all nineteen as its work overstates it, which is the kind of
+        adjacent claim this repository keeps having to correct.
         """
         gateway, recorder, manifest = self._gateway(allow_mutations=True)
-        denied_writes = [
-            entry.capability
-            for entry in manifest.entries
-            if entry.mutates and not entry.read_allowed and entry.capability is not None
-        ]
-        assert len(denied_writes) == 8
+        denied = [entry for entry in manifest.entries if not entry.read_allowed]
+        assert len(denied) == 8
+        assert all(entry.mutates for entry in denied)
 
-        for capability in denied_writes:
-            with pytest.raises(GatewayError) as raised:
-                asyncio.run(gateway.invoke(capability, {}))
-            assert raised.value.code is ErrorCode.CAPABILITY_DENIED, capability
+        outcomes: list[tuple[str | None, ErrorCode | None]] = []
+        for entry in denied:
+            try:
+                asyncio.run(gateway.invoke(entry.capability, self._minimal_arguments(entry)))
+            except GatewayError as refused:
+                outcomes.append((entry.capability, refused.code))
+            else:
+                outcomes.append((entry.capability, None))
+
         assert recorder.sent == []
+        assert outcomes == [(entry.capability, ErrorCode.CAPABILITY_DENIED) for entry in denied]
 
+        # And with the flag on, an allowed write does reach the provider: a
+        # second lock, never a key to the first.
         asyncio.run(gateway.invoke("follow_watchlist", {"list_id": "0" * 36}))
-        assert recorder.sent == ["follow_watchlist"]
+        assert [name for name, _ in recorder.sent] == ["follow_watchlist"]

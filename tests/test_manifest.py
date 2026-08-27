@@ -1231,6 +1231,116 @@ ALLOWED_INPUT_CONSTRAINT_DIGESTS: Final[dict[str, str]] = {
 }
 
 
+# And the same for what comes back. `transport.py` validates every result
+# against the pinned output schema before it reaches a caller, so that schema
+# is the gateway's only constraint on what leaves the account — widen it and
+# unreviewed fields flow back unnoticed.
+#
+# The gap was measured, not assumed: replacing `get_equity_quotes`'s output
+# schema with `{"type": "object", "additionalProperties": true}` and resealing
+# all four digest families passed the entire suite in silence.
+#
+# Same exclusion as the input table — `constraint_only` strips what a schema
+# explains and keeps what it constrains — so a re-worded provider description
+# moves nothing here either.
+ALLOWED_OUTPUT_CONSTRAINT_DIGESTS: Final[dict[str, str]] = {
+    "add_option_to_watchlist": (
+        "sha256:54aa0a37bee227ca2068df872ee0c9efce5a37c4423889aed4faa4f27ea2e96e"
+    ),
+    "add_to_watchlist": "sha256:bb15f7a6632e0cd8a2790fc0cc577cb99f643fa5f0a42b575b6cdbe069b9498c",
+    "create_scan": "sha256:e5e2531106f4022951f027dec875854da1e8d593eeee461e63ad021af227e095",
+    "create_watchlist": "sha256:bf8bb81fcc1a1148c8cd16357e62ac53b2de37b74e3dd1c3839c4861b33e2fdb",
+    "follow_watchlist": "sha256:6e55919c182456b8fca2beeb9b4efc45471eee42ff4acfadd31d8ff46944494f",
+    "get_accounts": "sha256:de22841be417b1686bd8185bb3d880c800d4bdf202734872f7eaac698010d36b",
+    "get_earnings_calendar": (
+        "sha256:6ae25fa57f66a31638211b4705640a1412acb09f8b4eb0e72c6ea8d59f4fe9cb"
+    ),
+    "get_earnings_results": (
+        "sha256:effa5ff89010f39383dfc2f67d40798a19fae5a5884413fa489717fc779f5322"
+    ),
+    "get_equity_fundamentals": (
+        "sha256:0b2cf9cfe32a7870d3962f07fa46ef7f2058fb2914aa18d576fa19eef08f839d"
+    ),
+    "get_equity_historicals": (
+        "sha256:4d8238e28cbac721020ea31f25c672bf769de549142a8a7523e345d3f56fc354"
+    ),
+    "get_equity_orders": "sha256:c8a1617e0142fa0ee8d10b3811a60c6d444af244e8a6b0cdf220c3e248fe73ae",
+    "get_equity_positions": (
+        "sha256:d95c023466f337562953dbe702e1a43b213308706048b95870935dcb70ca5cc6"
+    ),
+    "get_equity_price_book": (
+        "sha256:1ef9ce23404830f251541f9c7bc363a74772e1cbf4cc5a71a93ba1d4ac4e6892"
+    ),
+    "get_equity_quotes": "sha256:a9d8fd384be90738cbdaa493192a6de89edba617745fb2b7b66f14da8f2650f4",
+    "get_equity_tax_lots": (
+        "sha256:b075c4a6c50025ceccc0141c55617191d95813fc04e6f324df0e032419bb1af8"
+    ),
+    "get_equity_technical_indicators": (
+        "sha256:b8b96d1f5911a0c07c6eb9c58ce200713e077c775fea7042936d0ce74432b282"
+    ),
+    "get_equity_tradability": (
+        "sha256:e5320be977c5cee2e8cae31a0584c0cf6a128c626ce4489e7b865d7de885eaa6"
+    ),
+    "get_financials": "sha256:0c08d0f86afff1b9b78f720d75d1104cff1d5ff929904a59c2f00327e563f6c4",
+    "get_index_historicals": (
+        "sha256:21b61545a10942a1b94ad0a7afa8e61cb02429f37f74843869e6dbdbe02c2289"
+    ),
+    "get_index_quotes": "sha256:cdcca767cf83aadb9886376525342363ddf1d6ce16720a9079e6a3bef488f8b5",
+    "get_indexes": "sha256:8bdea3b49c37ff829d29f9ca58be035d351b6c17097c31b7f7927c1eabdfc986",
+    "get_limited_margin_upgrade_info": (
+        "sha256:654b9c942dac2a1aa23852c7d18523aac4d15a7587256d262b3d4a44b12e463e"
+    ),
+    "get_option_chains": "sha256:07f83dee74d75fb9641d2732a8aea0262e4382da78cc1e81c2f15a0deb77565f",
+    "get_option_historicals": (
+        "sha256:8a784808998179a03a16bc0496b9d216ad0caff0add6d63a7c69169e13e0fd7a"
+    ),
+    "get_option_instruments": (
+        "sha256:1dd8a8da1b4adb0ed2cc0bc3a5c0c35ad2f684af217ec4868fac53909ab405ff"
+    ),
+    "get_option_level_upgrade_info": (
+        "sha256:481304ddd9b8fec5cdf69a81097d16c6d54f9f2cb38af4e8d3af93c78e246ef4"
+    ),
+    "get_option_orders": "sha256:5d826b47cdd441b6c3492d8c0cca2245ef2920cf10842c9c93e6b5812620fa89",
+    "get_option_positions": (
+        "sha256:19789f7e387c76c3b216e68512d46674bdc465ca70a501cc182cd3b1b1ba6288"
+    ),
+    "get_option_quotes": "sha256:fbe49702a181d36232fd8c064763f7192c4fb13afb52adcca64e2fc4ca570f78",
+    "get_option_watchlist": (
+        "sha256:ee00641f34681c37420b44dc235dc8e040da5e28d79d8011589a654167640dec"
+    ),
+    "get_pnl_trade_history": (
+        "sha256:d7a53b01b84a8fcfb647013b8f5040f0fbd4c280b89fb2ae3973a07eb8ce69d4"
+    ),
+    "get_popular_watchlists": (
+        "sha256:3a1aef1ca85370b310a9e7bc845849d52f91c18a7df621f1264ba0ce20e02b06"
+    ),
+    "get_portfolio": "sha256:51c07ba04d9023b79a74c9d64f7392829efef0cb237cef86cc1a48fd6d21cbf1",
+    "get_realized_pnl": "sha256:be92f88d05829832daa53f152524224350d9ba0456b9ed393e8053932ab6e2fe",
+    "get_scanner_filter_specs": (
+        "sha256:d8efed01fa7168394fbc17ff4c24ad3d7e3a8a5bcffe66c363fcf16dbe1bb002"
+    ),
+    "get_scans": "sha256:db1e34e194c0ada2542ce615ae50b2dacb007bcab37a61f1a9a7122783f5dd3c",
+    "get_watchlist_items": (
+        "sha256:66a508840fd60fbdd8eac27434af6b63a3e61ee3ee54e54d34c080b67d8b8912"
+    ),
+    "get_watchlists": "sha256:ee844180bbb999ab014c07e0a9a1a4ffb1f9610ef83f7a0d2164c96d10c55353",
+    "remove_from_watchlist": (
+        "sha256:bb15f7a6632e0cd8a2790fc0cc577cb99f643fa5f0a42b575b6cdbe069b9498c"
+    ),
+    "remove_option_from_watchlist": (
+        "sha256:54aa0a37bee227ca2068df872ee0c9efce5a37c4423889aed4faa4f27ea2e96e"
+    ),
+    "run_scan": "sha256:e5e2531106f4022951f027dec875854da1e8d593eeee461e63ad021af227e095",
+    "search": "sha256:f95471d95ef331a30a2da4ac0035f50fb742dca2b920cb48ed72987ab4d4edfc",
+    "unfollow_watchlist": "sha256:6e55919c182456b8fca2beeb9b4efc45471eee42ff4acfadd31d8ff46944494f",
+    "update_scan_config": "sha256:e5e2531106f4022951f027dec875854da1e8d593eeee461e63ad021af227e095",
+    "update_scan_filters": (
+        "sha256:e5e2531106f4022951f027dec875854da1e8d593eeee461e63ad021af227e095"
+    ),
+    "update_watchlist": "sha256:bf8bb81fcc1a1148c8cd16357e62ac53b2de37b74e3dd1c3839c4861b33e2fdb",
+}
+
+
 class TestTheShippedManifest:
     """Regression tests on the committed manifest itself (§6, §13).
 
@@ -1750,6 +1860,32 @@ class TestTheShippedManifest:
         assert canonical_digest(constraint_only({"const": 1, "description": "a"})) == (
             canonical_digest(constraint_only({"const": 1, "description": "b"}))
         )
+
+    def test_every_allowed_capability_output_constraint_is_pinned(self) -> None:
+        """What may come back, not only what may be sent.
+
+        `transport.py` validates every structured result against the pinned
+        output schema before a caller sees it, so that schema is the only
+        thing bounding what leaves the account. The input tables say nothing
+        about it: replacing `get_equity_quotes`'s output schema with
+        `{"type": "object", "additionalProperties": true}` and resealing all
+        four digest families passed the whole suite silently.
+
+        Every allowed entry ships one. `None` is a legal value in the model
+        and would disable validation for that capability entirely, so its
+        absence is asserted rather than tolerated: a future entry arriving
+        without an output schema must be a red test, not a quiet exemption.
+        """
+        manifest = load_active_manifest()
+        allowed = {entry.capability: entry for entry in manifest.entries if entry.read_allowed}
+
+        assert set(allowed) == set(ALLOWED_OUTPUT_CONSTRAINT_DIGESTS)
+        assert len(allowed) == 46
+
+        for capability, pinned in ALLOWED_OUTPUT_CONSTRAINT_DIGESTS.items():
+            schema = allowed[capability].output_schema
+            assert schema is not None, capability
+            assert canonical_digest(constraint_only(schema)) == pinned, capability
 
     def test_rewording_a_description_moves_no_constraint_digest(self) -> None:
         """The property that decides whether the table above survives.

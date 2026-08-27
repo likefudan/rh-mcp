@@ -2517,3 +2517,121 @@ class TestDeniedEntriesDoNotBlockLoading:
             rationale=entries[0]["rationale"],
         )
         expect_local_failure(reseal(build_manifest(entries)), "does not implement")
+
+
+class TestTheWriteGateAgainstTheShippedManifest:
+    """The gate, measured against the manifest that actually ships.
+
+    `TestMutationsAreRefusedUnlessEnabled` in `test_gateway.py` covers the
+    branch, the exported-function type check, and that the flag never unlocks
+    a denied capability — all against synthetic fixtures. Until this class,
+    `allow_mutations` appeared nowhere in this file.
+
+    So the claim a consumer cares about — *the eleven writes that really ship
+    are refused by default, through the ordinary entry point* — was held by
+    two test files that never met. The §12.4 review of the change measured it
+    and it passed; nothing in the suite would have caught it regressing. The
+    gate reads `entry.mutates` and is manifest-independent by construction,
+    which is an argument that it cannot break, not a measurement that it has
+    not.
+
+    Refusal is asserted at the wire. An exception says the caller saw an
+    error; only an empty transport log says the provider was left alone, and
+    for a credential that can trade those are different facts.
+    """
+
+    class _Recorder:
+        """A `ProviderTransport` that answers discovery and records sends."""
+
+        def __init__(self, document: dict[str, Any]) -> None:
+            self.tools = tuple(
+                ObservedTool(
+                    name=entry["provider_tool_name"],
+                    description=entry["description"],
+                    input_schema=entry["input_schema"],
+                    output_schema=entry["output_schema"],
+                    annotations=entry["annotations"],
+                )
+                for entry in document["entries"]
+            )
+            self.sent: list[str] = []
+
+        async def discover(self) -> ObservedSurface:
+            return ObservedSurface(tools=self.tools, complete=True)
+
+        async def call_tool(
+            self,
+            provider_tool_name: str,
+            arguments: Mapping[str, Any],
+            *,
+            output_schema: Mapping[str, Any] | None,
+        ) -> Any:
+            self.sent.append(provider_tool_name)
+            from rh_mcp.transport import ToolPayload
+
+            return ToolPayload(data={}, source="structured_content")
+
+    @staticmethod
+    def _gateway(**config: Any) -> tuple[Any, Any, ReviewedManifest]:
+        from rh_mcp.gateway import RobinhoodGateway
+
+        document = json.loads(PACKAGED_MANIFEST_PATH.read_text(encoding="utf-8"))
+        manifest = load_active_manifest()
+        recorder = TestTheWriteGateAgainstTheShippedManifest._Recorder(document)
+        gateway = RobinhoodGateway(
+            GatewayConfig(expected_manifest_digest=manifest.digest, **config),
+            manifest,
+            recorder,
+        )
+        return gateway, recorder, manifest
+
+    def test_no_shipped_write_reaches_the_provider_by_default(self) -> None:
+        """Every `mutates` entry of the real manifest, through `invoke`."""
+        gateway, recorder, manifest = self._gateway()
+        mutating = [
+            entry.capability
+            for entry in manifest.entries
+            if entry.mutates and entry.capability is not None
+        ]
+        assert len(mutating) == 19  # 11 allowed writes, 8 denied trading tools
+
+        for capability in mutating:
+            with pytest.raises(GatewayError) as raised:
+                asyncio.run(gateway.invoke(capability, {}))
+            assert raised.value.code is ErrorCode.CAPABILITY_DENIED, capability
+
+        assert recorder.sent == []
+
+    def test_a_shipped_read_still_reaches_the_provider(self) -> None:
+        """The control. Without it the test above passes on a gateway that
+        refuses everything, which would make it a check on nothing."""
+        gateway, recorder, _ = self._gateway()
+
+        asyncio.run(gateway.invoke("get_accounts", {}))
+
+        assert recorder.sent == ["get_accounts"]
+
+    def test_enabling_mutations_reaches_only_the_reviewed_writes(self) -> None:
+        """`allow_mutations` is a second lock, never a key to the first.
+
+        With it set, an allowed write reaches the provider and every denied
+        trading tool still does not — the reviewed disposition decides
+        membership, and this flag only decides whether the mutating part of
+        what was already allowed may be called.
+        """
+        gateway, recorder, manifest = self._gateway(allow_mutations=True)
+        denied_writes = [
+            entry.capability
+            for entry in manifest.entries
+            if entry.mutates and not entry.read_allowed and entry.capability is not None
+        ]
+        assert len(denied_writes) == 8
+
+        for capability in denied_writes:
+            with pytest.raises(GatewayError) as raised:
+                asyncio.run(gateway.invoke(capability, {}))
+            assert raised.value.code is ErrorCode.CAPABILITY_DENIED, capability
+        assert recorder.sent == []
+
+        asyncio.run(gateway.invoke("follow_watchlist", {"list_id": "0" * 36}))
+        assert recorder.sent == ["follow_watchlist"]

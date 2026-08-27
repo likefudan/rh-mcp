@@ -2658,6 +2658,14 @@ class TestDeniedEntriesDoNotBlockLoading:
         expect_local_failure(reseal(build_manifest(entries)), "does not implement")
 
 
+# What `_minimal_arguments` below knows how to satisfy. Anything else on a
+# required property makes it refuse rather than produce a value that would be
+# rejected for a reason that is not the gate.
+_GENERATOR_UNDERSTANDS: Final[frozenset[str]] = frozenset(
+    {"type", "description", "items", "minimum", "maximum"}
+)
+
+
 class TestTheWriteGateAgainstTheShippedManifest:
     """The gate, measured against the manifest that actually ships.
 
@@ -2727,17 +2735,41 @@ class TestTheWriteGateAgainstTheShippedManifest:
         nineteen argument sets is a second copy of the manifest that drifts
         from it. Nothing here checks the schema — these values only have to
         get past validation so the gate is what refuses.
+
+        It refuses to guess rather than guessing badly, and that is the whole
+        point of the assertions. Review measured the decay: adding
+        `minLength: 40` to `add_to_watchlist.list_id` and resealing left this
+        class **green**, while the ablation that should reach eleven writes
+        reached ten. The capability had dropped out of the gate's coverage —
+        refused by validation instead — and nothing said so. A test that
+        quietly measures less than it did is worse than one that breaks,
+        because only the second gets fixed.
+
+        So an unmodelled keyword or type on a required property is a failure
+        here, naming the property. Widening the generator is then a deliberate
+        edit rather than a silent loss.
         """
         schema = entry.input_schema
         properties = schema.get("properties") or {}
         arguments: dict[str, Any] = {}
         for name in schema.get("required") or ():
-            declared = properties[name].get("type")
-            kinds = {declared} if isinstance(declared, str) else set(declared or ())
+            assert name in properties, f"{entry.capability}: required {name} is undeclared"
+            declared = properties[name]
+            unmodelled = set(declared) - _GENERATOR_UNDERSTANDS
+            assert not unmodelled, (
+                f"{entry.capability}.{name} carries {sorted(unmodelled)}, which this "
+                "generator does not model — see the note above"
+            )
+            kinds = declared.get("type")
+            kinds = {kinds} if isinstance(kinds, str) else set(kinds or ())
+            assert kinds & {"array", "integer", "number", "string"}, (
+                f"{entry.capability}.{name} has type {sorted(kinds)}, which this "
+                "generator does not model — see the note above"
+            )
             if "array" in kinds:
                 arguments[name] = []
             elif "integer" in kinds or "number" in kinds:
-                arguments[name] = properties[name].get("minimum", 1)
+                arguments[name] = declared.get("minimum", 1)
             else:
                 arguments[name] = "0" * 36
         return arguments

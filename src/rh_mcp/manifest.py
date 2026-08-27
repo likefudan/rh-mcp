@@ -1239,6 +1239,8 @@ def preflight_read(
     assessment: ReadinessAssessment,
     capability: object,
     arguments: Mapping[str, Any],
+    *,
+    allow_mutations: bool = False,
 ) -> PreflightResult:
     """Resolve a capability and validate its arguments, as one event (§6.2).
 
@@ -1281,6 +1283,22 @@ def preflight_read(
 
     entry = manifest.capabilities.get(capability) if isinstance(capability, str) else None
     if entry is None or not entry.read_allowed:
+        invalid(
+            "capability is not a reviewed read capability of the active manifest",
+            ErrorCode.CAPABILITY_DENIED,
+        )
+
+    # Strictly `bool` here too, and not only at the config boundary.
+    # `preflight_read` is in `__all__`, and this package's history records a
+    # reviewer who ignored the gateway and imported the exported function
+    # directly; called that way with the string "false" — truthy — the gate
+    # opened and returned a `PreflightResult` authorising a write. A control
+    # that is only safe when reached through one caller is a convention, not a
+    # control.
+    if not isinstance(allow_mutations, bool):
+        invalid("allow_mutations must be a bool", _LOCAL)
+
+    if entry.mutates and not allow_mutations:
         invalid(
             "capability is not a reviewed read capability of the active manifest",
             ErrorCode.CAPABILITY_DENIED,

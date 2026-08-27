@@ -289,6 +289,31 @@ class GatewayConfig:
     """
 
     expected_manifest_digest: str
+    #: Whether the gateway may invoke a capability whose reviewed entry says
+    #: `mutates: true`. Defaults to refusing them.
+    #:
+    #: Until 0.4.0 `mutates` was declared in the manifest, validated at load,
+    #: and reported to callers — and read by no branch that decided anything.
+    #: An external review of v0.3.3 put it plainly: writes were gated exactly
+    #: as reads were, and "confirm with the user first" was advice to the
+    #: calling model, not a control. This is the branch that was missing.
+    #:
+    #: It is deliberately a second control that does not live in the manifest.
+    #: Every other restraint here is one reviewed data file plus the digest a
+    #: consumer pins to it; a consumer who wants reads only had nothing to say
+    #: so in code, and had to trust that the eleven allowed writes stayed
+    #: benign across refreshes. This is enforced against `mutates` regardless
+    #: of what the manifest allows, so a widened or substituted manifest does
+    #: not reach a write while it is false.
+    #: Keyword-only, and that is load-bearing rather than tidy. Inserted as an
+    #: ordinary field it landed second, ahead of `mode`, so the pre-existing
+    #: positional call `GatewayConfig(digest, "development")` bound
+    #: "development" to *this* field — a truthy string that opens the gate —
+    #: while `mode` silently stayed "production". `field(kw_only=True)` is
+    #: already used deliberately elsewhere in this package; it was not applied
+    #: here, and no test in the suite could see it because every construction
+    #: in this repository passes keywords.
+    allow_mutations: bool = field(default=False, kw_only=True)
     mode: Mode = "production"
     credential_adapter: CredentialAdapter = "keychain"
     credential_namespace: str = "rh-mcp"
@@ -303,6 +328,18 @@ class GatewayConfig:
     dev_stdio_cwd: str | None = None
 
     def __post_init__(self) -> None:
+        # Strictly `bool`, never truthiness. `if entry.mutates and not
+        # allow_mutations` is a truthiness test, so the strings "false", "no"
+        # and "0" — what a YAML, JSON, env or argparse layer hands over — all
+        # opened the gate. The manifest's own `mutates` is `isinstance`-checked
+        # at load for exactly this reason; the one control where failing open
+        # means reaching a trading-capable credential is not the place to skip
+        # the pattern.
+        if not isinstance(self.allow_mutations, bool):
+            _fail(
+                "allow_mutations must be a bool, got "
+                f"{type(self.allow_mutations).__name__} {self.allow_mutations!r}"
+            )
         if self.mode not in ("production", "development"):
             _fail(f"mode must be 'production' or 'development', got {self.mode!r}")
         if not is_digest(self.expected_manifest_digest):

@@ -470,11 +470,23 @@ checks: a consumer must deliberately accept a new full-manifest digest even if
 the package version or human-readable manifest version did not change.
 
 For each request, the gateway resolves a public capability identifier through
-the active manifest, verifies its `allowed` disposition and exact digest,
-validates the input against the pinned schema, and only then calls the private
-transport with **the frozen arguments that validation ran against** — not with
-the mapping the caller passed in, which the caller may still mutate. Callers
-cannot supply an arbitrary provider tool name.
+the active manifest, verifies its `allowed` disposition, **refuses it when the
+entry's `mutates` is true and `allow_mutations` is false**, verifies its exact
+digest, validates the input against the pinned schema, and only then calls the
+private transport with **the frozen arguments that validation ran against** —
+not with the mapping the caller passed in, which the caller may still mutate.
+Callers cannot supply an arbitrary provider tool name.
+
+The `mutates` gate is deliberately a *second* restraint that does not live in
+the manifest. Every other check in that sequence resolves against one reviewed
+data file and the digest a consumer pins to it; a consumer who wants reads
+only previously had no way to say so in code, and had to trust that the
+eleven allowed writes stayed benign across refreshes. Because the gate reads
+`mutates` regardless of what the manifest allows, a widened or substituted
+manifest does not reach a write while it is false. It refuses with the same
+`CAPABILITY_DENIED` as an unknown capability, so the error channel cannot be
+used to map the write surface; `capabilities()` reports `mutates` openly for
+callers that need to know.
 
 ## 7. Public interfaces
 
@@ -618,6 +630,10 @@ Production configuration is intentionally narrow:
 - credential-store adapter and namespace;
 - callback port and exact loopback host/path;
 - bounded timeout/concurrency settings; and
+- `allow_mutations`, default `False`, which decides whether an entry marked
+  `mutates` may be invoked at all. Keyword-only and strictly `bool`: it was
+  briefly an ordinary field, where an existing positional call bound a truthy
+  string to it, and briefly untyped, where the string `"false"` opened it; and
 - active committed manifest selected by the installed package version; and
 - required `expected_manifest_digest`, supplied independently by the consumer
   (`RH_MCP_EXPECTED_MANIFEST_DIGEST` for the CLI).

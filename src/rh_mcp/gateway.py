@@ -109,6 +109,13 @@ class CapabilityDescription:
     def to_json_dict(self) -> dict[str, Any]:
         return {
             "capability": self.capability,
+            # The *reviewed disposition*, not a prediction that `invoke`
+            # will accept it. Since 0.4.0 those differ: with the default
+            # `allow_mutations=False` all eleven entries that report
+            # `allowed: true, mutates: true` are refused at the gate. This
+            # field is not made gateway-aware because its key set is part of
+            # what a consumer pins; the pair `allowed && !mutates` is the
+            # effective read permission under the default configuration.
             "allowed": self.read_allowed,
             # Reported next to `read_allowed`, because `read_allowed: true` on
             # a capability that writes is exactly the confusion §2.1 warns
@@ -225,7 +232,11 @@ class RobinhoodGateway:
         assessment = await self.readiness()
         _raise_originating_error(assessment)
         preflight: PreflightResult = preflight_read(
-            self.__manifest, assessment, capability, arguments or {}
+            self.__manifest,
+            assessment,
+            capability,
+            arguments or {},
+            allow_mutations=self.__config.allow_mutations,
         )
         entry: ManifestEntry = preflight.entry
 

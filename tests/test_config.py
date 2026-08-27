@@ -581,3 +581,69 @@ class TestDiscoveryDepthIsSeparate:
     def test_it_still_rejects_zero(self) -> None:
         with pytest.raises(GatewayError):
             ResourceLimits(max_discovery_depth=0)
+
+
+class TestTheMutationSwitchCannotFailOpen:
+    """Two ways the kill switch opened by accident, both found by review.
+
+    Neither was visible to the suite. Every `GatewayConfig` in this repository
+    is built with keywords and with a real bool, so 1219 tests agreed the
+    switch worked while both holes were present — the same blindness this
+    change was written to fix in `mutates` itself.
+    """
+
+    def test_it_cannot_be_bound_positionally(self) -> None:
+        """It was inserted ahead of `mode`, so an existing positional call
+        turned it on.
+
+        `GatewayConfig(digest, "development")` is a call a 0.3.3 consumer could
+        already have written. With the field ordinary and second, it bound
+        "development" here — truthy, gate open — and left `mode` at
+        "production", so the caller lost dev mode and gained writes at once,
+        silently.
+        """
+        positional = GatewayConfig(
+            DIGEST,
+            "development",
+            "in_memory",
+            "dev-positional",
+            dev_url="http://127.0.0.1:9/mcp",
+        )
+
+        # The second positional now reaches `mode`, where the caller meant it
+        # to go, and the switch is not in the positional order at all.
+        assert positional.mode == "development"
+        assert positional.allow_mutations is False
+
+        # And it cannot be reached by counting further along either. Moving
+        # the field to the end would also have fixed the call above while
+        # leaving some argument count that lands on it; `kw_only` removes it
+        # from the positional order entirely, which is the property asserted.
+        switch = next(f for f in dataclasses.fields(GatewayConfig) if f.name == "allow_mutations")
+        assert switch.kw_only is True
+        assert "allow_mutations" not in [
+            f.name for f in dataclasses.fields(GatewayConfig) if not f.kw_only
+        ]
+
+    @pytest.mark.parametrize("value", ["false", "no", "0", "", 1, 0, [1], None])
+    def test_only_a_real_bool_is_accepted(self, value: object) -> None:
+        """The check downstream is `and not allow_mutations`, a truthiness
+        test.
+
+        So `"false"` — what a YAML, JSON, env or argparse layer produces —
+        opened the gate, as did `"no"` and `"0"`. Falsy non-bools are refused
+        too: they happen to close the gate, but a config that silently accepts
+        `None` for a security switch is one that accepted a mistake.
+        """
+        with pytest.raises(GatewayError):
+            GatewayConfig(expected_manifest_digest=DIGEST, allow_mutations=value)  # type: ignore[arg-type]
+
+    def test_a_real_bool_is_still_accepted(self) -> None:
+        """Otherwise the parametrised test above passes on a config that
+        refuses everything."""
+        assert (
+            GatewayConfig(expected_manifest_digest=DIGEST, allow_mutations=True)
+        ).allow_mutations is True
+        assert (
+            GatewayConfig(expected_manifest_digest=DIGEST, allow_mutations=False)
+        ).allow_mutations is False

@@ -24,10 +24,21 @@ from rh_mcp.gateway import (
     open_admin_discovery,
     open_gateway,
 )
-from rh_mcp.manifest import ObservedSurface, ObservedTool, load_manifest_text
+from rh_mcp.manifest import (
+    ObservedSurface,
+    ObservedTool,
+    load_manifest_text,
+    preflight_read,
+)
 from rh_mcp.models import ResultEnvelope
 from rh_mcp.transport import ToolPayload
-from tests.support import build_manifest, dumps
+from tests.support import (
+    ALPHA_INPUT_SCHEMA,
+    build_entry,
+    build_manifest,
+    default_entries,
+    dumps,
+)
 
 BASE_DIGEST = "sha256:3b7f113be230012d7f1949789401e60e9b84274ecf09f8a8ced31d5fc3e11250"
 OTHER_DIGEST = "sha256:" + "c" * 64
@@ -813,3 +824,156 @@ class TestAdditionalPropertiesIsDeliberatelyNotFollowed:
             run(gateway.invoke("alpha_reading", {"s": "A", "anything": {"side": "sell"}}))
         assert excinfo.value.code is ErrorCode.INPUT_INVALID
         assert transport.call_tool_calls == []
+
+
+class TestMutationsAreRefusedUnlessEnabled:
+    """`mutates` decides something now (§6.2, config `allow_mutations`).
+
+    Until 0.4.0 it decided nothing. It was declared in the manifest, checked
+    for type at load, and reported to callers, and no branch anywhere read it
+    to permit or refuse a call. An external review of v0.3.3 stated it
+    exactly: writes were gated as reads were, and "confirm with the user
+    first" was advice to the calling model rather than a control.
+
+    The suite passing is not evidence for any of this. When the branch was
+    first added, all 1215 tests passed unchanged — because no test invoked a
+    mutating capability through the gateway at all. These do.
+    """
+
+    @staticmethod
+    def _document_with_a_write() -> dict[str, Any]:
+        entries = default_entries()
+        entries.append(
+            build_entry(
+                provider_tool_name="synthetic_write",
+                capability="synthetic_writing",
+                description="Synthetic write used only by the offline suite.",
+                input_schema=ALPHA_INPUT_SCHEMA,
+                mutates=True,
+            )
+        )
+        return build_manifest(entries=entries)
+
+    def test_a_write_is_refused_by_default_and_never_reaches_the_transport(self) -> None:
+        """The refusal has to be observable at the wire, not just at the call.
+
+        An exception proves the caller saw an error. It does not prove the
+        provider was left alone — that is what the recorded calls are for, and
+        it is the property that matters for a credential that can trade.
+        """
+        document = self._document_with_a_write()
+        recorder = SpyTransport(document)
+        gateway = RobinhoodGateway(
+            GatewayConfig(expected_manifest_digest=load_manifest_text(dumps(document)).digest),
+            load_manifest_text(dumps(document)),
+            recorder,
+        )
+
+        with pytest.raises(GatewayError) as raised:
+            run(gateway.invoke("synthetic_writing", VALID_ARGS))
+
+        assert raised.value.code is ErrorCode.CAPABILITY_DENIED
+        assert recorder.call_tool_calls == []
+
+    def test_the_refusal_is_indistinguishable_from_an_unknown_capability(self) -> None:
+        """A distinct code would answer "is this a write?" for free.
+
+        The manifest is not secret and `capabilities()` reports `mutates`
+        openly, so this is not hiding the fact. It is refusing to answer the
+        question through an error channel, where a caller probing names could
+        map the write surface without ever being allowed to call one.
+        """
+        document = self._document_with_a_write()
+        gateway = RobinhoodGateway(
+            GatewayConfig(expected_manifest_digest=load_manifest_text(dumps(document)).digest),
+            load_manifest_text(dumps(document)),
+            SpyTransport(document),
+        )
+
+        with pytest.raises(GatewayError) as denied_write:
+            run(gateway.invoke("synthetic_writing", VALID_ARGS))
+        with pytest.raises(GatewayError) as unknown:
+            run(gateway.invoke("no_such_capability_at_all", VALID_ARGS))
+
+        assert denied_write.value.code is unknown.value.code
+        assert str(denied_write.value) == str(unknown.value)
+
+    def test_enabling_mutations_lets_the_write_through(self) -> None:
+        """Otherwise the previous two tests pass on a gateway that refuses
+        everything, which would make them a check on nothing."""
+        document = self._document_with_a_write()
+        recorder = SpyTransport(document)
+        gateway = RobinhoodGateway(
+            GatewayConfig(
+                expected_manifest_digest=load_manifest_text(dumps(document)).digest,
+                allow_mutations=True,
+            ),
+            load_manifest_text(dumps(document)),
+            recorder,
+        )
+
+        run(gateway.invoke("synthetic_writing", VALID_ARGS))
+
+        assert [name for name, _ in recorder.call_tool_calls] == ["synthetic_write"]
+
+    def test_the_exported_gate_refuses_a_non_bool_directly(self) -> None:
+        """The check has to be at the gate, not only at the config boundary.
+
+        `GatewayConfig` validating the flag protects callers who go through
+        `RobinhoodGateway`. `preflight_read` is in `manifest.__all__`, and this
+        package's history records a reviewer who ignored the gateway and
+        imported the exported function; reached that way with the string
+        `"false"` — truthy — the gate opened and returned a `PreflightResult`
+        authorising the write. A control that holds only when approached
+        through one caller is a convention.
+        """
+        document = self._document_with_a_write()
+        manifest = load_manifest_text(dumps(document))
+        gateway = RobinhoodGateway(
+            GatewayConfig(expected_manifest_digest=manifest.digest),
+            manifest,
+            SpyTransport(document),
+        )
+        assessment = run(gateway.readiness())
+
+        for value in ("false", "no", "0", 1, [1]):
+            with pytest.raises(GatewayError) as raised:
+                preflight_read(
+                    manifest,
+                    assessment,
+                    "synthetic_writing",
+                    VALID_ARGS,
+                    allow_mutations=value,  # type: ignore[arg-type]
+                )
+            assert raised.value.code is not ErrorCode.CAPABILITY_DENIED, value
+
+        # The control: a real bool still authorises, so the loop above is not
+        # passing on a function that refuses everything.
+        allowed = preflight_read(
+            manifest, assessment, "synthetic_writing", VALID_ARGS, allow_mutations=True
+        )
+        assert allowed.entry.capability == "synthetic_writing"
+
+    def test_enabling_mutations_does_not_unlock_a_denied_capability(self) -> None:
+        """`allow_mutations` is a second lock, never a key to the first.
+
+        The reviewed disposition still decides membership; this flag only
+        decides whether the mutating subset of what was already allowed may be
+        called.
+        """
+        document = self._document_with_a_write()
+        recorder = SpyTransport(document)
+        gateway = RobinhoodGateway(
+            GatewayConfig(
+                expected_manifest_digest=load_manifest_text(dumps(document)).digest,
+                allow_mutations=True,
+            ),
+            load_manifest_text(dumps(document)),
+            recorder,
+        )
+
+        with pytest.raises(GatewayError) as raised:
+            run(gateway.invoke("gamma_reading", VALID_ARGS))
+
+        assert raised.value.code is ErrorCode.CAPABILITY_DENIED
+        assert recorder.call_tool_calls == []

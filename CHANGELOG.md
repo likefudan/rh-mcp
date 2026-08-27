@@ -28,6 +28,76 @@ that carries them.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-27
+
+### Security
+
+**`mutates` now decides something.** It was declared in every manifest entry,
+type-checked at load, and reported to callers — and read by no branch that
+permitted or refused anything. An external review of the released `v0.3.3`
+artifact stated it plainly: writes were gated exactly as reads were, and
+"confirm with the user first" was advice to the calling model, not a control.
+
+`GatewayConfig.allow_mutations` is that branch, and it **defaults to False**.
+
+**This is a breaking change.** A consumer upgrading from 0.3.3 without setting
+`allow_mutations=True` loses all eleven allowed writes. That is the intended
+direction for a package whose description begins "a default-deny Python Read
+Gateway": the writes were reachable by default in every release before this
+one.
+
+It is deliberately a second control that does not live in the manifest. Every
+other restraint here is one reviewed data file plus the digest a consumer pins
+to it — the same review called that out as the finding worth acting on, not a
+hole but a thinness: one enforced boundary with nothing behind it. A consumer
+who wants reads only can now say so in code, and a widened or substituted
+manifest does not reach a write while the flag is false.
+
+`GatewayConfig.allow_mutations` is keyword-only and strictly `bool`, and both
+of those were found by review rather than written correctly the first time.
+Added as an ordinary field it landed second, ahead of `mode`, so the existing
+positional call `GatewayConfig(digest, "development")` bound `"development"`
+to the switch — truthy, gate open — while `mode` silently stayed
+`"production"`. Untyped, it was read by a truthiness test, so `"false"`,
+`"no"` and `"0"` — what a YAML, JSON, env or argparse layer hands over — all
+opened it. Both failed open, and neither was visible to the suite: every
+construction in this repository passes keywords and a real bool.
+
+The check is at the gate as well as at the config boundary.
+`preflight_read` is exported, and reached directly with the string `"false"`
+it authorised the write — a control that holds only when approached through
+one caller is a convention.
+
+The CLI cannot enable mutations at all. `GatewayConfig.from_env` reads no
+variable for the switch, so `rh-mcp read` on any of the eleven is refused with
+no environment override.
+
+`capabilities()` still reports the *reviewed disposition* in `allowed`, which
+is now not the same as "this gateway will accept it". The key set of that
+listing is part of what a consumer pins, so it is not made gateway-aware;
+`allowed && !mutates` is the effective read permission under the default.
+
+A refused write returns the same `CAPABILITY_DENIED` as an unknown name, and
+the identical message. A distinct code would let a caller probe names and map
+the write surface through the error channel without being allowed to call one.
+`capabilities()` still reports `mutates` openly for callers that want to know.
+
+**This requires a fresh external review before release.** DESIGN §12.4 lists
+"any change to code on the enforcement path", and this is one. The v0.3.3
+review does not carry forward (§12.3).
+
+### Fixed
+
+The `[0.3.3]` entry below said "every allowed write's input surface is pinned"
+without saying where that control runs. `ALLOWED_WRITE_INPUT_SURFACES` and
+`ALLOWED_READ_INPUT_SURFACES` live in `tests/`: they ship in the sdist, are
+absent from the wheel, and execute in this repository's CI, never in a
+consumer's process. They bound what can be released, not what a running
+gateway will accept — the runtime control is the digest a consumer pins. The
+same review raised this, and the distinction is worth stating where the claim
+was made.
+
+
 ## [0.3.3] — 2026-08-25
 
 **`0.3.1` and `0.3.2` were never tagged or published**, so this release carries
@@ -798,6 +868,7 @@ description changed. No disposition moved.
 
 <!-- manifest-automation:release-links-start -->
 [Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...HEAD
+[0.4.0]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.3
 <!-- manifest-automation:release-links-end -->
 [0.2.0]: https://github.com/likefudan/rh-mcp/compare/v0.1.0...v0.2.0

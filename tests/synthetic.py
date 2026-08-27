@@ -39,9 +39,7 @@ DIGEST = "sha256:" + "a" * 64
 
 
 def production_config(**limit_overrides: Any) -> GatewayConfig:
-    return GatewayConfig(
-        expected_manifest_digest=DIGEST, limits=ResourceLimits(**limit_overrides)
-    )
+    return GatewayConfig(expected_manifest_digest=DIGEST, limits=ResourceLimits(**limit_overrides))
 
 
 def development_config(url: str = "http://127.0.0.1:9999/mcp", **limits: Any) -> GatewayConfig:
@@ -230,9 +228,7 @@ async def open_session(
 
     resolved = production_config() if config is None else config
     fault = _Fault()
-    client = _build_http_client(
-        resolved, fault, None, inner=httpx2.MockTransport(server)
-    )
+    client = _build_http_client(resolved, fault, None, inner=httpx2.MockTransport(server))
     url = resolved.effective_resource_url
     assert url is not None
 

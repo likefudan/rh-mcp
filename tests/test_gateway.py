@@ -68,9 +68,7 @@ class SpyTransport:
         output_schema: Mapping[str, Any] | None,
     ) -> ToolPayload:
         self.call_tool_calls.append((provider_tool_name, dict(arguments)))
-        return ToolPayload(
-            data={"synthetic_value": 1}, source="structured_content"
-        )
+        return ToolPayload(data={"synthetic_value": 1}, source="structured_content")
 
 
 @pytest.fixture
@@ -138,16 +136,12 @@ class TestReadsThatMustNotReachTheTransport:
         assert excinfo.value.code is code
         assert transport.call_tool_calls == []
 
-    def test_a_denied_capability(
-        self, document: dict[str, Any], transport: SpyTransport
-    ) -> None:
+    def test_a_denied_capability(self, document: dict[str, Any], transport: SpyTransport) -> None:
         self._expect_refusal(
             document, transport, "gamma_reading", VALID_ARGS, ErrorCode.CAPABILITY_DENIED
         )
 
-    def test_an_unknown_capability(
-        self, document: dict[str, Any], transport: SpyTransport
-    ) -> None:
+    def test_an_unknown_capability(self, document: dict[str, Any], transport: SpyTransport) -> None:
         self._expect_refusal(
             document, transport, "not_a_capability", VALID_ARGS, ErrorCode.CAPABILITY_DENIED
         )
@@ -379,9 +373,7 @@ class TestNoEscapeHatch:
             assert not isinstance(getattr(gateway, name, None), SpyTransport)
 
     def test_the_gateway_has_no_generic_call_method(self) -> None:
-        methods = {
-            n for n, _ in inspect.getmembers(RobinhoodGateway) if not n.startswith("_")
-        }
+        methods = {n for n, _ in inspect.getmembers(RobinhoodGateway) if not n.startswith("_")}
         assert methods == {
             "capabilities",
             "invoke",
@@ -670,8 +662,10 @@ class TestUndeclaredArgumentsAtEveryDepth:
         uncaught TypeError instead of the stable INPUT_INVALID contract.
         """
         gateway, transport = self._gateway(
-            {"type": "object", "properties": {"s": {"type": "object",
-                                                   "properties": {"ok": {"type": "string"}}}}}
+            {
+                "type": "object",
+                "properties": {"s": {"type": "object", "properties": {"ok": {"type": "string"}}}},
+            }
         )
         with pytest.raises(GatewayError) as excinfo:
             run(gateway.invoke("alpha_reading", {"s": inner}))

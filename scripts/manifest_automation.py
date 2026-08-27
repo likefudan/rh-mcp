@@ -469,6 +469,108 @@ to merge, tag and publish this exact source.
 """
 
 
+def _latest_existing_tag(repo_root: Path) -> str | None:
+    """The newest `v*` tag reachable from HEAD, or None if there is none.
+
+    The comparison link used to be built as `compare/v{old_version}...v{new}`,
+    which assumes every version bump eventually becomes a tag. It does not:
+    `0.3.1` and `0.3.2` were written into the changelog by this function and
+    never released, so the links pointed at `v0.3.1` and `v0.3.2`, neither of
+    which exists, and GitHub answers them with a 404. A release record whose
+    own diff link is dead is the kind of small false statement this project
+    spends its time removing.
+    """
+    completed = _git_or_fail(
+        repo_root,
+        # `--merged HEAD`: a tag on some other branch describes a lineage this
+        # commit is not on, and a comparison link against it would render a
+        # diff that never happened. Reachability is the property wanted, not
+        # recency across the whole repository.
+        "tag",
+        "--list",
+        # `v[0-9]*`, not `v*`: `-v:refname` sorts a non-version like `vnext`
+        # or `verified-build` ahead of every real tag, and it would then be
+        # chosen as the base.
+        "v[0-9]*",
+        "--merged",
+        "HEAD",
+        "--sort=-v:refname",
+        what="resolve the newest release tag",
+    )
+    if completed.returncode != 0:
+        return None
+    for line in completed.stdout.splitlines():
+        tag = line.strip()
+        if tag:
+            return tag
+    return None
+
+
+def _is_shallow_checkout(repo_root: Path) -> bool:
+    """Whether this checkout is one git deliberately truncated.
+
+    `actions/checkout` defaults to a depth-1 clone, which fetches **no tags at
+    all**. Left alone, `_latest_existing_tag` would find none there and fall
+    back — silently emitting exactly the dangling comparison link it exists to
+    prevent, in the one environment that actually runs this script, and with
+    every local test still green. "No tags" and "no tags visible from here"
+    are different facts and only one of them licenses a guess.
+    """
+    completed = _git_or_fail(
+        repo_root, "rev-parse", "--is-shallow-repository", what="detect a shallow checkout"
+    )
+    return completed.returncode == 0 and completed.stdout.strip() == "true"
+
+
+def _git_or_fail(repo_root: Path, *args: str, what: str) -> subprocess.CompletedProcess[str]:
+    """Run git, turning an absent binary into an `AutomationError`.
+
+    A non-zero exit is left to the caller — "not a repository" is a real
+    answer and each caller decides what it means. `git` missing entirely is
+    not an answer at all, and surfaced as `FileNotFoundError` it reads like a
+    bug in this script rather than a machine without git on `PATH`.
+    """
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo_root), *args],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+    except FileNotFoundError as exc:  # pragma: no cover - environment failure
+        raise AutomationError(f"git is not available, so this run cannot {what}") from exc
+
+
+def _tag_exists(repo_root: Path, tag: str) -> bool:
+    """Whether `tag` resolves in this repository."""
+    completed = _git_or_fail(
+        repo_root, "rev-parse", "-q", "--verify", f"refs/tags/{tag}", what="check for a tag"
+    )
+    return completed.returncode == 0
+
+
+def _comparison_base(repo_root: Path, old_version: str) -> str:
+    """The tag a new release's comparison link runs from.
+
+    Three cases, and they are different facts rather than one. A tag is
+    found: use it. No tag and the checkout is shallow: refuse, because
+    "no tags" and "no tags visible from here" are not the same claim and
+    only the first licenses a guess. No tag and the checkout is whole:
+    fall back to `v{old_version}`, which keeps the shape the next run's
+    `old_link` regex is anchored on.
+    """
+    found = _latest_existing_tag(repo_root)
+    if found is not None:
+        return found
+    if _is_shallow_checkout(repo_root):
+        raise AutomationError(
+            "this checkout is shallow, so no tag is visible and the comparison link "
+            "would be a guess; fetch tags (actions/checkout fetch-depth: 0) and rerun"
+        )
+    return f"v{old_version}"
+
+
 def prepare_refresh(candidate_path: Path, repo_root: Path, report_path: Path) -> str:
     manifest_path = repo_root / "src/rh_mcp/manifests/read-manifest.json"
     previous = load_manifest_file(manifest_path)
@@ -476,6 +578,12 @@ def prepare_refresh(candidate_path: Path, repo_root: Path, report_path: Path) ->
     summary = classify_candidate(candidate, manifest_path)
     if summary.state != "refresh":
         raise AutomationError(f"candidate is {summary.state}, not a same-set refresh")
+
+    # Resolved here, before a single file is written. It used to run at the
+    # end, next to the link it feeds, so a shallow checkout raised only after
+    # seven files had already been rewritten — a refusal that still left the
+    # tree half-refreshed.
+    comparison_base = _comparison_base(repo_root, _read_version(repo_root / "pyproject.toml"))
 
     try:
         document = refresh(candidate_path, manifest_path)
@@ -537,11 +645,43 @@ same tagged artifact."""
     )
     text = text.replace(insertion_point, f"{insertion_point}\n{entry}\n", 1)
     changelog.write_text(text, encoding="utf-8")
+    # Compare from the newest tag that exists, not from `v{old_version}` — the
+    # previous version may never have been released. Falling back to
+    # `v{old_version}` when there are no tags at all keeps the shape the
+    # `old_link` regex above expects on the next run.
+    base = comparison_base
+    # The retained line is dropped when its own head tag never appeared.
+    #
+    # Only the base was ever considered, and the head is the half that broke:
+    # a refresh writes `[{new}]: ...v{new}`, naming a tag that does not exist
+    # yet and correctly so, but if that release is never cut the line is
+    # carried forward for one more refresh and then points at a tag that will
+    # never exist. That is precisely how `[0.3.1]` and `[0.3.2]` became 404s.
+    #
+    # The newest line is exempt because its head is pending by construction.
+    # If that release does not happen either, this same check drops it on the
+    # following refresh, so the window heals itself rather than accumulating.
+    retained = old_link
+    old_head = re.search(r"\.\.\.(\S+)$", old_link)
+    if old_head is not None and not _tag_exists(repo_root, old_head.group(1)):
+        retained = ""
+    # `[Unreleased]` runs from the same real tag, not from `v{new_version}`.
+    #
+    # It carried the identical assumption this change exists to remove, one
+    # line above the fix, and it is the only link here that cannot heal: a
+    # released line dangles until the next refresh notices the tag never
+    # appeared, while `v{new_version}...HEAD` stays wrong forever. This
+    # repository has already shipped it twice — `v0.3.1...HEAD` and
+    # `v0.3.2...HEAD`, neither tag ever cut.
+    #
+    # Running from the newest existing release is also what the heading
+    # means: work not yet in a release is everything since the last one, and
+    # a version bumped in source but never tagged is unreleased too.
     links = (
-        f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v{new_version}...HEAD\n"
+        f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/{base}...HEAD\n"
         f"[{new_version}]: https://github.com/likefudan/rh-mcp/compare/"
-        f"v{old_version}...v{new_version}\n"
-        f"{old_link}"
+        f"{base}...v{new_version}\n"
+        f"{retained}"
     )
     _replace_marked(changelog, LINKS_START, LINKS_END, links)
 

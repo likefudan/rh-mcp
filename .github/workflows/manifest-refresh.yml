@@ -89,6 +89,14 @@ jobs:
         with:
           token: ${{ steps.app.outputs.token }}
           persist-credentials: true
+          # Full history and tags. `prepare-refresh` writes the changelog's
+          # comparison link and resolves the newest release tag reachable from
+          # HEAD to do it. The default checkout is a depth-1 clone that fetches
+          # no tags, so the resolver would find none — and this is the only
+          # environment that runs the script, so no local test can see it.
+          # Without this the script now refuses to guess rather than emitting a
+          # link that 404s; with it, it resolves the real tag.
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v8
         with:

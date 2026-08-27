@@ -137,9 +137,7 @@ class TestItRefuses:
         broken = tmp_path / "broken.json"
         broken.write_text('{"manifest_format_version": "9.9"}', encoding="utf-8")
         with pytest.raises(RefusedError, match="does not load"):
-            refresh(
-                write(candidate_path, candidate_from(build_manifest())), broken
-            )
+            refresh(write(candidate_path, candidate_from(build_manifest())), broken)
 
     def test_it_offers_no_flag_to_change_a_disposition(self) -> None:
         """The absent escape hatch, asserted so it stays absent.
@@ -147,7 +145,7 @@ class TestItRefuses:
         A permission change is a review. A flag here would be the one place in
         this project where one could happen without a human writing a rationale.
         """
-        source = (Path(__file__).resolve().parent.parent / "scripts" / "refresh_manifest.py")
+        source = Path(__file__).resolve().parent.parent / "scripts" / "refresh_manifest.py"
         text = source.read_text(encoding="utf-8")
         body = text.split('"""', 2)[2]  # skip the module docstring, which discusses it
         for forbidden in ("--allow-disposition", "--force", "--grant", "--allow-new-tool"):
@@ -160,23 +158,17 @@ class TestItCarriesDecisionsForward:
     ) -> None:
         document = build_manifest()
         before = {e["provider_tool_name"]: e for e in document["entries"]}
-        refreshed = refresh(
-            write(candidate_path, drifted(document)), manifest_path
-        )
+        refreshed = refresh(write(candidate_path, drifted(document)), manifest_path)
         assert refreshed["entries"]
         for entry in refreshed["entries"]:
             kept = before[entry["provider_tool_name"]]
             for field in ("capability", "disposition", "mutates", "rationale"):
                 assert entry[field] == kept[field]
 
-    def test_only_the_drifted_tool_moves(
-        self, manifest_path: Path, candidate_path: Path
-    ) -> None:
+    def test_only_the_drifted_tool_moves(self, manifest_path: Path, candidate_path: Path) -> None:
         document = build_manifest()
         before = {e["provider_tool_name"]: e for e in document["entries"]}
-        refreshed = refresh(
-            write(candidate_path, drifted(document)), manifest_path
-        )
+        refreshed = refresh(write(candidate_path, drifted(document)), manifest_path)
         moved = [
             e["provider_tool_name"]
             for e in refreshed["entries"]
@@ -187,18 +179,14 @@ class TestItCarriesDecisionsForward:
     def test_the_result_loads_and_is_self_consistent(
         self, manifest_path: Path, candidate_path: Path
     ) -> None:
-        refreshed = refresh(
-            write(candidate_path, drifted(build_manifest())), manifest_path
-        )
+        refreshed = refresh(write(candidate_path, drifted(build_manifest())), manifest_path)
         loaded = load_manifest_text(json.dumps(refreshed))
         assert loaded.digest == refreshed[FULL_MANIFEST_DIGEST_FIELD]
 
     def test_the_digest_moves(self, manifest_path: Path, candidate_path: Path) -> None:
         """Drift the consumer must accept has to be visible as a new pin."""
         document = build_manifest()
-        refreshed = refresh(
-            write(candidate_path, drifted(document)), manifest_path
-        )
+        refreshed = refresh(write(candidate_path, drifted(document)), manifest_path)
         assert refreshed[FULL_MANIFEST_DIGEST_FIELD] != document[FULL_MANIFEST_DIGEST_FIELD]
 
     def test_a_denied_tool_stays_denied_even_when_its_schema_changes(
@@ -249,9 +237,7 @@ class TestTheReportIsTrue:
         self, manifest_path: Path, candidate_path: Path
     ) -> None:
         before = load_manifest_text(manifest_path.read_text(encoding="utf-8"))
-        refreshed = refresh(
-            write(candidate_path, drifted(build_manifest())), manifest_path
-        )
+        refreshed = refresh(write(candidate_path, drifted(build_manifest())), manifest_path)
         assert refreshed["reviewer"] == dict(before.reviewer), (
             "a refresh reviews nothing, so it must not claim a new review date"
         )

@@ -14,6 +14,8 @@ that a deliberate act rather than a diff nobody read.
 
 from __future__ import annotations
 
+import re
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -49,10 +51,31 @@ def test_the_current_source_identity_is_published_without_claiming_a_release() -
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
     assert f"## [{version}]" in changelog
     assert f"[{version}]: https://github.com/likefudan/rh-mcp/compare/" in changelog
-    assert (
-        f"[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v{version}...HEAD"
-        in changelog
+    # `[Unreleased]` compares from the newest tag that exists, which is not
+    # `v{version}` unless this version has been released. Pinning the latter
+    # is what let `v0.3.1...HEAD` and `v0.3.2...HEAD` ship, both 404s against
+    # tags that were never cut.
+    unreleased = re.search(
+        r"(?m)^\[Unreleased\]: https://github\.com/likefudan/rh-mcp/compare/(\S+)\.\.\.HEAD$",
+        changelog,
     )
+    assert unreleased is not None, "no [Unreleased] comparison link"
+    base = unreleased.group(1)
+    tags = subprocess.run(
+        ["git", "-C", str(root), "tag", "--list"],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    # Not skipped quietly. `ci.yml` gives the test job `fetch-depth: 0` for
+    # exactly this assertion; without tags it would pass vacuously in the one
+    # place it is meant to run, which is how `v0.3.1...HEAD` and
+    # `v0.3.2...HEAD` shipped against tags that were never cut. A checkout
+    # with no tags is a misconfigured run, not a reason to assert nothing.
+    if not tags:
+        pytest.skip("no tags in this checkout; CI sets fetch-depth: 0 so this runs there")
+    assert base in tags, f"[Unreleased] compares from {base}, which is not a tag"
 
     readme = (root / "README.md").read_text(encoding="utf-8")
     current = readme.split("<!-- manifest-automation:current-start -->", 1)[1].split(
@@ -130,9 +153,7 @@ def test_dependabot_refuses_to_propose_a_major_bump() -> None:
 # The reviewer-suite deselection (DESIGN §12.4)
 # ---------------------------------------------------------------------------
 
-DESELECTED = (
-    "test_exact_8_trading_denied_and_11_mutations_allowed"
-)
+DESELECTED = "test_exact_8_trading_denied_and_11_mutations_allowed"
 WORKFLOWS = PYPROJECT.parent / ".github" / "workflows"
 
 

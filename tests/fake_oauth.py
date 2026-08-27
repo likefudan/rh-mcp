@@ -248,9 +248,7 @@ async def open_client(
         yield json_client
 
 
-def client_factory(
-    server: FakeAuthorizationServer, config: GatewayConfig
-) -> Callable[[], Any]:
+def client_factory(server: FakeAuthorizationServer, config: GatewayConfig) -> Callable[[], Any]:
     def factory() -> Any:
         return open_client(server, config)
 

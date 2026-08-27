@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -463,3 +464,288 @@ def test_the_configuration_exit_code_matches_the_gateway_contract() -> None:
     from rh_mcp.errors import EXIT_CODE_CONFIGURATION_ERROR
 
     assert automation._CLI_CONFIGURATION_ERROR == EXIT_CODE_CONFIGURATION_ERROR == 3
+
+
+def _git(root: Path, *args: str) -> None:
+    subprocess.run(
+        ["git", "-C", str(root), *args],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+    )
+
+
+def _tagged_repo(root: Path, *tags: str) -> None:
+    """A real git repository carrying exactly `tags`."""
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "test@example.invalid")
+    _git(root, "config", "user.name", "test")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "base")
+    for tag in tags:
+        _git(root, "tag", tag)
+
+
+def test_the_comparison_link_names_a_tag_that_exists(tmp_path: Path) -> None:
+    """The link used to assume every version bump becomes a tag.
+
+    It does not. `0.3.1` and `0.3.2` were written into the changelog by this
+    function and never released, so it emitted
+    `compare/v0.3.2...v0.3.3` and `compare/v0.3.1...v0.3.2` — neither base
+    exists, and GitHub answers both with a 404. A release record whose own
+    diff link is dead is exactly the class of small false statement this
+    repository spends its effort removing, so it is now a test rather than a
+    convention.
+
+    Here the source says `0.3.0` while the newest real tag is `v0.2.0`,
+    reproducing that situation directly.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    assert prepare_refresh(candidate_path, root, tmp_path / "report.md") == "0.3.1"
+
+    changelog = (root / "CHANGELOG.md").read_text()
+    assert "[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...v0.3.1" in changelog
+    assert "compare/v0.3.0...v0.3.1" not in changelog
+
+    # Every base a *released* line compares from must be a tag that exists.
+    #
+    # `[Unreleased]` is deliberately excluded rather than overlooked: it reads
+    # `compare/v{new}...HEAD`, and `v{new}` is the tag this refresh is
+    # proposing, which correctly does not exist until the release workflow
+    # creates it. Asserting over every line would have failed on that, which
+    # is a check about the wrong thing.
+    existing = subprocess.run(
+        ["git", "-C", str(root), "tag", "--list"],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    # Both sides. The first version of this assertion captured only the base,
+    # which is how a link whose *head* names a tag that was never cut passed
+    # it — the exact defect this test is named for, checked on one half.
+    released = re.findall(
+        r"(?m)^\[(\d[^\]]*)\]: https://github\.com/likefudan/rh-mcp/compare/(\S+?)\.\.\.(\S+)$",
+        changelog,
+    )
+    assert released, "no released comparison links were emitted at all"
+    for name, base, head in released:
+        assert base in existing, f"[{name}] base {base}"
+        # The newest line's head is the tag this refresh proposes, which
+        # cannot exist yet. Every other retained line's head must.
+        if name != "0.3.1":
+            assert head in existing, f"[{name}] head {head}"
+
+
+def test_it_falls_back_when_the_repository_has_no_tags(tmp_path: Path) -> None:
+    """A tagless checkout must still produce the shape the next run parses.
+
+    `prepare_refresh` finds the previous link with a regex anchored on
+    `...v{old_version}`, so emitting nothing, or something differently shaped,
+    would break the following refresh rather than this one.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root)
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    assert prepare_refresh(candidate_path, root, tmp_path / "report.md") == "0.3.1"
+    assert (
+        "[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.1"
+        in (root / "CHANGELOG.md").read_text()
+    )
+
+
+def test_a_shallow_checkout_refuses_to_guess_the_comparison_base(tmp_path: Path) -> None:
+    """The environment this script actually runs in fetches no tags.
+
+    `actions/checkout` defaults to a depth-1 clone. A depth-1 clone of this
+    repository reports `--is-shallow-repository true` and `git tag --list`
+    returns nothing, so a resolver that fell back on "no tags found" would
+    emit `compare/v{old_version}...` — the dangling link this whole change
+    exists to prevent — in CI, silently, with every local test still green.
+
+    "No tags" and "no tags visible from here" are different facts. The second
+    one is not a licence to guess, so it raises.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+    # A later commit, so the tags sit behind HEAD. This matters: `git clone
+    # --depth 1` *does* carry a tag that points at the commit it fetched, so a
+    # repository whose only commit is also its tag would not reproduce the
+    # situation at all — which is how the first version of this test passed
+    # for the wrong reason.
+    (root / "later.txt").write_text("later\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "later")
+
+    # A depth-1 clone of that repository: shallow, and carrying no tags.
+    shallow = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{root}", str(shallow)],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+    )
+    assert (
+        subprocess.run(
+            ["git", "-C", str(shallow), "rev-parse", "--is-shallow-repository"],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        == "true"
+    )
+    assert automation._latest_existing_tag(shallow) is None
+
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    with pytest.raises(AutomationError, match="shallow"):
+        prepare_refresh(candidate_path, shallow, tmp_path / "report.md")
+
+
+def test_a_tag_on_another_branch_is_not_the_comparison_base(tmp_path: Path) -> None:
+    """Reachability, not recency across the whole repository.
+
+    A tag on a branch this commit is not on describes a lineage that never
+    led here, and a comparison link against it renders a diff that never
+    happened. `v9.0.0` below is newer by every version ordering and sits on a
+    sidetrack; the base must still be `v0.2.0`.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+    _git(root, "checkout", "-q", "-b", "sidetrack")
+    (root / "sidetrack.txt").write_text("elsewhere\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "sidetrack")
+    _git(root, "tag", "v9.0.0")
+    _git(root, "checkout", "-q", "-")
+
+    assert automation._latest_existing_tag(root) == "v0.2.0"
+
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    assert prepare_refresh(candidate_path, root, tmp_path / "report.md") == "0.3.1"
+    changelog = (root / "CHANGELOG.md").read_text()
+    assert "[0.3.1]: https://github.com/likefudan/rh-mcp/compare/v0.2.0...v0.3.1" in changelog
+    assert "v9.0.0" not in changelog
+
+
+def test_the_shallow_refusal_leaves_the_tree_untouched(tmp_path: Path) -> None:
+    """Refusing late is refusing after the damage.
+
+    The guard first ran beside the link it feeds, at the end of the function,
+    so a shallow checkout raised only once the manifest, `pyproject.toml`,
+    `uv.lock`, `README.md`, `DESIGN.md`, `CHANGELOG.md` and the pinned test
+    had all been rewritten. The run failed and the tree was still half
+    refreshed, which is the worst of both outcomes.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+    (root / "later.txt").write_text("later\n", encoding="utf-8")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "later")
+
+    shallow = tmp_path / "shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth", "1", f"file://{root}", str(shallow)],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+    )
+    before = {
+        path.relative_to(shallow): path.read_bytes()
+        for path in sorted(shallow.rglob("*"))
+        if path.is_file() and ".git" not in path.parts
+    }
+    assert before, "the fixture wrote nothing to compare"
+
+    candidate = candidate_from_active()
+    candidate["tools"][0]["description"] += " changed"
+    candidate_path = write_json(tmp_path / "candidate.json", candidate)
+
+    with pytest.raises(AutomationError, match="shallow"):
+        prepare_refresh(candidate_path, shallow, tmp_path / "report.md")
+
+    after = {
+        path.relative_to(shallow): path.read_bytes()
+        for path in sorted(shallow.rglob("*"))
+        if path.is_file() and ".git" not in path.parts
+    }
+    assert after == before
+
+
+def test_a_tag_that_is_not_a_version_is_never_the_comparison_base(tmp_path: Path) -> None:
+    """`v*` matches more than versions, and `-v:refname` puts them first.
+
+    `vnext` and `verified-build` both begin with `v`, sort ahead of every
+    real release under `-v:refname`, and name nothing a diff can run from.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0", "vnext", "verified-build")
+
+    assert automation._latest_existing_tag(root) == "v0.2.0"
+
+
+def test_a_link_whose_release_never_happened_is_not_retained(tmp_path: Path) -> None:
+    """Two refreshes without a release in between, which is the real history.
+
+    A refresh writes `[{new}]: ...v{new}`, naming a tag that does not exist
+    yet — correct, the release is pending. If that release is never cut, the
+    line is carried into the next refresh and now names a tag that will never
+    exist. That is exactly how `[0.3.1]` and `[0.3.2]` became 404s, and the
+    fix for them was a hand edit; this is the code path that produced them.
+
+    Review reproduced it against the supposedly fixed script: two automated
+    refreshes regenerated `[0.3.4]` with a head of `v0.3.4` and nothing red.
+    """
+    root = _minimal_refresh_repo(tmp_path)
+    _tagged_repo(root, "v0.1.0", "v0.2.0")
+
+    for expected in ("0.3.1", "0.3.2"):
+        candidate = candidate_from_active()
+        candidate["tools"][0]["description"] += f" changed for {expected}"
+        candidate_path = write_json(tmp_path / f"candidate-{expected}.json", candidate)
+        assert prepare_refresh(candidate_path, root, tmp_path / "report.md") == expected
+
+    changelog = (root / "CHANGELOG.md").read_text()
+    existing = subprocess.run(
+        ["git", "-C", str(root), "tag", "--list"],
+        check=True,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+
+    # `0.3.1` was never tagged, so after the second refresh its line is gone
+    # rather than left pointing at a tag that will never exist.
+    assert "[0.3.1]: " not in changelog
+
+    # `[Unreleased]` too. It carried the same assumption one line above the
+    # fix, and it is the only link here that cannot heal — a released line
+    # dangles until the next refresh notices, `v{new}...HEAD` stays wrong
+    # forever. This repository shipped it twice.
+    unreleased = re.search(
+        r"(?m)^\[Unreleased\]: https://github\.com/likefudan/rh-mcp/compare/(\S+)\.\.\.HEAD$",
+        changelog,
+    )
+    assert unreleased is not None
+    assert unreleased.group(1) in existing, f"[Unreleased] base {unreleased.group(1)}"
+    for name, base, head in re.findall(
+        r"(?m)^\[(\d[^\]]*)\]: https://github\.com/likefudan/rh-mcp/compare/(\S+?)\.\.\.(\S+)$",
+        changelog,
+    ):
+        assert base in existing, f"[{name}] base {base}"
+        if name != "0.3.2":  # the pending release
+            assert head in existing, f"[{name}] head {head}"

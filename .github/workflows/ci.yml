@@ -38,6 +38,14 @@ jobs:
       UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Tags, so the changelog-link assertion in `test_dependency_bounds`
+          # runs instead of skipping. It resolves `[Unreleased]`'s comparison
+          # base against `git tag`, and the default depth-1 checkout fetches
+          # none — the assertion would pass vacuously in the one place it is
+          # meant to run, which is how this repository shipped
+          # `v0.3.1...HEAD` and `v0.3.2...HEAD` against tags never cut.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v7
       - run: uv sync --frozen
       # Assert, don't just print. If UV_PYTHON ever stops constraining uv, every

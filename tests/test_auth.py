@@ -278,8 +278,9 @@ def test_the_code_response_type_is_required() -> None:
         parse_authorization_server_metadata(document, development_config())
 
 
-@pytest.mark.parametrize("field", ["issuer", "authorization_endpoint", "token_endpoint",
-                                   "registration_endpoint"])
+@pytest.mark.parametrize(
+    "field", ["issuer", "authorization_endpoint", "token_endpoint", "registration_endpoint"]
+)
 def test_a_missing_metadata_field_is_refused(field: str) -> None:
     document = dev_server_document()
     del document[field]
@@ -502,14 +503,12 @@ class RecordingWriter:
 
 
 def request_bytes(target: str, *, method: str = "GET", host: str = "127.0.0.1:8765") -> bytes:
-    return (
-        f"{method} {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
-    ).encode("latin-1")
+    return (f"{method} {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n").encode(
+        "latin-1"
+    )
 
 
-async def _drive(
-    listener: auth._CallbackListener, payload: bytes
-) -> RecordingWriter:
+async def _drive(listener: auth._CallbackListener, payload: bytes) -> RecordingWriter:
     reader = asyncio.StreamReader()
     reader.feed_data(payload)
     reader.feed_eof()
@@ -684,9 +683,7 @@ def test_a_missing_state_aborts_the_login() -> None:
 
 def test_a_duplicated_parameter_is_refused() -> None:
     """Two spellings of `code` is someone hoping this reads the other one."""
-    instance, _writer = drive(
-        f"/callback?code={PLANTED_CODE}&code=other&state=state-token-abcdef"
-    )
+    instance, _writer = drive(f"/callback?code={PLANTED_CODE}&code=other&state=state-token-abcdef")
     with pytest.raises(GatewayError) as caught:
         instance.future.result()
     assert "twice" in caught.value.message
@@ -1198,6 +1195,7 @@ def test_a_missing_registration_is_auth_required() -> None:
 
 def test_a_read_path_never_opens_a_browser(monkeypatch: pytest.MonkeyPatch) -> None:
     """§5.1: 'All read operations are non-interactive... never open a browser'."""
+
     def explode(*args: Any, **kwargs: Any) -> bool:
         raise AssertionError("a read path opened a browser")
 
@@ -1386,9 +1384,7 @@ def test_a_login_whose_callback_carries_a_bad_state_fails_and_stores_nothing() -
 
     def opener(url: str) -> bool:
         asyncio.get_running_loop().create_task(
-            deliver_callback(
-                f"127.0.0.1:{port}", "/callback", f"code={PLANTED_CODE}&state=forged"
-            )
+            deliver_callback(f"127.0.0.1:{port}", "/callback", f"code={PLANTED_CODE}&state=forged")
         )
         return True
 
@@ -1489,9 +1485,7 @@ def test_a_deeply_nested_oauth_response_is_refused_before_decoding() -> None:
 def test_a_duplicate_key_in_an_oauth_response_is_refused() -> None:
     server = FakeAuthorizationServer(
         routes={
-            "/.well-known/oauth-protected-resource/mcp": raw(
-                b'{"resource":"a","resource":"b"}'
-            )
+            "/.well-known/oauth-protected-resource/mcp": raw(b'{"resource":"a","resource":"b"}')
         }
     )
     assert "same key twice" in refused(_discover(server)).message

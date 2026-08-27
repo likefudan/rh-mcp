@@ -68,7 +68,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         "P1: the returned snapshot is deep-frozen, not a mutable copy",
         "manifest.py",
-        "        arguments=freeze_json(safe_arguments, ErrorCode.INPUT_INVALID, label=\"arguments\"),",
+        '        arguments=freeze_json(safe_arguments, ErrorCode.INPUT_INVALID, label="arguments"),',
         "        arguments=safe_arguments,",
         "tests/test_gateway.py::TestValidatedSnapshotReachesTheTransport"
         "::test_the_snapshot_the_transport_receives_cannot_be_edited",
@@ -76,55 +76,55 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         "P0: ProviderTransport stays out of the published surface",
         "transport.py",
-        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"HttpJsonResponse\",",
-        "__all__ = [\n    \"PRODUCTION_EGRESS_HOSTS\",\n    \"ProviderTransport\",\n    \"HttpJsonResponse\",",
+        '__all__ = [\n    "PRODUCTION_EGRESS_HOSTS",\n    "HttpJsonResponse",',
+        '__all__ = [\n    "PRODUCTION_EGRESS_HOSTS",\n    "ProviderTransport",\n    "HttpJsonResponse",',
         "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
         "[rh_mcp.transport]",
     ),
     Mutation(
         "P0: no published name hands back a raw session",
         "transport.py",
-        "    \"ToolPayload\",\n]",
-        "    \"ToolPayload\",\n    \"open_provider_session\",\n]\n\nopen_provider_session = _open_provider_session",
+        '    "ToolPayload",\n]',
+        '    "ToolPayload",\n    "open_provider_session",\n]\n\nopen_provider_session = _open_provider_session',
         "tests/test_public_surface.py::test_no_star_imported_callable_returns_a_raw_call_surface"
         "[rh_mcp.transport]",
     ),
     Mutation(
         "P0: the HTTP seam's shape stays out of the published surface",
         "transport.py",
-        "    \"PayloadSource\",\n    \"ToolPayload\",",
-        "    \"PayloadSource\",\n    \"GuardedJsonClient\",\n    \"ToolPayload\",",
+        '    "PayloadSource",\n    "ToolPayload",',
+        '    "PayloadSource",\n    "GuardedJsonClient",\n    "ToolPayload",',
         "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
         "[rh_mcp.transport]",
     ),
     Mutation(
         "P0: no published name hands back an HTTP client either",
         "transport.py",
-        "    \"HttpJsonResponse\",\n    \"PayloadSource\",",
-        "    \"HttpJsonResponse\",\n    \"open_json_client\",\n    \"PayloadSource\",",
+        '    "HttpJsonResponse",\n    "PayloadSource",',
+        '    "HttpJsonResponse",\n    "open_json_client",\n    "PayloadSource",',
         "tests/test_public_surface.py::test_no_star_imported_callable_returns_a_raw_call_surface"
         "[rh_mcp.transport]",
     ),
     Mutation(
         "P0: StoredTokenProvider stays out of the published surface",
         "auth.py",
-        "    \"LoginOutcome\",\n    \"allowed_endpoint_origins\",",
-        "    \"LoginOutcome\",\n    \"StoredTokenProvider\",\n    \"allowed_endpoint_origins\",",
+        '    "LoginOutcome",\n    "allowed_endpoint_origins",',
+        '    "LoginOutcome",\n    "StoredTokenProvider",\n    "allowed_endpoint_origins",',
         "tests/test_public_surface.py::test_no_star_imported_name_is_a_raw_call_surface"
         "[rh_mcp.auth]",
     ),
     Mutation(
         "P0: the credential store factory stays out of the published surface",
         "credentials.py",
-        "    \"default_credential_directory\",\n]",
-        "    \"default_credential_directory\",\n    \"open_credential_store\",\n]",
+        '    "default_credential_directory",\n]',
+        '    "default_credential_directory",\n    "open_credential_store",\n]',
         "tests/test_public_surface.py::test_the_credential_store_factory_is_not_advertised",
     ),
     Mutation(
         "P0: the transport's call takes a reviewed name, not a free-form one",
         "transport.py",
-        "    async def call_tool(\n        self,\n        reviewed_tool_name: str,\n        arguments: Mapping[str, Any],\n        *,\n        output_schema: Mapping[str, Any] | None,\n    ) -> ToolPayload:\n        \"\"\"Send one call for an already-reviewed tool.",
-        "    async def call_tool(\n        self,\n        provider_tool_name: str,\n        arguments: Mapping[str, Any],\n        *,\n        output_schema: Mapping[str, Any] | None,\n    ) -> ToolPayload:\n        \"\"\"Send one call for an already-reviewed tool.",
+        '    async def call_tool(\n        self,\n        reviewed_tool_name: str,\n        arguments: Mapping[str, Any],\n        *,\n        output_schema: Mapping[str, Any] | None,\n    ) -> ToolPayload:\n        """Send one call for an already-reviewed tool.',
+        '    async def call_tool(\n        self,\n        provider_tool_name: str,\n        arguments: Mapping[str, Any],\n        *,\n        output_schema: Mapping[str, Any] | None,\n    ) -> ToolPayload:\n        """Send one call for an already-reviewed tool.',
         "tests/test_public_surface.py::test_the_capability_argument_is_not_a_provider_tool_name",
     ),
     # A mutation of the *detector*, not of a guard. `_has_raw_call_surface`
@@ -155,15 +155,15 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         "file mode 0600 is enforced on read",
         "credentials.py",
-        "if stat.S_IMODE(info.st_mode) & 0o077:\n        _fail(\n            ErrorCode.CONFIGURATION_ERROR,\n            f\"{label} is readable or writable by group or other; it must be mode 0600\",",
-        "if stat.S_IMODE(info.st_mode) & 0o000:\n        _fail(\n            ErrorCode.CONFIGURATION_ERROR,\n            f\"{label} is readable or writable by group or other; it must be mode 0600\",",
+        'if stat.S_IMODE(info.st_mode) & 0o077:\n        _fail(\n            ErrorCode.CONFIGURATION_ERROR,\n            f"{label} is readable or writable by group or other; it must be mode 0600",',
+        'if stat.S_IMODE(info.st_mode) & 0o000:\n        _fail(\n            ErrorCode.CONFIGURATION_ERROR,\n            f"{label} is readable or writable by group or other; it must be mode 0600",',
         "tests/test_credentials.py::test_a_credential_file_readable_by_others_is_refused_on_read",
     ),
     Mutation(
         "file ownership is enforced",
         "credentials.py",
-        "    if not stat.S_ISREG(info.st_mode):\n        _fail(ErrorCode.CONFIGURATION_ERROR, f\"{label} is not a regular file\")\n    if info.st_uid != os.getuid():",
-        "    if not stat.S_ISREG(info.st_mode):\n        _fail(ErrorCode.CONFIGURATION_ERROR, f\"{label} is not a regular file\")\n    if False:",
+        '    if not stat.S_ISREG(info.st_mode):\n        _fail(ErrorCode.CONFIGURATION_ERROR, f"{label} is not a regular file")\n    if info.st_uid != os.getuid():',
+        '    if not stat.S_ISREG(info.st_mode):\n        _fail(ErrorCode.CONFIGURATION_ERROR, f"{label} is not a regular file")\n    if False:',
         "tests/test_credentials.py::test_a_credential_file_owned_by_another_user_is_refused",
     ),
     Mutation(
@@ -297,8 +297,8 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         "a non-base64 keychain value is refused",
         "credentials.py",
-        "        if not _BASE64_PATTERN.fullmatch(encoded):\n            _fail(ErrorCode.CONFIGURATION_ERROR, \"the keychain credential is not valid base64\")",
-        "        if False:\n            _fail(ErrorCode.CONFIGURATION_ERROR, \"the keychain credential is not valid base64\")",
+        '        if not _BASE64_PATTERN.fullmatch(encoded):\n            _fail(ErrorCode.CONFIGURATION_ERROR, "the keychain credential is not valid base64")',
+        '        if False:\n            _fail(ErrorCode.CONFIGURATION_ERROR, "the keychain credential is not valid base64")',
         "tests/test_credentials.py::test_a_non_base64_keychain_value_is_refused",
     ),
     Mutation(
@@ -326,7 +326,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         "the endpoint pin is an origin, not a host",
         "auth.py",
-        "    return scheme, host.lower(), port or (443 if scheme == \"https\" else 80)",
+        '    return scheme, host.lower(), port or (443 if scheme == "https" else 80)',
         "    return scheme, host.lower(), 443",
         "tests/test_auth.py::test_a_documented_host_on_an_undocumented_port_is_refused",
     ),
@@ -563,7 +563,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         "a non-ASCII state aborts over a real socket",
         "auth.py",
-        "    try:\n        return secrets.compare_digest(observed.encode(\"utf-8\"), expected.encode(\"utf-8\"))\n    except (UnicodeEncodeError, TypeError, AttributeError):\n        return False",
+        '    try:\n        return secrets.compare_digest(observed.encode("utf-8"), expected.encode("utf-8"))\n    except (UnicodeEncodeError, TypeError, AttributeError):\n        return False',
         "    return secrets.compare_digest(observed, expected)",
         "tests/test_auth.py::test_a_non_ascii_state_aborts_over_a_real_socket",
     ),
@@ -594,7 +594,7 @@ MUTATIONS: list[Mutation] = [
     Mutation(
         "the keychain write refuses a record past the measured line budget",
         "credentials.py",
-        "        if len(command.encode(\"ascii\")) > SECURITY_MAX_COMMAND_LINE_BYTES:",
+        '        if len(command.encode("ascii")) > SECURITY_MAX_COMMAND_LINE_BYTES:',
         "        if False:",
         "tests/test_credentials.py::test_an_oversized_record_is_refused_before_security_is_invoked",
     ),
@@ -725,13 +725,13 @@ MUTATIONS: list[Mutation] = [
 ]
 
 # The stub the "OAuth client carries no bearer token" mutation needs.
-_STUB_PROVIDER = '''
+_STUB_PROVIDER = """
 
 class _StubProvider:
     async def access_token(self) -> str:
         return "mutation-token"
 
-'''
+"""
 
 
 def apply(mutation: Mutation) -> str:
@@ -743,7 +743,9 @@ def apply(mutation: Mutation) -> str:
         raise SystemExit(f"mutation target is not unique: {mutation.label}")
     mutated = original.replace(mutation.old, mutation.new)
     if "_StubProvider()" in mutation.new:
-        mutated = mutated.replace("\ndef _new_json_client(", _STUB_PROVIDER + "\ndef _new_json_client(")
+        mutated = mutated.replace(
+            "\ndef _new_json_client(", _STUB_PROVIDER + "\ndef _new_json_client("
+        )
     path.write_text(mutated, encoding="utf-8")
     return original
 

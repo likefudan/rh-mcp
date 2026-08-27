@@ -301,9 +301,7 @@ def test_result_depth_is_bounded() -> None:
 
 
 def test_response_node_count_is_bounded() -> None:
-    server = SyntheticServer(
-        call_result={"structuredContent": {"items": list(range(500))}}
-    )
+    server = SyntheticServer(call_result={"structuredContent": {"items": list(range(500))}})
     error = refused(_call(server, config=production_config(max_response_nodes=50)))
     assert error.code is ErrorCode.PROTOCOL_ERROR
     assert "JSON nodes" in error.message
@@ -382,9 +380,7 @@ def test_request_size_is_bounded_before_anything_is_sent() -> None:
 
 def test_request_depth_is_bounded_before_anything_is_sent() -> None:
     server = SyntheticServer()
-    error = refused(
-        _call(server, deep_object(30), config=production_config(max_json_depth=8))
-    )
+    error = refused(_call(server, deep_object(30), config=production_config(max_json_depth=8)))
     assert error.code is ErrorCode.INPUT_INVALID
     assert "tools/call" not in server.methods
 
@@ -640,9 +636,7 @@ def test_provider_error_content_is_sanitized() -> None:
     server = SyntheticServer(
         call_result={
             "isError": True,
-            "content": [
-                {"type": "text", "text": "account 8675309 is restricted; token abc123"}
-            ],
+            "content": [{"type": "text", "text": "account 8675309 is restricted; token abc123"}],
         }
     )
     error = refused(_call(server))
@@ -652,9 +646,7 @@ def test_provider_error_content_is_sanitized() -> None:
 
 
 def test_an_is_error_result_is_refused_even_when_it_carries_structured_content() -> None:
-    server = SyntheticServer(
-        call_result={"isError": True, "structuredContent": {"a": 1}}
-    )
+    server = SyntheticServer(call_result={"isError": True, "structuredContent": {"a": 1}})
     assert refused(_call(server)).code is ErrorCode.PROVIDER_ERROR
 
 
@@ -806,9 +798,7 @@ def test_a_programmatic_redirect_is_rejected() -> None:
     async def redirector(request: httpx2.Request) -> httpx2.Response:
         body = json.loads(request.content)
         if body.get("method") == "tools/list":
-            return httpx2.Response(
-                302, headers={"location": "https://robinhood.com/elsewhere"}
-            )
+            return httpx2.Response(302, headers={"location": "https://robinhood.com/elsewhere"})
         return await SyntheticServer()(request)
 
     error = refused(_discover(redirector))  # type: ignore[arg-type]
@@ -818,7 +808,9 @@ def test_a_programmatic_redirect_is_rejected() -> None:
 
 def test_the_http_client_never_follows_redirects() -> None:
     client = transport._build_http_client(
-        production_config(), transport._Fault(), None,
+        production_config(),
+        transport._Fault(),
+        None,
         inner=httpx2.MockTransport(lambda request: httpx2.Response(200)),
     )
     assert client.follow_redirects is False
@@ -1010,9 +1002,7 @@ def test_a_token_that_cannot_appear_in_a_header_is_refused_and_never_echoed(
 def test_a_slow_tool_call_times_out() -> None:
     server = SyntheticServer()
     server.delay_s = 2.0
-    error = refused(
-        _call(server, config=production_config(total_timeout_s=0.3, read_timeout_s=5))
-    )
+    error = refused(_call(server, config=production_config(total_timeout_s=0.3, read_timeout_s=5)))
     assert error.code is ErrorCode.TIMEOUT
 
 

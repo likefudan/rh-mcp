@@ -613,8 +613,7 @@ def test_a_credential_file_owned_by_another_user_is_refused(tmp_path: Path) -> N
     run(store.store_token(token()))
     real = os.stat(store.directory / "token.json")
     foreign = os.stat_result(
-        (real.st_mode, real.st_ino, real.st_dev, real.st_nlink, os.getuid() + 1)
-        + tuple(real)[5:10]
+        (real.st_mode, real.st_ino, real.st_dev, real.st_nlink, os.getuid() + 1) + tuple(real)[5:10]
     )
     with pytest.raises(GatewayError) as caught:
         credentials._check_file_security(foreign, "the file")
@@ -804,9 +803,7 @@ class FakeSecurity:
 
 
 def keychain(tmp_path: Path, runner: FakeSecurity, **overrides: Any) -> KeychainCredentialStore:
-    return KeychainCredentialStore(
-        "rh-mcp", runner=runner, lock_directory=tmp_path, **overrides
-    )
+    return KeychainCredentialStore("rh-mcp", runner=runner, lock_directory=tmp_path, **overrides)
 
 
 def test_the_keychain_store_round_trips(tmp_path: Path) -> None:
@@ -964,9 +961,7 @@ def test_a_realistic_token_pair_is_comfortably_under_the_ceiling(tmp_path: Path)
 def test_a_longer_namespace_reports_a_smaller_ceiling(tmp_path: Path) -> None:
     """The bound is on the whole line, so the service name spends the budget."""
     short = KeychainCredentialStore("rh", runner=FakeSecurity(), lock_directory=tmp_path)
-    long = KeychainCredentialStore(
-        "rh-" + "n" * 50, runner=FakeSecurity(), lock_directory=tmp_path
-    )
+    long = KeychainCredentialStore("rh-" + "n" * 50, runner=FakeSecurity(), lock_directory=tmp_path)
     assert long.max_record_bytes < short.max_record_bytes
 
 
@@ -1056,8 +1051,11 @@ def test_the_keychain_store_serializes_across_processes(tmp_path: Path) -> None:
 def test_production_refuses_the_file_adapter() -> None:
     """§5.2, checked at the store as well as in `GatewayConfig`."""
     config = GatewayConfig(
-        expected_manifest_digest=DIGEST, mode="development", credential_adapter="file_dev",
-        credential_namespace="dev-rh-mcp", dev_url="http://127.0.0.1:9999/mcp",
+        expected_manifest_digest=DIGEST,
+        mode="development",
+        credential_adapter="file_dev",
+        credential_namespace="dev-rh-mcp",
+        dev_url="http://127.0.0.1:9999/mcp",
     )
     forced = object.__new__(GatewayConfig)
     for field, value in vars(config).items():
@@ -1071,8 +1069,11 @@ def test_production_refuses_the_file_adapter() -> None:
 
 def test_production_refuses_the_in_memory_adapter() -> None:
     config = GatewayConfig(
-        expected_manifest_digest=DIGEST, mode="development", credential_adapter="in_memory",
-        credential_namespace="dev-rh-mcp", dev_url="http://127.0.0.1:9999/mcp",
+        expected_manifest_digest=DIGEST,
+        mode="development",
+        credential_adapter="in_memory",
+        credential_namespace="dev-rh-mcp",
+        dev_url="http://127.0.0.1:9999/mcp",
     )
     forced = object.__new__(GatewayConfig)
     for field, value in vars(config).items():

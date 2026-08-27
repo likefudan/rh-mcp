@@ -2658,11 +2658,37 @@ class TestDeniedEntriesDoNotBlockLoading:
         expect_local_failure(reseal(build_manifest(entries)), "does not implement")
 
 
-# What `_minimal_arguments` below knows how to satisfy. Anything else on a
-# required property makes it refuse rather than produce a value that would be
-# rejected for a reason that is not the gate.
-_GENERATOR_UNDERSTANDS: Final[frozenset[str]] = frozenset(
-    {"type", "description", "items", "minimum", "maximum"}
+# What `_minimal_arguments` may meet without guessing. Anything else makes it
+# refuse rather than emit a value that validation would reject for a reason
+# that is not the gate.
+#
+# The three groups are named separately because they hold three different
+# relationships, and an earlier version put them under one name that was true
+# of only one:
+#
+#   * annotations constrain nothing, so they are simply allowed — taken from
+#     the package's own set rather than listed, because listing only
+#     `description` re-introduced exactly the churn #51 exists to remove: a
+#     provider adding a `title` widens nothing and must not force a re-pin;
+#   * `type`, `minimum` and `maximum` are read and satisfied;
+#   * `items` is *vacuously* satisfied — the array branch emits `[]`, which
+#     meets any `items` however restrictive. That is safe only while the
+#     branch keeps emitting `[]` and `minItems` stays out of this set. Both
+#     conditions are written here because neither is obvious from the code.
+_GENERATOR_SATISFIES: Final[frozenset[str]] = frozenset({"type", "minimum", "maximum"})
+_GENERATOR_IGNORES_SAFELY: Final[frozenset[str]] = frozenset({"items"})
+_GENERATOR_UNDERSTANDS: Final[frozenset[str]] = (
+    _ANNOTATION_KEYWORDS | _GENERATOR_SATISFIES | _GENERATOR_IGNORES_SAFELY
+)
+
+# A schema root carries keywords a property does not, and `_minimal_arguments`
+# reads none of them: it iterates `required` and looks only inside
+# `properties`. A root `anyOf` — or `allOf`, `oneOf`, `enum`, `const` — is
+# therefore invisible to it, and review reproduced the whole decay that way:
+# a root `anyOf` on `create_scan` left this class green while the gate
+# ablation reached ten writes instead of eleven.
+_ROOT_UNDERSTANDS: Final[frozenset[str]] = _ANNOTATION_KEYWORDS | frozenset(
+    {"type", "properties", "required", "additionalProperties"}
 )
 
 
@@ -2750,6 +2776,11 @@ class TestTheWriteGateAgainstTheShippedManifest:
         edit rather than a silent loss.
         """
         schema = entry.input_schema
+        unmodelled_root = set(schema) - _ROOT_UNDERSTANDS
+        assert not unmodelled_root, (
+            f"{entry.capability}: schema root carries {sorted(unmodelled_root)}, which "
+            "this generator does not read — see the note above"
+        )
         properties = schema.get("properties") or {}
         arguments: dict[str, Any] = {}
         for name in schema.get("required") or ():
@@ -2769,7 +2800,14 @@ class TestTheWriteGateAgainstTheShippedManifest:
             if "array" in kinds:
                 arguments[name] = []
             elif "integer" in kinds or "number" in kinds:
-                arguments[name] = declared.get("minimum", 1)
+                # Both bounds. `maximum` was in the modelled set and never
+                # read, so a required `{"type": "integer", "maximum": 0}`
+                # passed every assertion here and then emitted `1` — the set
+                # claiming a coverage it did not have, inside the change
+                # written to stop exactly that.
+                low = declared.get("minimum", 1)
+                high = declared.get("maximum")
+                arguments[name] = low if high is None or low <= high else high
             else:
                 arguments[name] = "0" * 36
         return arguments

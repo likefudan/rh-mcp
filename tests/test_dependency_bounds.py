@@ -68,11 +68,14 @@ def test_the_current_source_identity_is_published_without_claiming_a_release() -
         capture_output=True,
         text=True,
     ).stdout.split()
-    # Skipped rather than passed vacuously where no tags are fetched — CI
-    # checks out shallow, and an assertion with nothing to compare against is
-    # worse than an absent one.
-    if tags:
-        assert base in tags, f"[Unreleased] compares from {base}, which is not a tag"
+    # Not skipped quietly. `ci.yml` gives the test job `fetch-depth: 0` for
+    # exactly this assertion; without tags it would pass vacuously in the one
+    # place it is meant to run, which is how `v0.3.1...HEAD` and
+    # `v0.3.2...HEAD` shipped against tags that were never cut. A checkout
+    # with no tags is a misconfigured run, not a reason to assert nothing.
+    if not tags:
+        pytest.skip("no tags in this checkout; CI sets fetch-depth: 0 so this runs there")
+    assert base in tags, f"[Unreleased] compares from {base}, which is not a tag"
 
     readme = (root / "README.md").read_text(encoding="utf-8")
     current = readme.split("<!-- manifest-automation:current-start -->", 1)[1].split(

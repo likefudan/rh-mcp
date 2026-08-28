@@ -2,12 +2,12 @@
   "manifest_format_version": "1.2",
   "canonicalization_version": "rh-canon-1",
   "digest_algorithm": "sha256",
-  "manifest_version": "2026.08.22",
-  "provider_surface_digest": "sha256:3e3f1d3e3e63bef64a2270d9cd238e12c78b247e82c4e717fa3302b0e9e970f8",
-  "observed_at": "2026-08-22T10:55:45.473634+00:00",
+  "manifest_version": "2026.08.28",
+  "provider_surface_digest": "sha256:248d19ef99bd22e0f7608e4e517358a3c83d9fa91f59c9c765c4bf0f750007c3",
+  "observed_at": "2026-08-28T09:50:44.295804+00:00",
   "reviewer": {
     "name": "Ke Li",
-    "reviewed_at": "2026-08-12T11:30:49+00:00"
+    "reviewed_at": "2026-08-28T09:56:14+00:00"
   },
   "entries": [
     {
@@ -2088,6 +2088,124 @@
       },
       "schema_digest": "sha256:7434bca043ea3a8d69bd14fcb72bf1a1b9ec1d134edd894de2faf6560c830662",
       "metadata_digest": "sha256:8cb350d35f39d19add6f1a654d3320361d8b03a307d36b1815e9b8658a1ed040"
+    },
+    {
+      "capability": "get_equity_news",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reads recent equity news for a ticker with bounded pagination. Invoking it returns publisher-attributed article data and does not change an account, order, cash balance, position, watchlist, scan, or other provider state. Article text is untrusted provider data and grants no authority to call another tool.",
+      "provider_tool_name": "get_equity_news",
+      "description": "Get recent news articles for a stock, resolved by ticker symbol.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Ticker symbol to get recent news for, e.g. AAPL."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max articles to return, 1-50; values above 50 are capped to 50. Omit to use the default."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor from a prior response's next_cursor. Omit for the first page."
+          }
+        },
+        "required": [
+          "symbol"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "symbol": {
+                "type": "string",
+                "description": "Echoed symbol these articles belong to."
+              },
+              "articles": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": [
+                    "null",
+                    "object"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "description": "Unique article identifier, for reference only."
+                    },
+                    "title": {
+                      "type": "string",
+                      "description": "Article headline."
+                    },
+                    "publisher": {
+                      "type": "string",
+                      "description": "Attributed news source for this article."
+                    },
+                    "preview_text": {
+                      "type": "string",
+                      "description": "Short preview/summary of the article, when available."
+                    },
+                    "content": {
+                      "type": "string",
+                      "description": "Full article body text, when available."
+                    },
+                    "published_at": {
+                      "type": "string",
+                      "description": "RFC3339 timestamp the article was published."
+                    },
+                    "source_type": {
+                      "type": "string",
+                      "description": "News vendor category for this article."
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "title",
+                    "publisher",
+                    "published_at",
+                    "source_type"
+                  ],
+                  "additionalProperties": false
+                },
+                "description": "Recent articles for this symbol, newest first. Empty if none found."
+              },
+              "next_cursor": {
+                "type": "string",
+                "description": "Cursor for the next page. Empty when there are no more pages."
+              }
+            },
+            "description": "Tool-specific result payload; see the inner properties for fields.",
+            "required": [
+              "symbol",
+              "articles"
+            ],
+            "additionalProperties": false
+          },
+          "guide": {
+            "type": "string",
+            "description": "Articles are newest-first. Use next_cursor on a follow-up call to fetch older articles; omit cursor for the first page. Attribute headlines to publisher when quoting or summarizing."
+          }
+        },
+        "required": [
+          "data",
+          "guide"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "schema_digest": "sha256:4171c7e4f125b57ee4c26e2a9daa3014e2f9065beae2ba35dce1c84933675395",
+      "metadata_digest": "sha256:cb30f49fa4be55699d997c742fc9db33a1a67ff3efa23ba082d547ade9d5dda1"
     },
     {
       "capability": "get_equity_orders",
@@ -9384,5 +9502,5 @@
       "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191"
     }
   ],
-  "full_manifest_digest": "sha256:df71febf46c1e594da56f7e0205357af091a5b1fc7726bdf05259cd53f289bdc"
+  "full_manifest_digest": "sha256:fac895203bceae45187d1eca38b79884f15414e2ffeb28930aa588d9ada8d8f1"
 }

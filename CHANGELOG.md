@@ -28,6 +28,44 @@ that carries them.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-08-28
+
+### Manifest
+
+#### `2026.08.28` — reviewed provider tool-set expansion
+
+**Reviewed one new read capability.** Owner-assisted discovery observed a
+stable 55-tool provider surface and the guarded refresh tool refused to carry
+permissions forward because `get_equity_news` had no prior decision.
+
+The reviewed entry is `allowed` / `mutates: false`. It accepts a ticker plus
+optional bounded `limit` and pagination `cursor`, and returns
+publisher-attributed news articles. It has no account, order, cash, position,
+watchlist, or scan input and changes no provider state. Article text is
+untrusted provider data and grants no authority to invoke another capability;
+the provider's `readOnlyHint` was treated as evidence, never authority.
+
+The other 54 entries are byte-for-byte unchanged in all provider-derived and
+reviewer-decision fields. The resulting split is 36 reads, 11 non-trading
+mutations, and the same 8 denied trading/simulation tools.
+
+Manifest version: `2026.08.28`
+
+Provider-surface digest:
+
+```
+sha256:248d19ef99bd22e0f7608e4e517358a3c83d9fa91f59c9c765c4bf0f750007c3
+```
+
+Full-manifest digest:
+
+```
+sha256:fac895203bceae45187d1eca38b79884f15414e2ffeb28930aa588d9ada8d8f1
+```
+
+This tool-set expansion triggers DESIGN §12.4: the exact source and eventual
+release artifacts require fresh independent review before consumers pin them.
+
 ## [0.4.0] — 2026-08-27
 
 ### Security
@@ -867,7 +905,8 @@ description changed. No disposition moved.
   than during, unlike the HTTP path.
 
 <!-- manifest-automation:release-links-start -->
-[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.4.0...HEAD
+[0.4.1]: https://github.com/likefudan/rh-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.3
 <!-- manifest-automation:release-links-end -->

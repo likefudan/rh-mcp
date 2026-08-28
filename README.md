@@ -15,7 +15,7 @@ The public surfaces are:
 - **CLI** — `rh-mcp`, for authentication, readiness diagnostics,
   owner-assisted manifest discovery, and reviewed read capabilities.
 
-Eleven of the forty-six allowed capabilities mutate state — watchlists and
+Eleven of the forty-seven allowed capabilities mutate state — watchlists and
 saved scans, never orders or funds. Since `0.4.0` they are **refused by
 default**: `GatewayConfig.allow_mutations` gates them and defaults to `False`,
 so a consumer that only reads gets that enforced in code rather than by
@@ -63,10 +63,10 @@ manifest lineage observed on `2026.08.09`, distinct from the already released
 refresh described below.
 
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
-and has been re-run on each observed drift since. A human has reviewed all 54
-discovered tools: **46 allowed, 8 denied**. The denied set is exactly the
+and has been re-run on each observed drift since. A human has reviewed all 55
+discovered tools: **47 allowed, 8 denied**. The denied set is exactly the
 trading surface — the six order tools plus both order simulators — and every
-denied tool genuinely writes. The allowed set is 35 reads plus 11 non-trading
+denied tool genuinely writes. The allowed set is 36 reads plus 11 non-trading
 mutations (watchlist and saved-scan management), each carrying a reviewed
 `mutates` flag so a consumer gating writes never has to infer which is which.
 
@@ -74,6 +74,12 @@ The 35th read arrived on `2026.08.09`: `get_limited_margin_upgrade_info`,
 which returns limited-margin eligibility and the links that start the upgrade
 flow. It is a permission expansion, and the first time the allowed set has
 grown since the manifest was first committed.
+
+The 36th read, `get_equity_news`, appeared on `2026.08.28`. It resolves a
+ticker to recent publisher-attributed articles with bounded pagination. Its
+input has no account, order, cash, position, watchlist, or scan field and
+invoking it changes no provider state. Article text remains untrusted provider
+data and grants no authority to call another tool.
 
 On `2026.08.12`, Robinhood expanded `create_scan` within the already allowed
 saved-scanner write domain: it can append a new active configuration version
@@ -86,11 +92,11 @@ tool surface; like the five existing dangling tool references, it is inert in
 this gateway but must not be forwarded into a model or user-facing context.
 
 <!-- manifest-automation:current-start -->
-The current source declares package version `v0.4.0` and carries
-manifest `2026.08.22`. Its full-manifest digest is:
+The current source declares package version `v0.4.1` and carries
+manifest `2026.08.28`. Its full-manifest digest is:
 
 ```
-sha256:df71febf46c1e594da56f7e0205357af091a5b1fc7726bdf05259cd53f289bdc
+sha256:fac895203bceae45187d1eca38b79884f15414e2ffeb28930aa588d9ada8d8f1
 ```
 
 The version and digest belong to this source tree. A GitHub release exists only

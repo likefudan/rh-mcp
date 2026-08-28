@@ -1,8 +1,8 @@
 # rh-mcp — Design
 
 Status: **released.** `v0.1.0` shipped on 2026-08-03, `v0.2.0` on 2026-08-04,
-and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 54
-tools; a human reviewed 46 allowed / 8 denied (§2.1).
+and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 55
+tools; a human reviewed 47 allowed / 8 denied (§2.1).
 
 The §12 acceptance list is now satisfied: license, changelog, tagged artifact
 with published digests, the independent security review, and — as of §12.5 —
@@ -64,14 +64,15 @@ not inferred from the token, a tool name, or an MCP annotation.
 Authenticated discovery (§13) settled two facts that this section previously
 had to speculate about, and both matter more than they look:
 
-- The provider surface is 54 tools, and **six of them place, cancel, or
+- The provider surface is 55 tools, and **six of them place, cancel, or
   exercise real orders**. They arrive over the same session, under the same
   token, as every quote and position read. This manifest is the only thing
   between a consumer and a trade.
-- **Not one of the 54 tools carries `readOnlyHint`, or any annotation at
-  all.** Rule 4 below said annotations are evidence and never authority; the
-  live surface supplies no evidence whatsoever. Every disposition in the
-  manifest is a human judgement from a name, a description, and a schema.
+- **One of the 55 tools carries `readOnlyHint`; the other 54 carry no
+  annotation at all.** Rule 4 below says annotations are evidence and never
+  authority. `get_equity_news` was allowed only after its name, description,
+  complete input/output schema, and mutation blast radius were reviewed; the
+  hint did not decide the disposition.
 
 The governing rules are:
 
@@ -96,7 +97,7 @@ the consumer (§10).
 
 ### 2.1 What the active manifest actually allows
 
-46 of 54 tools are allowed; 8 are denied. The denied set is exactly the
+47 of 55 tools are allowed; 8 are denied. The denied set is exactly the
 trading surface:
 
 | denied | why |
@@ -106,7 +107,7 @@ trading surface:
 | `exercise_option` | exercises a position |
 | `review_equity_order`, `review_option_order` | "simulate an order without placing it" — denied anyway. Simulation is not a read of account state, it takes a complete order as its argument, and the meaning of "simulate" is defined entirely on Robinhood's side. If that meaning ever shifts, what we handed over was an order. |
 
-The allowed set is 35 reads plus **11 non-trading mutations**: watchlist
+The allowed set is 36 reads plus **11 non-trading mutations**: watchlist
 create/update/add/remove/follow/unfollow, and saved-scan create/update. They
 write to Robinhood; they move no money and touch no order.
 
@@ -122,6 +123,13 @@ shape, gates the higher privilege of options trading, and has shipped `allowed`
 section's opening claim false — the denied set would no longer have been exactly
 the trading surface — which is the clearest statement of why the two had to
 agree.
+
+The 36th read is `get_equity_news`, observed on `2026.08.28`. It takes a
+ticker plus optional bounded pagination and returns publisher-attributed news
+articles. Its schema accepts no account, order, cash, position, watchlist, or
+scan field, and invocation changes no provider state. Article content is
+untrusted provider data; neither its text nor its sole `readOnlyHint`
+annotation grants authority to call another capability.
 
 The `2026.08.12` observation expanded one of the already allowed non-trading
 mutations. `create_scan` can now take `scan_id` to append a new active
@@ -900,7 +908,7 @@ this — editing an auditor's evidence to make it pass is only defensible when
 the file contradicts itself, which this does not. CI deselects that one test by
 name and records why, and the property it was guarding is held independently by
 `TestTheShippedManifest`, which asserts the same 8 denials, the same 11 flagged
-mutations, and the same 46/8 split against whatever manifest ships. It also
+  mutations, and the same 47/8 split against whatever manifest ships. It also
 asserts the denied set *as a set*, which the 2026.08.09 review added after a
 draft of that change put a ninth entry in it and every existing count assertion
 stayed green.
@@ -1185,7 +1193,7 @@ historical entries while refreshing the manifest. A consumer pinning the
 digest the artifact refuses readiness against.
 
 <!-- manifest-automation:current-start -->
-The current source declares package `0.3.3` and carries manifest `2026.08.22` / `df71febf…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
+The current source declares package `0.4.1` and carries manifest `2026.08.28` / `fac89520…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
 <!-- manifest-automation:current-end -->
 That does not fix anything above and is
 not meant to read as though it did: both changelog entries still print

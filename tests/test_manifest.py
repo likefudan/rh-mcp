@@ -44,7 +44,7 @@ from rh_mcp.manifest import (
     manifest_to_json_dict,
     preflight_read,
 )
-from rh_mcp.schema import _ANNOTATION_KEYWORDS
+from rh_mcp.schema import _ANNOTATION_KEYWORDS, validate_instance
 from tests.support import (
     ALPHA_INPUT_SCHEMA,
     ALPHA_OUTPUT_SCHEMA,
@@ -2810,6 +2810,33 @@ class TestTheWriteGateAgainstTheShippedManifest:
                 arguments[name] = low if high is None or low <= high else high
             else:
                 arguments[name] = "0" * 36
+
+        # The property itself, after every proxy for it.
+        #
+        # Everything above enumerates what this generator is known to handle,
+        # and an enumeration is a proxy: three times now it has admitted a
+        # keyword it does not actually read. Root `type` was allowed by name
+        # while nothing consulted it; `minimum` sat in a set called "read and
+        # satisfied" and emitted `0.5` for an `integer`; contradictory bounds
+        # produced a value that met neither. Each left the class green while
+        # the gate ablation quietly reached ten writes instead of eleven —
+        # the signature this whole change exists to remove, reproduced inside
+        # the constants written to remove it.
+        #
+        # So the generated arguments are validated against the schema they
+        # came from, by the same validator the gateway uses. The checks above
+        # still earn their place: they refuse *before* guessing and name the
+        # keyword, which is the difference between "widen the generator" and
+        # "something is wrong". This one cannot be fooled by a keyword nobody
+        # thought to list.
+        try:
+            validate_instance(arguments, schema)
+        except GatewayError as invalid:
+            raise AssertionError(
+                f"{entry.capability}: generated arguments do not satisfy the pinned "
+                f"schema ({invalid}) — this capability would be refused by validation "
+                "rather than by the gate, so the gate would go unmeasured for it"
+            ) from invalid
         return arguments
 
     @staticmethod

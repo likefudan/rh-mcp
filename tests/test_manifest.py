@@ -44,7 +44,7 @@ from rh_mcp.manifest import (
     manifest_to_json_dict,
     preflight_read,
 )
-from rh_mcp.schema import _ANNOTATION_KEYWORDS
+from rh_mcp.schema import _ANNOTATION_KEYWORDS, validate_instance
 from tests.support import (
     ALPHA_INPUT_SCHEMA,
     ALPHA_OUTPUT_SCHEMA,
@@ -2658,6 +2658,58 @@ class TestDeniedEntriesDoNotBlockLoading:
         expect_local_failure(reseal(build_manifest(entries)), "does not implement")
 
 
+# What `_minimal_arguments` may meet without guessing. Anything else makes it
+# refuse rather than emit a value that validation would reject for a reason
+# that is not the gate.
+#
+# The three groups are named separately because they hold three different
+# relationships, and an earlier version put them under one name that was true
+# of only one:
+#
+#   * annotations constrain nothing, so they are simply allowed — taken from
+#     the package's own set rather than listed, because listing only
+#     `description` re-introduced exactly the churn #51 exists to remove: a
+#     provider adding a `title` widens nothing and must not force a re-pin;
+#   * `type`, `minimum` and `maximum` are read and satisfied;
+#   * `items` is *vacuously* satisfied — the array branch emits `[]`, which
+#     meets any `items` however restrictive. That is safe only while the
+#     branch keeps emitting `[]` and `minItems` stays out of this set. Both
+#     conditions are written here because neither is obvious from the code.
+#
+# The `[]` is load-bearing a second time, which review had to point out: it
+# is also what keeps `_refuse_undeclared_arguments` out of reach. That check
+# runs in `preflight_read` and the backstop below does not model it; an empty
+# array carries no nested names for it to refuse. Emit anything else and a
+# second refusal path opens that nothing here would see.
+#
+# What these enumerations buy, stated honestly: on every case measured where
+# coverage was actually lost, the backstop caught it too. The cases where an
+# enumeration fires *alone* are the ones where the generated value was valid
+# and ablation still reached eleven of eleven — an `enum` or a `pattern` the
+# emitted value happens to satisfy. Those are over-refusals, not extra
+# safety. They are kept because refusing before guessing, with the keyword
+# named, is the difference between "widen this deliberately" and a validation
+# error a reader has to trace back. The coverage is the backstop's.
+_GENERATOR_SATISFIES: Final[frozenset[str]] = frozenset({"type", "minimum", "maximum"})
+_GENERATOR_IGNORES_SAFELY: Final[frozenset[str]] = frozenset({"items"})
+_GENERATOR_UNDERSTANDS: Final[frozenset[str]] = (
+    _ANNOTATION_KEYWORDS | _GENERATOR_SATISFIES | _GENERATOR_IGNORES_SAFELY
+)
+
+# A schema root carries keywords a property does not, and `_minimal_arguments`
+# reads almost none of them: it iterates `required` and looks only inside
+# `properties`. `type` and `additionalProperties` are admitted here and read
+# by nothing — the backstop validates the whole root schema against the
+# generated instance, so they cannot cause a silent loss, but this set is not
+# a claim that they are understood. A root `anyOf` — or `allOf`, `oneOf`, `enum`, `const` — is
+# therefore invisible to it, and review reproduced the whole decay that way:
+# a root `anyOf` on `create_scan` left this class green while the gate
+# ablation reached ten writes instead of eleven.
+_ROOT_UNDERSTANDS: Final[frozenset[str]] = _ANNOTATION_KEYWORDS | frozenset(
+    {"type", "properties", "required", "additionalProperties"}
+)
+
+
 class TestTheWriteGateAgainstTheShippedManifest:
     """The gate, measured against the manifest that actually ships.
 
@@ -2727,19 +2779,90 @@ class TestTheWriteGateAgainstTheShippedManifest:
         nineteen argument sets is a second copy of the manifest that drifts
         from it. Nothing here checks the schema — these values only have to
         get past validation so the gate is what refuses.
+
+        It refuses to guess rather than guessing badly, and that is the whole
+        point of the assertions. Review measured the decay: adding
+        `minLength: 40` to `add_to_watchlist.list_id` and resealing left this
+        class **green**, while the ablation that should reach eleven writes
+        reached ten. The capability had dropped out of the gate's coverage —
+        refused by validation instead — and nothing said so. A test that
+        quietly measures less than it did is worse than one that breaks,
+        because only the second gets fixed.
+
+        So an unmodelled keyword or type on a required property is a failure
+        here, naming the property. Widening the generator is then a deliberate
+        edit rather than a silent loss.
         """
         schema = entry.input_schema
+        unmodelled_root = set(schema) - _ROOT_UNDERSTANDS
+        assert not unmodelled_root, (
+            f"{entry.capability}: schema root carries {sorted(unmodelled_root)}, which "
+            "this generator does not read — see the note above"
+        )
         properties = schema.get("properties") or {}
         arguments: dict[str, Any] = {}
         for name in schema.get("required") or ():
-            declared = properties[name].get("type")
-            kinds = {declared} if isinstance(declared, str) else set(declared or ())
+            assert name in properties, f"{entry.capability}: required {name} is undeclared"
+            declared = properties[name]
+            # A subschema may be a bare `true`/`false` — legal JSON Schema,
+            # accepted at load, and not a mapping. `set(declared)` raised an
+            # unnamed `TypeError` on it, before any assertion here could say
+            # which capability, and before the backstop below could speak.
+            assert isinstance(declared, Mapping), (
+                f"{entry.capability}.{name} is the boolean schema {declared!r}, which "
+                "this generator does not model — see the note above"
+            )
+            unmodelled = set(declared) - _GENERATOR_UNDERSTANDS
+            assert not unmodelled, (
+                f"{entry.capability}.{name} carries {sorted(unmodelled)}, which this "
+                "generator does not model — see the note above"
+            )
+            kinds = declared.get("type")
+            kinds = {kinds} if isinstance(kinds, str) else set(kinds or ())
+            assert kinds & {"array", "integer", "number", "string"}, (
+                f"{entry.capability}.{name} has type {sorted(kinds)}, which this "
+                "generator does not model — see the note above"
+            )
             if "array" in kinds:
                 arguments[name] = []
             elif "integer" in kinds or "number" in kinds:
-                arguments[name] = properties[name].get("minimum", 1)
+                # Both bounds. `maximum` was in the modelled set and never
+                # read, so a required `{"type": "integer", "maximum": 0}`
+                # passed every assertion here and then emitted `1` — the set
+                # claiming a coverage it did not have, inside the change
+                # written to stop exactly that.
+                low = declared.get("minimum", 1)
+                high = declared.get("maximum")
+                arguments[name] = low if high is None or low <= high else high
             else:
                 arguments[name] = "0" * 36
+
+        # The property itself, after every proxy for it.
+        #
+        # Everything above enumerates what this generator is known to handle,
+        # and an enumeration is a proxy: three times now it has admitted a
+        # keyword it does not actually read. Root `type` was allowed by name
+        # while nothing consulted it; `minimum` sat in a set called "read and
+        # satisfied" and emitted `0.5` for an `integer`; contradictory bounds
+        # produced a value that met neither. Each left the class green while
+        # the gate ablation quietly reached ten writes instead of eleven —
+        # the signature this whole change exists to remove, reproduced inside
+        # the constants written to remove it.
+        #
+        # So the generated arguments are validated against the schema they
+        # came from, by the same validator the gateway uses. The checks above
+        # still earn their place: they refuse *before* guessing and name the
+        # keyword, which is the difference between "widen the generator" and
+        # "something is wrong". This one cannot be fooled by a keyword nobody
+        # thought to list.
+        try:
+            validate_instance(arguments, schema)
+        except GatewayError as invalid:
+            raise AssertionError(
+                f"{entry.capability}: generated arguments do not satisfy the pinned "
+                f"schema ({invalid}) — this capability would be refused by validation "
+                "rather than by the gate, so the gate would go unmeasured for it"
+            ) from invalid
         return arguments
 
     @staticmethod

@@ -900,15 +900,19 @@ reading is the control, and it is a human one. It is weaker than an external
 review and stronger than nothing, and calling it what it is beats pretending
 the digest check covers it.
 
-**One consequence in the reviewers' own tests.** Their
+**Two consequences in the reviewers' own tests.** The v0.1.0 review's
 `test_exact_8_trading_denied_and_11_mutations_allowed` opens by pinning the
 manifest version and digest, so after a refresh it fails on the first line and
 never reaches the assertions its name is about. Their file is not edited for
 this — editing an auditor's evidence to make it pass is only defensible when
-the file contradicts itself, which this does not. CI deselects that one test by
-name and records why, and the property it was guarding is held independently by
+the file contradicts itself, which this does not. The v0.3.3 review separately
+pins the complete 54-entry / 35-read split; the independently reviewed
+`get_equity_news` addition makes only that exact split assertion stale. CI
+deselects those two tests by full node id and records why, while every other
+reviewer test still runs. The properties they guarded are held independently by
 `TestTheShippedManifest`, which asserts the same 8 denials, the same 11 flagged
-  mutations, and the same 47/8 split against whatever manifest ships. It also
+mutations, the current 55-entry / 36-read / 47-allowed / 8-denied split, and the
+exact denied set against whatever manifest ships. It also
 asserts the denied set *as a set*, which the 2026.08.09 review added after a
 draft of that change put a ninth entry in it and every existing count assertion
 stayed green.

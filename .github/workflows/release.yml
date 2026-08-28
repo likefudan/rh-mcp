@@ -93,7 +93,8 @@ jobs:
           suites=$(find security-review -name 'test_*.py' | sort)
           test -n "$suites" || { echo "no reviewer suites found"; exit 1; }
           echo "running: $suites"
-          # One test is deselected, by name, with the reason in DESIGN §12.4.
+          # Two stale exact-manifest tests are deselected by full node id, with
+          # both reasons recorded in DESIGN §12.4.
           # `test_exact_8_trading_denied_and_11_mutations_allowed` opens by
           # pinning the manifest version and digest, so after any refresh it
           # fails on its first line and never reaches the assertions its name
@@ -101,7 +102,7 @@ jobs:
           # evidence to make it pass is only defensible when the file
           # contradicts itself, and this does not. The property it guards is
           # held by `TestTheShippedManifest`, which asserts the same 8
-          # trading denials, 11 flagged mutations and 46/8 split against
+          # trading denials, 11 flagged mutations and 47/8 split against
           # whatever manifest ships. If that deselection ever hides more than
           # it should, the fix is a re-review, not a wider `-k`.
           #
@@ -118,8 +119,21 @@ jobs:
           # before merge. This deselection still discharges nothing by itself:
           # the current manifest boundary must remain held by the shipped-
           # manifest tests and by the review of the exact release candidate.
-          uv run pytest $suites -v \
-            --deselect 'security-review/v0.1.0/test_adversarial_review.py::TestPackagedManifestBoundary::test_exact_8_trading_denied_and_11_mutations_allowed'
+          # The v0.3.3 review then pinned the complete 54-entry / 35-read
+          # surface. Manifest 2026.08.28 adds the independently reviewed
+          # `get_equity_news` read, so only that suite's exact split assertion
+          # is stale; all of its mutation, denial, and export-boundary tests
+          # still run. `TestTheShippedManifest` now pins 55 entries, 36 reads,
+          # 11 non-trading mutations, the 47/8 split, and the exact denied set.
+          deselected=(
+            'security-review/v0.1.0/test_adversarial_review.py::TestPackagedManifestBoundary::test_exact_8_trading_denied_and_11_mutations_allowed'
+            'security-review/0.3.3/test_adversarial_review_v033.py::TestTheDeniedSetIsStillExactlyTheTradingSurface::test_the_split_is_35_reads_11_mutations_8_denied'
+          )
+          deselect_args=()
+          for node_id in "${deselected[@]}"; do
+            deselect_args+=(--deselect "$node_id")
+          done
+          uv run pytest $suites -v "${deselect_args[@]}"
 
       - run: uv build
 

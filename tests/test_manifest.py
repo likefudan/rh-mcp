@@ -2675,6 +2675,21 @@ class TestDeniedEntriesDoNotBlockLoading:
 #     meets any `items` however restrictive. That is safe only while the
 #     branch keeps emitting `[]` and `minItems` stays out of this set. Both
 #     conditions are written here because neither is obvious from the code.
+#
+# The `[]` is load-bearing a second time, which review had to point out: it
+# is also what keeps `_refuse_undeclared_arguments` out of reach. That check
+# runs in `preflight_read` and the backstop below does not model it; an empty
+# array carries no nested names for it to refuse. Emit anything else and a
+# second refusal path opens that nothing here would see.
+#
+# What these enumerations buy, stated honestly: on every case measured where
+# coverage was actually lost, the backstop caught it too. The cases where an
+# enumeration fires *alone* are the ones where the generated value was valid
+# and ablation still reached eleven of eleven — an `enum` or a `pattern` the
+# emitted value happens to satisfy. Those are over-refusals, not extra
+# safety. They are kept because refusing before guessing, with the keyword
+# named, is the difference between "widen this deliberately" and a validation
+# error a reader has to trace back. The coverage is the backstop's.
 _GENERATOR_SATISFIES: Final[frozenset[str]] = frozenset({"type", "minimum", "maximum"})
 _GENERATOR_IGNORES_SAFELY: Final[frozenset[str]] = frozenset({"items"})
 _GENERATOR_UNDERSTANDS: Final[frozenset[str]] = (
@@ -2682,8 +2697,11 @@ _GENERATOR_UNDERSTANDS: Final[frozenset[str]] = (
 )
 
 # A schema root carries keywords a property does not, and `_minimal_arguments`
-# reads none of them: it iterates `required` and looks only inside
-# `properties`. A root `anyOf` — or `allOf`, `oneOf`, `enum`, `const` — is
+# reads almost none of them: it iterates `required` and looks only inside
+# `properties`. `type` and `additionalProperties` are admitted here and read
+# by nothing — the backstop validates the whole root schema against the
+# generated instance, so they cannot cause a silent loss, but this set is not
+# a claim that they are understood. A root `anyOf` — or `allOf`, `oneOf`, `enum`, `const` — is
 # therefore invisible to it, and review reproduced the whole decay that way:
 # a root `anyOf` on `create_scan` left this class green while the gate
 # ablation reached ten writes instead of eleven.
@@ -2786,6 +2804,14 @@ class TestTheWriteGateAgainstTheShippedManifest:
         for name in schema.get("required") or ():
             assert name in properties, f"{entry.capability}: required {name} is undeclared"
             declared = properties[name]
+            # A subschema may be a bare `true`/`false` — legal JSON Schema,
+            # accepted at load, and not a mapping. `set(declared)` raised an
+            # unnamed `TypeError` on it, before any assertion here could say
+            # which capability, and before the backstop below could speak.
+            assert isinstance(declared, Mapping), (
+                f"{entry.capability}.{name} is the boolean schema {declared!r}, which "
+                "this generator does not model — see the note above"
+            )
             unmodelled = set(declared) - _GENERATOR_UNDERSTANDS
             assert not unmodelled, (
                 f"{entry.capability}.{name} carries {sorted(unmodelled)}, which this "

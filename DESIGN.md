@@ -1,8 +1,8 @@
 # rh-mcp — Design
 
 Status: **released.** `v0.1.0` shipped on 2026-08-03, `v0.2.0` on 2026-08-04,
-and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 54
-tools; a human reviewed 46 allowed / 8 denied (§2.1).
+and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 55
+tools; a human reviewed 47 allowed / 8 denied (§2.1).
 
 The §12 acceptance list is now satisfied: license, changelog, tagged artifact
 with published digests, the independent security review, and — as of §12.5 —
@@ -64,14 +64,15 @@ not inferred from the token, a tool name, or an MCP annotation.
 Authenticated discovery (§13) settled two facts that this section previously
 had to speculate about, and both matter more than they look:
 
-- The provider surface is 54 tools, and **six of them place, cancel, or
+- The provider surface is 55 tools, and **six of them place, cancel, or
   exercise real orders**. They arrive over the same session, under the same
   token, as every quote and position read. This manifest is the only thing
   between a consumer and a trade.
-- **Not one of the 54 tools carries `readOnlyHint`, or any annotation at
-  all.** Rule 4 below said annotations are evidence and never authority; the
-  live surface supplies no evidence whatsoever. Every disposition in the
-  manifest is a human judgement from a name, a description, and a schema.
+- **All 36 reads carry `readOnlyHint: true`; the other 19 tools carry no
+  annotation at all.** Rule 4 below says annotations are evidence and never
+  authority. `get_equity_news` was allowed only after its name, description,
+  complete input/output schema, and mutation blast radius were reviewed; the
+  hint did not decide the disposition.
 
 The governing rules are:
 
@@ -96,7 +97,7 @@ the consumer (§10).
 
 ### 2.1 What the active manifest actually allows
 
-46 of 54 tools are allowed; 8 are denied. The denied set is exactly the
+47 of 55 tools are allowed; 8 are denied. The denied set is exactly the
 trading surface:
 
 | denied | why |
@@ -106,7 +107,7 @@ trading surface:
 | `exercise_option` | exercises a position |
 | `review_equity_order`, `review_option_order` | "simulate an order without placing it" — denied anyway. Simulation is not a read of account state, it takes a complete order as its argument, and the meaning of "simulate" is defined entirely on Robinhood's side. If that meaning ever shifts, what we handed over was an order. |
 
-The allowed set is 35 reads plus **11 non-trading mutations**: watchlist
+The allowed set is 36 reads plus **11 non-trading mutations**: watchlist
 create/update/add/remove/follow/unfollow, and saved-scan create/update. They
 write to Robinhood; they move no money and touch no order.
 
@@ -122,6 +123,13 @@ shape, gates the higher privilege of options trading, and has shipped `allowed`
 section's opening claim false — the denied set would no longer have been exactly
 the trading surface — which is the clearest statement of why the two had to
 agree.
+
+The 36th read is `get_equity_news`, observed on `2026.08.28`. It takes a
+ticker plus optional bounded pagination and returns publisher-attributed news
+articles. Its schema accepts no account, order, cash, position, watchlist, or
+scan field, and invocation changes no provider state. Article content is
+untrusted provider data; neither its text nor the only key in its annotations,
+`readOnlyHint: true`, grants authority to call another capability.
 
 The `2026.08.12` observation expanded one of the already allowed non-trading
 mutations. `create_scan` can now take `scan_id` to append a new active
@@ -325,9 +333,10 @@ tool in the observed provider surface:
 - deterministic canonical schema and metadata digests;
 - review disposition (`allowed` or `denied`) and review rationale;
 - a required `mutates` boolean stating whether invoking the capability changes
-  provider state. It is a reviewer's assertion, not a derived value — the live
-  surface carries no annotations to derive it from — and it has no default: a
-  manifest that omits it has not answered the question, which is not the same
+  provider state. It is a reviewer's assertion, not a derived value — 36 live
+  reads carry `readOnlyHint: true`, 19 entries carry no annotations, and rule
+  4 makes either shape evidence rather than authority — and it has no default:
+  a manifest that omits it has not answered the question, which is not the same
   as answering "no". Formats 1.0 and 1.1 are both refused rather than
   migrated, because every value a migration could supply would be a guess
   about precisely the field that exists to record a human judgement.
@@ -892,15 +901,19 @@ reading is the control, and it is a human one. It is weaker than an external
 review and stronger than nothing, and calling it what it is beats pretending
 the digest check covers it.
 
-**One consequence in the reviewers' own tests.** Their
+**Two consequences in the reviewers' own tests.** The v0.1.0 review's
 `test_exact_8_trading_denied_and_11_mutations_allowed` opens by pinning the
 manifest version and digest, so after a refresh it fails on the first line and
 never reaches the assertions its name is about. Their file is not edited for
 this — editing an auditor's evidence to make it pass is only defensible when
-the file contradicts itself, which this does not. CI deselects that one test by
-name and records why, and the property it was guarding is held independently by
+the file contradicts itself, which this does not. The v0.3.3 review separately
+pins the complete 54-entry / 35-read split; the independently reviewed
+`get_equity_news` addition makes only that exact split assertion stale. CI
+deselects those two tests by full node id and records why, while every other
+reviewer test still runs. The properties they guarded are held independently by
 `TestTheShippedManifest`, which asserts the same 8 denials, the same 11 flagged
-mutations, and the same 46/8 split against whatever manifest ships. It also
+mutations, the current 55-entry / 36-read / 47-allowed / 8-denied split, and the
+exact denied set against whatever manifest ships. It also
 asserts the denied set *as a set*, which the 2026.08.09 review added after a
 draft of that change put a ninth entry in it and every existing count assertion
 stayed green.
@@ -1185,7 +1198,7 @@ historical entries while refreshing the manifest. A consumer pinning the
 digest the artifact refuses readiness against.
 
 <!-- manifest-automation:current-start -->
-The current source declares package `0.3.3` and carries manifest `2026.08.22` / `df71febf…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
+The current source declares package `0.4.1` and carries manifest `2026.08.28` / `fac89520…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
 <!-- manifest-automation:current-end -->
 That does not fix anything above and is
 not meant to read as though it did: both changelog entries still print
@@ -1401,10 +1414,14 @@ All six owner-assisted observations are **closed**, on 2026-08-03:
    page is schemas *about* data and outgrew a depth limit sized for data, so
    discovery now has its own (§8).
 
-Two provider behaviours observed and deliberately not worked around:
+Two provider behaviours observed across the initial and later discoveries and
+deliberately not worked around:
 
-- **No tool carries any annotation.** Rule 4's "annotations are evidence, never
-  authority" turned out to be moot — there is no evidence at all.
+- **Annotation practice changed over time.** On 2026-08-03 none of the initial
+  53 tools carried an annotation. On 2026-08-28 all 36 current reads carry
+  `readOnlyHint: true`, while the other 19 current tools carry no annotation.
+  Rule 4 remains substantive: annotations are pinned evidence, never authority
+  for disposition or mutation classification.
 - **Session termination returns 400.** The MCP SDK sends a DELETE on close and
   Robinhood rejects it. Non-fatal; discovery completes. Left unsilenced,
   because suppressing another library's warning hides a signal that is not

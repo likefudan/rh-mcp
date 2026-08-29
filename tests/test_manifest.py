@@ -827,7 +827,7 @@ class TestManifestSource:
 #
 # The reason the two tables are separate is scope, not safety: a widened *write*
 # input is a widened write, which is the sharper edge, and it was pinned first.
-# The thirty-five reads are pinned below by property *name* only, which is what
+# The thirty-six reads are pinned below by property *name* only, which is what
 # a nested description edit cannot move — the cheap step this comment used to
 # record as deferred.
 #
@@ -878,7 +878,7 @@ ALLOWED_WRITE_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[st
 }
 
 
-# The same control for the thirty-five allowed reads, and the reason it is a
+# The same control for the thirty-six allowed reads, and the reason it is a
 # separate table is that it buys something weaker. A widened write accepts new
 # instructions; a widened read accepts new *selectors* — a new filter, a new
 # cursor, a new account field — which changes what leaves the account, not what
@@ -897,7 +897,7 @@ ALLOWED_WRITE_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[st
 # a changed `type`/`items` body and changed description text, which is the
 # already-stated gap, arrived at from a direction that was not obvious.
 #
-# All thirty-five already declare `additionalProperties: false`; the assertion
+# All thirty-six declare `additionalProperties: false`; the assertion
 # below is what keeps that true rather than a description of today.
 ALLOWED_READ_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[str]]]] = {
     "get_accounts": (frozenset(), frozenset()),
@@ -907,6 +907,10 @@ ALLOWED_READ_INPUT_SURFACES: Final[dict[str, tuple[frozenset[str], frozenset[str
     "get_equity_historicals": (
         frozenset({"adjustment_type", "bounds", "end_time", "interval", "start_time", "symbols"}),
         frozenset({"start_time", "symbols"}),
+    ),
+    "get_equity_news": (
+        frozenset({"cursor", "limit", "symbol"}),
+        frozenset({"symbol"}),
     ),
     "get_equity_orders": (
         frozenset(
@@ -1127,10 +1131,10 @@ def constraint_only(schema: object) -> object:
 # because `schema.py` validates `type` and `items` at call time.
 #
 # It is a digest per capability rather than a table of schemas on purpose. The
-# stated reason for not doing this earlier was that a table of forty-six full
+# stated reason for not doing this earlier was that a table of forty-seven full
 # schemas moves whenever the provider edits a nested description, "which is
 # the pressure that gets a check deleted". Stripping `description` removes
-# exactly that pressure: a re-worded manifest leaves all forty-six digests
+# exactly that pressure: a re-worded manifest leaves all forty-seven digests
 # untouched, and `test_rewording_a_description_moves_no_constraint_digest`
 # is what holds that property rather than the claim.
 ALLOWED_INPUT_CONSTRAINT_DIGESTS: Final[dict[str, str]] = {
@@ -1154,6 +1158,7 @@ ALLOWED_INPUT_CONSTRAINT_DIGESTS: Final[dict[str, str]] = {
     "get_equity_historicals": (
         "sha256:a437c4b4a0c6ebf9b65cc42196f9b6ad828e6875b4e6373e2edf8342c10b4e1f"
     ),
+    "get_equity_news": "sha256:91f7ac10d19ff1e97c667ce129407ebc9deb9bb47b81a4d15063aeb98ece445e",
     "get_equity_orders": "sha256:89f18a20f56dd8a8bb0ab18b2cdcbe6166cd450cebaf2b8c7aa9dee2945d6051",
     "get_equity_positions": (
         "sha256:c0754f6e7bb8213bb4d71e90b148936003692cc1d3293ac13c179c2f15aa1aea"
@@ -1265,6 +1270,7 @@ ALLOWED_OUTPUT_CONSTRAINT_DIGESTS: Final[dict[str, str]] = {
     "get_equity_historicals": (
         "sha256:4d8238e28cbac721020ea31f25c672bf769de549142a8a7523e345d3f56fc354"
     ),
+    "get_equity_news": "sha256:621a5a9a9d08fe822161d29d846451eec8f2266cd1420c5821b46b5c048704d3",
     "get_equity_orders": "sha256:c8a1617e0142fa0ee8d10b3811a60c6d444af244e8a6b0cdf220c3e248fe73ae",
     "get_equity_positions": (
         "sha256:d95c023466f337562953dbe702e1a43b213308706048b95870935dcb70ca5cc6"
@@ -1354,7 +1360,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:df71febf46c1e594da56f7e0205357af091a5b1fc7726bdf05259cd53f289bdc"
+    SHIPPED_DIGEST = "sha256:fac895203bceae45187d1eca38b79884f15414e2ffeb28930aa588d9ada8d8f1"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -1657,7 +1663,7 @@ class TestTheShippedManifest:
         """The other direction: a read wrongly flagged would be gated for nothing."""
         manifest = load_active_manifest()
         reads = [e for e in manifest.entries if e.read_allowed and not e.mutates]
-        assert len(reads) == 35
+        assert len(reads) == 36
         assert all(e.capability.startswith(("get_", "run_", "search")) for e in reads)
 
     def test_each_allowed_mutation_states_its_own_blast_radius(self) -> None:
@@ -1746,7 +1752,7 @@ class TestTheShippedManifest:
         }
 
         assert set(reads) == set(ALLOWED_READ_INPUT_SURFACES)
-        assert len(reads) == 35
+        assert len(reads) == 36
 
         for capability, (properties, required) in ALLOWED_READ_INPUT_SURFACES.items():
             schema = reads[capability].input_schema
@@ -1770,7 +1776,7 @@ class TestTheShippedManifest:
         allowed = {entry.capability: entry for entry in manifest.entries if entry.read_allowed}
 
         assert set(allowed) == set(ALLOWED_INPUT_CONSTRAINT_DIGESTS)
-        assert len(allowed) == 46
+        assert len(allowed) == 47
 
         for capability, pinned in ALLOWED_INPUT_CONSTRAINT_DIGESTS.items():
             observed = canonical_digest(constraint_only(allowed[capability].input_schema))
@@ -1812,7 +1818,7 @@ class TestTheShippedManifest:
         dropped annotation keys at every depth would have removed a real
         argument from `create_scan`'s digest and stopped covering its
         constraints entirely. Measured: `create_scan` is the one capability of
-        the forty-six whose digest differs between the two strippers.
+        the forty-seven whose digest differs between the two strippers.
 
         The `description` case below is the general form: two schemas that
         constrain an argument of that name completely differently must not
@@ -1883,7 +1889,7 @@ class TestTheShippedManifest:
         allowed = {entry.capability: entry for entry in manifest.entries if entry.read_allowed}
 
         assert set(allowed) == set(ALLOWED_OUTPUT_CONSTRAINT_DIGESTS)
-        assert len(allowed) == 46
+        assert len(allowed) == 47
 
         for capability, pinned in ALLOWED_OUTPUT_CONSTRAINT_DIGESTS.items():
             schema = allowed[capability].output_schema
@@ -1916,7 +1922,7 @@ class TestTheShippedManifest:
 
         # Without this the test passes just as well on a manifest where no
         # schema carries a description at all, which would make it a check on
-        # nothing. Forty of the forty-six do; the six that do not are exactly
+        # nothing. Forty-one of the forty-seven do; the six that do not are exactly
         # the no-argument reads, whose schemas are `{"type": "object",
         # "additionalProperties": false}` and have no prose to reword.
         # `>=`, not `==`. The guarantee wanted here is that the test is not
@@ -1940,7 +1946,7 @@ class TestTheShippedManifest:
     def test_no_allowed_read_accepts_undeclared_arguments(self) -> None:
         """Same reason as the write form: a pinned name set bounds nothing without it.
 
-        Six of the thirty-five take no arguments at all and carry no
+        Six of the thirty-six take no arguments at all and carry no
         `properties` key. Those are the ones where this assertion does the most
         work — an empty pinned set and an open schema would be a tool that
         accepts anything while the table above says it accepts nothing.
@@ -2036,14 +2042,14 @@ class TestTheShippedManifest:
     def test_the_allowed_set_is_the_size_the_reviewer_approved(self) -> None:
         """A bare count, so an entry appearing or vanishing cannot pass quietly."""
         manifest = load_active_manifest()
-        assert len(manifest.entries) == 54
-        assert len(manifest.read_capabilities) == 46
+        assert len(manifest.entries) == 55
+        assert len(manifest.read_capabilities) == 47
 
         # The denied count was implied by the other two and asserted by
         # neither, which is a gap the 2026.08.09 review found the hard way: an
         # entry appearing moves the total, and the allowed count stays true
         # whether the 54th entry is denied or was never added. DESIGN §12.4 and
-        # CI's deselection comment both cite the "46/8 split" as a property
+        # CI's deselection comment both cite the allowed/denied split as a property
         # held here, so it is held here.
         assert sum(1 for e in manifest.entries if not e.read_allowed) == 8
 
@@ -2055,6 +2061,45 @@ class TestTheShippedManifest:
         assert {e.provider_tool_name for e in manifest.entries if not e.read_allowed} == set(
             self.TRADING_TOOLS + self.SIMULATION_TOOLS
         )
+
+    def test_provider_annotations_match_the_measured_36_19_split(self) -> None:
+        """Pin annotation evidence without treating it as permission authority."""
+        entries = load_active_manifest().entries
+        annotated = [entry for entry in entries if entry.annotations]
+        unannotated = [entry for entry in entries if not entry.annotations]
+
+        assert len(annotated) == 36
+        assert len(unannotated) == 19
+        assert all(entry.annotations == {"readOnlyHint": True} for entry in annotated)
+        assert all(entry.read_allowed and not entry.mutates for entry in annotated)
+
+    def test_equity_news_is_a_bounded_read_and_article_text_grants_nothing(self) -> None:
+        """The 2026-08-28 tool-set decision is explicit, not inferred from its name."""
+        entry = load_active_manifest().capabilities["get_equity_news"]
+
+        assert entry.disposition == "allowed"
+        assert entry.read_allowed
+        assert entry.mutates is False
+        assert set(entry.input_schema["properties"]) == {"symbol", "limit", "cursor"}
+        assert set(entry.input_schema["required"]) == {"symbol"}
+        assert entry.input_schema["additionalProperties"] is False
+
+        output = entry.output_schema
+        assert output is not None
+        data = output["properties"]["data"]
+        assert set(data["required"]) == {"symbol", "articles"}
+        article = data["properties"]["articles"]["items"]
+        assert article["additionalProperties"] is False
+        assert set(article["required"]) == {
+            "id",
+            "title",
+            "publisher",
+            "published_at",
+            "source_type",
+        }
+        assert "does not change" in entry.rationale
+        assert "untrusted provider data" in entry.rationale
+        assert "grants no authority" in entry.rationale
 
     def test_the_two_upgrade_link_tools_are_treated_alike(self) -> None:
         """§6.1: the tool that appeared on 2026-08-09, beside its precedent.

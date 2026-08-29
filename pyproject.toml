@@ -1,10 +1,9 @@
 [project]
 name = "rh-mcp"
-# 0.4.0 makes `mutates` decide something. `GatewayConfig.allow_mutations`
-# defaults to False, so a consumer upgrading from 0.3.3 without setting it
-# loses the eleven allowed writes — the minor is the breaking position for a
-# 0.x package, and this is the break. See CHANGELOG.md.
-version = "0.4.0"
+# 0.4.1 carries the independently reviewed 2026.08.28 provider tool-set
+# expansion. Package code and the 0.4 public API are unchanged; consumers also
+# pin the separately reviewed full-manifest digest. See CHANGELOG.md.
+version = "0.4.1"
 description = "A default-deny Python Read Gateway for Robinhood's official MCP server"
 readme = "README.md"
 license = "Apache-2.0"

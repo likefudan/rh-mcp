@@ -153,26 +153,32 @@ def test_dependabot_refuses_to_propose_a_major_bump() -> None:
 # The reviewer-suite deselection (DESIGN §12.4)
 # ---------------------------------------------------------------------------
 
-DESELECTED = "test_exact_8_trading_denied_and_11_mutations_allowed"
+DESELECTED = (
+    "security-review/v0.1.0/test_adversarial_review.py::"
+    "TestPackagedManifestBoundary::"
+    "test_exact_8_trading_denied_and_11_mutations_allowed",
+    "security-review/0.3.3/test_adversarial_review_v033.py::"
+    "TestTheDeniedSetIsStillExactlyTheTradingSurface::"
+    "test_the_split_is_35_reads_11_mutations_8_denied",
+)
 WORKFLOWS = PYPROJECT.parent / ".github" / "workflows"
 
 
 @pytest.mark.parametrize("workflow", ["ci.yml", "release.yml"])
-def test_exactly_one_reviewer_test_is_deselected(workflow: str) -> None:
+def test_only_reviewed_stale_manifest_tests_are_deselected(workflow: str) -> None:
     """A deselection is a hole in an auditor's suite, so it is counted.
 
-    The one that exists is justified in §12.4: the test pins the manifest
-    version and digest on its first line, so any refresh stops it before the
-    assertions its name is about. Widening this is how a suite quietly stops
-    guarding what it was written to guard, which is the failure mode that let
-    the v0.1.0 findings survive four internal rounds.
+    Both are justified in §12.4 and pin an exact older manifest boundary.
+    Widening this list is how a suite quietly stops guarding what it was written
+    to guard, which is the failure mode that let the v0.1.0 findings survive
+    four internal rounds.
     """
     text = (WORKFLOWS / workflow).read_text(encoding="utf-8")
-    assert text.count("--deselect") == 1, (
-        f"{workflow} deselects more than one reviewer test; each hole in an "
-        "auditor's suite needs its own entry in DESIGN §12.4"
-    )
-    assert DESELECTED in text
+    assert text.count("--deselect") == 1
+    for node_id in DESELECTED:
+        assert text.count(node_id) == 1, (
+            f"{workflow} must name each reviewed stale test exactly once"
+        )
     assert "-k " not in text.split("suites=")[1].split("uv run pytest")[1][:400], (
         "the reviewer suites must not be filtered with -k; deselect by full "
         "node id so what is skipped is named rather than matched"

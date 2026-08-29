@@ -1414,11 +1414,14 @@ All six owner-assisted observations are **closed**, on 2026-08-03:
    page is schemas *about* data and outgrew a depth limit sized for data, so
    discovery now has its own (§8).
 
-Two provider behaviours observed and deliberately not worked around:
+Two provider behaviours observed across the initial and later discoveries and
+deliberately not worked around:
 
-- **All 36 reads carry `readOnlyHint: true`; the other 19 tools carry no
-  annotation.** Rule 4 remains substantive: annotations are pinned evidence,
-  never authority for disposition or mutation classification.
+- **Annotation practice changed over time.** On 2026-08-03 none of the initial
+  53 tools carried an annotation. On 2026-08-28 all 36 current reads carry
+  `readOnlyHint: true`, while the other 19 current tools carry no annotation.
+  Rule 4 remains substantive: annotations are pinned evidence, never authority
+  for disposition or mutation classification.
 - **Session termination returns 400.** The MCP SDK sends a DELETE on close and
   Robinhood rejects it. Non-fatal; discovery completes. Left unsilenced,
   because suppressing another library's warning hides a signal that is not

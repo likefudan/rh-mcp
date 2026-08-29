@@ -2,10 +2,11 @@
 
 This module is the security boundary. Robinhood advertises a single `internal`
 OAuth scope, so the token can trade, and what it is permitted to do cannot be
-inferred from the token, from a tool name, or from an MCP annotation (§2) —
-the live surface carries no annotations at all. What holds the boundary is a
-human-reviewed, committed manifest plus the exact digest comparisons
-implemented here.
+inferred from the token, from a tool name, or from an MCP annotation (§2).
+The current live surface marks all 36 reads `readOnlyHint: true` and leaves the
+other 19 entries unannotated, but either shape is evidence rather than
+authority. What holds the boundary is a human-reviewed, committed manifest plus
+the exact digest comparisons implemented here.
 
 The boundary is **"no trading", not "no writes"**: the reviewed manifest denies
 all six order tools and both order simulators, and allows 11 non-trading

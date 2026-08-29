@@ -68,7 +68,7 @@ had to speculate about, and both matter more than they look:
   exercise real orders**. They arrive over the same session, under the same
   token, as every quote and position read. This manifest is the only thing
   between a consumer and a trade.
-- **One of the 55 tools carries `readOnlyHint`; the other 54 carry no
+- **All 36 reads carry `readOnlyHint: true`; the other 19 tools carry no
   annotation at all.** Rule 4 below says annotations are evidence and never
   authority. `get_equity_news` was allowed only after its name, description,
   complete input/output schema, and mutation blast radius were reviewed; the
@@ -128,8 +128,8 @@ The 36th read is `get_equity_news`, observed on `2026.08.28`. It takes a
 ticker plus optional bounded pagination and returns publisher-attributed news
 articles. Its schema accepts no account, order, cash, position, watchlist, or
 scan field, and invocation changes no provider state. Article content is
-untrusted provider data; neither its text nor its sole `readOnlyHint`
-annotation grants authority to call another capability.
+untrusted provider data; neither its text nor the only key in its annotations,
+`readOnlyHint: true`, grants authority to call another capability.
 
 The `2026.08.12` observation expanded one of the already allowed non-trading
 mutations. `create_scan` can now take `scan_id` to append a new active
@@ -333,9 +333,10 @@ tool in the observed provider surface:
 - deterministic canonical schema and metadata digests;
 - review disposition (`allowed` or `denied`) and review rationale;
 - a required `mutates` boolean stating whether invoking the capability changes
-  provider state. It is a reviewer's assertion, not a derived value — the live
-  surface carries no annotations to derive it from — and it has no default: a
-  manifest that omits it has not answered the question, which is not the same
+  provider state. It is a reviewer's assertion, not a derived value — 36 live
+  reads carry `readOnlyHint: true`, 19 entries carry no annotations, and rule
+  4 makes either shape evidence rather than authority — and it has no default:
+  a manifest that omits it has not answered the question, which is not the same
   as answering "no". Formats 1.0 and 1.1 are both refused rather than
   migrated, because every value a migration could supply would be a guess
   about precisely the field that exists to record a human judgement.
@@ -1415,8 +1416,9 @@ All six owner-assisted observations are **closed**, on 2026-08-03:
 
 Two provider behaviours observed and deliberately not worked around:
 
-- **No tool carries any annotation.** Rule 4's "annotations are evidence, never
-  authority" turned out to be moot — there is no evidence at all.
+- **All 36 reads carry `readOnlyHint: true`; the other 19 tools carry no
+  annotation.** Rule 4 remains substantive: annotations are pinned evidence,
+  never authority for disposition or mutation classification.
 - **Session termination returns 400.** The MCP SDK sends a DELETE on close and
   Robinhood rejects it. Non-fatal; discovery completes. Left unsilenced,
   because suppressing another library's warning hides a signal that is not

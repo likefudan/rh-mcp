@@ -2062,6 +2062,17 @@ class TestTheShippedManifest:
             self.TRADING_TOOLS + self.SIMULATION_TOOLS
         )
 
+    def test_provider_annotations_match_the_measured_36_19_split(self) -> None:
+        """Pin annotation evidence without treating it as permission authority."""
+        entries = load_active_manifest().entries
+        annotated = [entry for entry in entries if entry.annotations]
+        unannotated = [entry for entry in entries if not entry.annotations]
+
+        assert len(annotated) == 36
+        assert len(unannotated) == 19
+        assert all(entry.annotations == {"readOnlyHint": True} for entry in annotated)
+        assert all(entry.read_allowed and not entry.mutates for entry in annotated)
+
     def test_equity_news_is_a_bounded_read_and_article_text_grants_nothing(self) -> None:
         """The 2026-08-28 tool-set decision is explicit, not inferred from its name."""
         entry = load_active_manifest().capabilities["get_equity_news"]

@@ -78,7 +78,7 @@ jobs:
           test -n "$suites" || { echo "no reviewer suites found"; exit 1; }
           echo "running: $suites"
           # Three stale exact-manifest assertions are deselected by full node id, with
-          # both reasons recorded in DESIGN §12.4.
+          # their exact reasons recorded in DESIGN §12.4.
           # `test_exact_8_trading_denied_and_11_mutations_allowed` opens by
           # pinning the manifest version and digest, so after any refresh it
           # fails on its first line and never reaches the assertions its name

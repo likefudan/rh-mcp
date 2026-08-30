@@ -930,7 +930,7 @@ the file contradicts itself, which this does not. The v0.3.3 review separately
 pins the complete 54-entry / 35-read split. The independently reviewed
 `get_equity_news` addition and four explicitly denied SEC tools make only that
 exact split assertion stale. CI
-deselects those two tests by full node id and records why, while every other
+deselects those three assertions by full node id and records why, while every other
 reviewer test still runs. The properties they guarded are held independently by
 `TestTheShippedManifest`, which asserts the same 8 trading denials, the same 11 flagged
 mutations, the current 59-entry / 36-allowed-read / 47-allowed / 12-denied

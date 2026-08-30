@@ -28,6 +28,55 @@ that carries them.
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-08-30
+
+### Manifest
+
+#### `2026.08.30` — reviewed SEC filing tools, default-denied
+
+**Reviewed four new read-shaped tools.** Two consecutive owner-assisted
+discoveries returned the same stable 59-tool provider surface after removing
+only the observation timestamp. The guarded refresh tool correctly refused to
+carry permissions forward because no prior decision existed for:
+
+- `get_sec_filing_index` — list public SEC filing metadata for a ticker;
+- `get_sec_filing` — read a filing table of contents or one section;
+- `get_sec_filing_facts` — read selected GAAP facts from up to three filings;
+- `get_sec_filing_facts_catalog` — list GAAP concepts, periods, and dimensions.
+
+All four entries are explicitly `denied` / `mutates: false`. Their complete
+input schemas accept only ticker, filing, form/date, section, concept, and
+pagination selectors. None accepts an account, order, cash, position,
+watchlist, or scan field; invocation changes no provider state. Filing text,
+facts, identifiers, concepts, and pagination values are untrusted provider
+data and grant no authority to invoke another capability. The provider's
+`readOnlyHint: true` annotations were treated as evidence, never authority.
+No current consumer requires these tools, so a provider drift recovery does
+not silently widen the gateway permission surface. A future consumer can move
+one only through a separate permission review.
+
+The prior 55 entries are unchanged in every provider-derived and
+reviewer-decision field. The allowed split remains 36 reads and 11 non-trading
+mutations; the denied set is the same 8 trading/simulation tools plus these 4
+known SEC reads.
+
+Manifest version: `2026.08.30`
+
+Provider-surface digest:
+
+```
+sha256:17498a0411466fcfb475e0cfb160f145df38702c2aee13224b0b3ae5340b1e96
+```
+
+Full-manifest digest:
+
+```
+sha256:895dcec0faa7d7c69fbd8ebb5c550faf9e295911a896d4064f5bacc05cfa6766
+```
+
+This tool-set expansion triggers DESIGN §12.4: the exact source and eventual
+release artifacts require fresh independent review before consumers pin them.
+
 ## [0.4.1] — 2026-08-28
 
 ### Manifest
@@ -905,7 +954,8 @@ description changed. No disposition moved.
   than during, unlike the HTTP path.
 
 <!-- manifest-automation:release-links-start -->
-[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.4.1...HEAD
+[0.4.2]: https://github.com/likefudan/rh-mcp/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/likefudan/rh-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...v0.4.0
 [0.3.3]: https://github.com/likefudan/rh-mcp/compare/v0.3.0...v0.3.3

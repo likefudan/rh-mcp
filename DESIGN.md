@@ -1,8 +1,8 @@
 # rh-mcp — Design
 
 Status: **released.** `v0.1.0` shipped on 2026-08-03, `v0.2.0` on 2026-08-04,
-and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 55
-tools; a human reviewed 47 allowed / 8 denied (§2.1).
+and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 59
+tools; a human reviewed 47 allowed / 12 denied (§2.1).
 
 The §12 acceptance list is now satisfied: license, changelog, tagged artifact
 with published digests, the independent security review, and — as of §12.5 —
@@ -64,15 +64,15 @@ not inferred from the token, a tool name, or an MCP annotation.
 Authenticated discovery (§13) settled two facts that this section previously
 had to speculate about, and both matter more than they look:
 
-- The provider surface is 55 tools, and **six of them place, cancel, or
+- The provider surface is 59 tools, and **six of them place, cancel, or
   exercise real orders**. They arrive over the same session, under the same
   token, as every quote and position read. This manifest is the only thing
   between a consumer and a trade.
-- **All 36 reads carry `readOnlyHint: true`; the other 19 tools carry no
-  annotation at all.** Rule 4 below says annotations are evidence and never
-  authority. `get_equity_news` was allowed only after its name, description,
-  complete input/output schema, and mutation blast radius were reviewed; the
-  hint did not decide the disposition.
+- **All 40 read-shaped tools carry `readOnlyHint: true`; the other 19 tools
+  carry no annotation at all.** Rule 4 below says annotations are evidence and
+  never authority. Thirty-six are allowed reads; the four new SEC tools remain
+  denied even though their schemas are read-shaped, because no current
+  consumer needs them and drift recovery must not silently expand permission.
 
 The governing rules are:
 
@@ -97,7 +97,7 @@ the consumer (§10).
 
 ### 2.1 What the active manifest actually allows
 
-47 of 55 tools are allowed; 8 are denied. The denied set is exactly the
+47 of 59 tools are allowed; 12 are denied. Eight denied entries are exactly the
 trading surface:
 
 | denied | why |
@@ -107,7 +107,13 @@ trading surface:
 | `exercise_option` | exercises a position |
 | `review_equity_order`, `review_option_order` | "simulate an order without placing it" — denied anyway. Simulation is not a read of account state, it takes a complete order as its argument, and the meaning of "simulate" is defined entirely on Robinhood's side. If that meaning ever shifts, what we handed over was an order. |
 
-The allowed set is 36 reads plus **11 non-trading mutations**: watchlist
+The other four denied entries are the SEC filing tools observed on
+`2026.08.30`. They are `mutates: false`, but remain denied under rule 1 because
+no current consumer requires them. This preserves least privilege without
+misclassifying them as trading; a future consumer must request a separate
+permission review before any can move to `allowed`.
+
+The allowed set remains 36 reads plus **11 non-trading mutations**: watchlist
 create/update/add/remove/follow/unfollow, and saved-scan create/update. They
 write to Robinhood; they move no money and touch no order.
 
@@ -130,6 +136,19 @@ articles. Its schema accepts no account, order, cash, position, watchlist, or
 scan field, and invocation changes no provider state. Article content is
 untrusted provider data; neither its text nor the only key in its annotations,
 `readOnlyHint: true`, grants authority to call another capability.
+
+Four read-shaped tools appeared together on `2026.08.30`:
+`get_sec_filing_index`, `get_sec_filing`, `get_sec_filing_facts`, and
+`get_sec_filing_facts_catalog`. Their complete schemas accept only public SEC
+lookup selectors — ticker, filing ID, form/date filters, section ID, GAAP
+concept names, and bounded pagination values. They accept no account, order,
+cash, position, watchlist, or scan field, and invocation changes no provider
+state. Filing text and facts are untrusted provider data; returned identifiers,
+concepts, sections, cursors, and offsets grant no authority to invoke another
+capability. Their `readOnlyHint: true` annotations were evidence, not the
+decision. All four are explicitly `denied` / `mutates: false`: recording a
+known provider tool restores drift detection but does not grant permission to
+call it.
 
 The `2026.08.12` observation expanded one of the already allowed non-trading
 mutations. `create_scan` can now take `scan_id` to append a new active
@@ -333,9 +352,10 @@ tool in the observed provider surface:
 - deterministic canonical schema and metadata digests;
 - review disposition (`allowed` or `denied`) and review rationale;
 - a required `mutates` boolean stating whether invoking the capability changes
-  provider state. It is a reviewer's assertion, not a derived value — 36 live
-  reads carry `readOnlyHint: true`, 19 entries carry no annotations, and rule
-  4 makes either shape evidence rather than authority — and it has no default:
+  provider state. It is a reviewer's assertion, not a derived value — 40 live
+  read-shaped tools carry `readOnlyHint: true`, including four denied SEC
+  tools, while 19 entries carry no annotations — and rule 4 makes either shape
+  evidence rather than authority — and it has no default:
   a manifest that omits it has not answered the question, which is not the same
   as answering "no". Formats 1.0 and 1.1 are both refused rather than
   migrated, because every value a migration could supply would be a guess
@@ -907,13 +927,14 @@ manifest version and digest, so after a refresh it fails on the first line and
 never reaches the assertions its name is about. Their file is not edited for
 this — editing an auditor's evidence to make it pass is only defensible when
 the file contradicts itself, which this does not. The v0.3.3 review separately
-pins the complete 54-entry / 35-read split; the independently reviewed
-`get_equity_news` addition makes only that exact split assertion stale. CI
+pins the complete 54-entry / 35-read split. The independently reviewed
+`get_equity_news` addition and four explicitly denied SEC tools make only that
+exact split assertion stale. CI
 deselects those two tests by full node id and records why, while every other
 reviewer test still runs. The properties they guarded are held independently by
-`TestTheShippedManifest`, which asserts the same 8 denials, the same 11 flagged
-mutations, the current 55-entry / 36-read / 47-allowed / 8-denied split, and the
-exact denied set against whatever manifest ships. It also
+`TestTheShippedManifest`, which asserts the same 8 trading denials, the same 11 flagged
+mutations, the current 59-entry / 36-allowed-read / 47-allowed / 12-denied
+split, and the exact denied set against whatever manifest ships. It also
 asserts the denied set *as a set*, which the 2026.08.09 review added after a
 draft of that change put a ninth entry in it and every existing count assertion
 stayed green.
@@ -1198,7 +1219,7 @@ historical entries while refreshing the manifest. A consumer pinning the
 digest the artifact refuses readiness against.
 
 <!-- manifest-automation:current-start -->
-The current source declares package `0.4.1` and carries manifest `2026.08.28` / `fac89520…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
+The current source declares package `0.4.2` and carries manifest `2026.08.30` / `895dcec0…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
 <!-- manifest-automation:current-end -->
 That does not fix anything above and is
 not meant to read as though it did: both changelog entries still print
@@ -1418,8 +1439,9 @@ Two provider behaviours observed across the initial and later discoveries and
 deliberately not worked around:
 
 - **Annotation practice changed over time.** On 2026-08-03 none of the initial
-  53 tools carried an annotation. On 2026-08-28 all 36 current reads carry
-  `readOnlyHint: true`, while the other 19 current tools carry no annotation.
+  53 tools carried an annotation. On 2026-08-30 all 40 current read-shaped
+  tools carry `readOnlyHint: true`; four of those SEC tools remain denied,
+  while the other 19 current tools carry no annotation.
   Rule 4 remains substantive: annotations are pinned evidence, never authority
   for disposition or mutation classification.
 - **Session termination returns 400.** The MCP SDK sends a DELETE on close and

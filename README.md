@@ -63,10 +63,11 @@ manifest lineage observed on `2026.08.09`, distinct from the already released
 refresh described below.
 
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
-and has been re-run on each observed drift since. A human has reviewed all 55
-discovered tools: **47 allowed, 8 denied**. The denied set is exactly the
-trading surface — the six order tools plus both order simulators — and every
-denied tool genuinely writes. The allowed set is 36 reads plus 11 non-trading
+and has been re-run on each observed drift since. A human has reviewed all 59
+discovered tools: **47 allowed, 12 denied**. Eight denied tools are the trading
+surface — the six order tools plus both order simulators — and the other four
+are new SEC filing reads kept default-denied because no current consumer needs
+them. The allowed set remains 36 reads plus 11 non-trading
 mutations (watchlist and saved-scan management), each carrying a reviewed
 `mutates` flag so a consumer gating writes never has to infer which is which.
 
@@ -81,6 +82,17 @@ input has no account, order, cash, position, watchlist, or scan field and
 invoking it changes no provider state. Article text remains untrusted provider
 data and grants no authority to call another tool.
 
+Four SEC filing reads appeared together on `2026.08.30`:
+`get_sec_filing_index`, `get_sec_filing`, `get_sec_filing_facts`, and
+`get_sec_filing_facts_catalog`. They accept only ticker, filing, date, concept,
+section, and pagination selectors; they have no account, order, cash,
+position, watchlist, or scan input and change no provider state. Filing text,
+facts, identifiers, concepts, and pagination values remain untrusted provider
+data and grant no authority to invoke another capability. All four remain
+`denied` / `mutates: false`: recovering from drift does not silently expand
+permissions, and a consumer that actually needs SEC data must request a
+separate permission review.
+
 On `2026.08.12`, Robinhood expanded `create_scan` within the already allowed
 saved-scanner write domain: it can append a new active configuration version
 to an existing scan and persist expression filters. It remains
@@ -92,11 +104,11 @@ tool surface; like the five existing dangling tool references, it is inert in
 this gateway but must not be forwarded into a model or user-facing context.
 
 <!-- manifest-automation:current-start -->
-The current source declares package version `v0.4.1` and carries
-manifest `2026.08.28`. Its full-manifest digest is:
+The current source declares package version `v0.4.2` and carries
+manifest `2026.08.30`. Its full-manifest digest is:
 
 ```
-sha256:fac895203bceae45187d1eca38b79884f15414e2ffeb28930aa588d9ada8d8f1
+sha256:895dcec0faa7d7c69fbd8ebb5c550faf9e295911a896d4064f5bacc05cfa6766
 ```
 
 The version and digest belong to this source tree. A GitHub release exists only

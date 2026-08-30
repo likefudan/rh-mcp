@@ -1360,7 +1360,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:fac895203bceae45187d1eca38b79884f15414e2ffeb28930aa588d9ada8d8f1"
+    SHIPPED_DIGEST = "sha256:895dcec0faa7d7c69fbd8ebb5c550faf9e295911a896d4064f5bacc05cfa6766"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -2042,7 +2042,7 @@ class TestTheShippedManifest:
     def test_the_allowed_set_is_the_size_the_reviewer_approved(self) -> None:
         """A bare count, so an entry appearing or vanishing cannot pass quietly."""
         manifest = load_active_manifest()
-        assert len(manifest.entries) == 55
+        assert len(manifest.entries) == 59
         assert len(manifest.read_capabilities) == 47
 
         # The denied count was implied by the other two and asserted by
@@ -2051,27 +2051,32 @@ class TestTheShippedManifest:
         # whether the 54th entry is denied or was never added. DESIGN §12.4 and
         # CI's deselection comment both cite the allowed/denied split as a property
         # held here, so it is held here.
-        assert sum(1 for e in manifest.entries if not e.read_allowed) == 8
+        assert sum(1 for e in manifest.entries if not e.read_allowed) == 12
 
-        # And the denied set is exactly the trading surface — §2.1's normative
-        # claim, which nothing else asserts as a *set*. `test_no_trading_
-        # capability_is_allowed` checks those 8 are denied; it would not notice
-        # a 9th tool joining them, which is precisely what the first draft of
-        # this PR did.
+        # And the denied set is exactly the eight trading/simulation tools plus
+        # the four explicitly least-privilege SEC reads — §2.1's normative
+        # claim, held as a set so nothing can join or disappear quietly.
+        denied_sec = {
+            "get_sec_filing",
+            "get_sec_filing_facts",
+            "get_sec_filing_facts_catalog",
+            "get_sec_filing_index",
+        }
         assert {e.provider_tool_name for e in manifest.entries if not e.read_allowed} == set(
             self.TRADING_TOOLS + self.SIMULATION_TOOLS
-        )
+        ) | denied_sec
 
-    def test_provider_annotations_match_the_measured_36_19_split(self) -> None:
+    def test_provider_annotations_match_the_measured_40_19_split(self) -> None:
         """Pin annotation evidence without treating it as permission authority."""
         entries = load_active_manifest().entries
         annotated = [entry for entry in entries if entry.annotations]
         unannotated = [entry for entry in entries if not entry.annotations]
 
-        assert len(annotated) == 36
+        assert len(annotated) == 40
         assert len(unannotated) == 19
         assert all(entry.annotations == {"readOnlyHint": True} for entry in annotated)
-        assert all(entry.read_allowed and not entry.mutates for entry in annotated)
+        assert sum(entry.read_allowed and not entry.mutates for entry in annotated) == 36
+        assert sum(not entry.read_allowed and not entry.mutates for entry in annotated) == 4
 
     def test_equity_news_is_a_bounded_read_and_article_text_grants_nothing(self) -> None:
         """The 2026-08-28 tool-set decision is explicit, not inferred from its name."""
@@ -2100,6 +2105,53 @@ class TestTheShippedManifest:
         assert "does not change" in entry.rationale
         assert "untrusted provider data" in entry.rationale
         assert "grants no authority" in entry.rationale
+
+    def test_sec_filing_tools_are_explicitly_default_denied(self) -> None:
+        """Read-shaped evidence does not silently expand the permission surface."""
+        manifest = load_active_manifest()
+        by_provider_name = {entry.provider_tool_name: entry for entry in manifest.entries}
+        expected_inputs = {
+            "get_sec_filing": ({"filing_id", "section"}, {"filing_id"}),
+            "get_sec_filing_facts": ({"filing_ids", "concepts"}, {"filing_ids", "concepts"}),
+            "get_sec_filing_facts_catalog": (
+                {"filing_id", "concept_contains", "axis_name_in", "offset"},
+                {"filing_id"},
+            ),
+            "get_sec_filing_index": (
+                {"symbol", "form_type", "since", "until", "cursor"},
+                {"symbol"},
+            ),
+        }
+        required_outputs = {
+            "get_sec_filing": set(),
+            "get_sec_filing_facts": {"facts"},
+            "get_sec_filing_facts_catalog": {"concepts", "count"},
+            "get_sec_filing_index": {"symbol", "filings"},
+        }
+
+        for name, (properties, required) in expected_inputs.items():
+            entry = by_provider_name[name]
+            assert entry.capability == name
+            assert entry.disposition == "denied"
+            assert not entry.read_allowed
+            assert entry.mutates is False
+            assert entry.annotations == {"readOnlyHint": True}
+            assert set(entry.input_schema["properties"]) == properties
+            assert set(entry.input_schema.get("required") or ()) == required
+            assert entry.input_schema["additionalProperties"] is False
+            assert "no account, order, cash, position, watchlist, or scan input" in (
+                entry.rationale
+            )
+            assert "untrusted provider data" in entry.rationale
+            assert "no authority to invoke another capability" in entry.rationale
+            assert "Default-denied" in entry.rationale
+
+            output = entry.output_schema
+            assert output is not None
+            assert output["additionalProperties"] is False
+            data = output["properties"]["data"]
+            assert data["additionalProperties"] is False
+            assert set(data.get("required") or ()) == required_outputs[name]
 
     def test_the_two_upgrade_link_tools_are_treated_alike(self) -> None:
         """§6.1: the tool that appeared on 2026-08-09, beside its precedent.
@@ -2971,9 +3023,8 @@ class TestTheWriteGateAgainstTheShippedManifest:
         adjacent claim this repository keeps having to correct.
         """
         gateway, recorder, manifest = self._gateway(allow_mutations=True)
-        denied = [entry for entry in manifest.entries if not entry.read_allowed]
+        denied = [entry for entry in manifest.entries if not entry.read_allowed and entry.mutates]
         assert len(denied) == 8
-        assert all(entry.mutates for entry in denied)
 
         outcomes: list[tuple[str | None, ErrorCode | None]] = []
         for entry in denied:

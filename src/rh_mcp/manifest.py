@@ -3,9 +3,10 @@
 This module is the security boundary. Robinhood advertises a single `internal`
 OAuth scope, so the token can trade, and what it is permitted to do cannot be
 inferred from the token, from a tool name, or from an MCP annotation (§2).
-The current live surface marks all 36 reads `readOnlyHint: true` and leaves the
-other 19 entries unannotated, but either shape is evidence rather than
-authority. What holds the boundary is a human-reviewed, committed manifest plus
+The current live surface marks all 40 read-shaped tools `readOnlyHint: true`;
+36 are allowed reads and four new SEC tools remain denied. The other 19 entries
+are unannotated, but either shape is evidence rather than authority. What holds
+the boundary is a human-reviewed, committed manifest plus
 the exact digest comparisons implemented here.
 
 The boundary is **"no trading", not "no writes"**: the reviewed manifest denies
@@ -659,7 +660,7 @@ PACKAGED_MANIFEST_PATH: Final = Path(__file__).parent / "manifests" / "read-mani
 def load_active_manifest() -> ReviewedManifest:
     """Load the manifest committed to the installed package (§9).
 
-    A reviewed manifest ships: 55 tools, 47 allowed and 8 denied, produced by
+    A reviewed manifest ships: 59 tools, 47 allowed and 12 denied, produced by
     owner-assisted discovery on 2026-08-03, refreshed against the provider on
     each observed drift, and reviewed by hand (§2.1, §13).
 

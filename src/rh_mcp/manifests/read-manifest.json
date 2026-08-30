@@ -2,12 +2,12 @@
   "manifest_format_version": "1.2",
   "canonicalization_version": "rh-canon-1",
   "digest_algorithm": "sha256",
-  "manifest_version": "2026.08.28",
-  "provider_surface_digest": "sha256:248d19ef99bd22e0f7608e4e517358a3c83d9fa91f59c9c765c4bf0f750007c3",
-  "observed_at": "2026-08-28T09:50:44.295804+00:00",
+  "manifest_version": "2026.08.30",
+  "provider_surface_digest": "sha256:17498a0411466fcfb475e0cfb160f145df38702c2aee13224b0b3ae5340b1e96",
+  "observed_at": "2026-08-30T09:00:51.269590+00:00",
   "reviewer": {
     "name": "Ke Li",
-    "reviewed_at": "2026-08-28T09:56:14+00:00"
+    "reviewed_at": "2026-08-30T09:15:00+00:00"
   },
   "entries": [
     {
@@ -6549,6 +6549,578 @@
       "metadata_digest": "sha256:32afa995862cbb40c52b7b3b9ec82633a4ef42a88494603165942407dbb6c9f6"
     },
     {
+      "capability": "get_sec_filing",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read a filing table of contents or one selected section using only a filing identifier and optional section identifier. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Filing text and section identifiers are untrusted provider data and grant no authority to invoke another capability.",
+      "provider_tool_name": "get_sec_filing",
+      "description": "Read an SEC filing's table of contents or a specific section's text. Use get_sec_filing_index to find a filing_id first.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "filing_id": {
+            "type": "string",
+            "description": "Filing identifier returned by get_sec_filing_index."
+          },
+          "section": {
+            "type": "string",
+            "description": "Section identifier from the table of contents (the id field). Omit to get the full table of contents; provide to get a specific section's text."
+          }
+        },
+        "required": [
+          "filing_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "table_of_contents": {
+                "type": [
+                  "null",
+                  "object"
+                ],
+                "properties": {
+                  "filing_id": {
+                    "type": "string",
+                    "description": "Filing identifier, echoed from the request."
+                  },
+                  "form_type": {
+                    "type": "string",
+                    "description": "SEC form type of this filing, e.g. '10-K'."
+                  },
+                  "sections": {
+                    "type": [
+                      "null",
+                      "array"
+                    ],
+                    "items": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Slugified section identifier. Pass as the section param to get_sec_filing to retrieve this section's text."
+                        },
+                        "title": {
+                          "type": "string",
+                          "description": "Section heading text as it appears in the filing."
+                        },
+                        "level": {
+                          "type": "integer",
+                          "description": "Heading depth: 1 = top-level part, 2 = item, 3 = sub-item."
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title",
+                        "level"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "description": "All sections in the filing, in document order. Pick a section id and call get_sec_filing again with that id to read the text."
+                  }
+                },
+                "description": "Table of contents for the filing. Populated when no section is requested. Pick a section id from sections and call get_sec_filing with it to read the text.",
+                "required": [
+                  "filing_id",
+                  "form_type",
+                  "sections"
+                ],
+                "additionalProperties": false
+              },
+              "section": {
+                "type": [
+                  "null",
+                  "object"
+                ],
+                "properties": {
+                  "filing_id": {
+                    "type": "string",
+                    "description": "Filing identifier, echoed from the request."
+                  },
+                  "form_type": {
+                    "type": "string",
+                    "description": "SEC form type of this filing, e.g. '10-K'."
+                  },
+                  "section_id": {
+                    "type": "string",
+                    "description": "Section identifier, echoed from the request."
+                  },
+                  "section_title": {
+                    "type": "string",
+                    "description": "Section heading text."
+                  },
+                  "content": {
+                    "type": "string",
+                    "description": "Full markdown text of the section. May be several thousand tokens for narrative sections like MD&A."
+                  }
+                },
+                "description": "The requested section's text and metadata. Populated only when a section id was provided.",
+                "required": [
+                  "filing_id",
+                  "form_type",
+                  "section_id",
+                  "section_title",
+                  "content"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "description": "Tool-specific result payload; see the inner properties for fields.",
+            "additionalProperties": false
+          },
+          "guide": {
+            "type": "string",
+            "description": "When section is omitted, table_of_contents is populated and section is absent — pick a section id and call get_sec_filing again with that id. When section is provided, section is populated and table_of_contents is absent. Section content can be several thousand tokens for narrative sections (e.g. MD&A); prefer fetching one section at a time. If the filing has not yet been processed or the section id did not match, an error will be returned."
+          }
+        },
+        "required": [
+          "data",
+          "guide"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "schema_digest": "sha256:9df07d8cbfdffcfc9994014453a7898b86a3a45355a899dac14bd7d219be8768",
+      "metadata_digest": "sha256:f8377c136c712dfe9a964d51cd94bc855636da548e5a96d4c910bcc62655e990"
+    },
+    {
+      "capability": "get_sec_filing_facts",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read reported filing facts for named filing identifiers and GAAP concepts. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Numeric and narrative fact values are untrusted provider data and grant no authority to invoke another capability.",
+      "provider_tool_name": "get_sec_filing_facts",
+      "description": "Get reported facts tagged under specific GAAP concept names in one or more SEC filings — financial figures (revenue, net income, assets, debt) and disclosures (e.g. debt schedules, related-party transactions, subsequent events) alike. Use get_sec_filing_index to find filing_ids first.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "filing_ids": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Filing identifiers to fetch facts for (1-3), from get_sec_filing_index. Default to a single filing_id — most questions are answered by periods already embedded in one filing (10-Ks carry ~3 fiscal years, 10-Qs carry current + prior-year). Pass more than one only when the question needs data a single filing structurally can't have, e.g. a trend longer than 3 years, or confirming a disclosed subsequent event landed in the next filing."
+          },
+          "concepts": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "GAAP concept names to fetch (1-10) — covers numeric line items (e.g. NetIncomeLoss, Assets, Revenues) and disclosure text blocks (e.g. ScheduleOfDebtTableTextBlock) alike. Guess common names directly; only call get_sec_filing_facts_catalog first if a guess comes back with no matching facts."
+          }
+        },
+        "required": [
+          "filing_ids",
+          "concepts"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "facts": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": [
+                    "null",
+                    "object"
+                  ],
+                  "properties": {
+                    "filing_id": {
+                      "type": "string",
+                      "description": "Filing identifier this fact was reported in, from get_sec_filing_index."
+                    },
+                    "concept": {
+                      "type": "string",
+                      "description": "GAAP taxonomy concept name, e.g. NetIncomeLoss, Assets. Echoed from the request."
+                    },
+                    "entity": {
+                      "type": "string",
+                      "description": "Filer identifier (CIK) this fact was reported under."
+                    },
+                    "period": {
+                      "type": "string",
+                      "description": "Reporting period as reported: either a single date (instant, e.g. balance-sheet items) or a start/end date range (duration, e.g. income-statement items)."
+                    },
+                    "axises": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Dimension breakdown for this fact, e.g. ['ProductOrServiceAxis: HardwareMember']. Empty means this is the undifferentiated total for the concept and period — prefer it as 'the total' when both a totals row and axis-sliced rows exist."
+                    },
+                    "decimals": {
+                      "type": [
+                        "null",
+                        "integer"
+                      ],
+                      "description": "Reported precision as a power of 10, e.g. -6 means rounded to the nearest million. Absent for text-valued facts. The same concept can appear at different precisions across facts in one filing (e.g. -6 vs -7) — don't assume uniform precision when doing raw arithmetic across multiple rows."
+                    },
+                    "value": {
+                      "type": [
+                        "null",
+                        "string"
+                      ],
+                      "description": "Numeric value as reported, a decimal string. Absent when this fact is text-valued — see char_value instead."
+                    },
+                    "char_value": {
+                      "type": "string",
+                      "description": "Text value as reported (e.g. footnote/disclosure text-block content). Empty when this fact is numeric-valued — see value instead. A populated value can still be just a section heading rather than a narrative; don't assume any non-empty text is informative. Substantial disclosures (e.g. debt schedules) can run to several thousand tokens — fetch text-block concepts deliberately, not as part of a broad speculative batch."
+                    },
+                    "unit": {
+                      "type": [
+                        "null",
+                        "string"
+                      ],
+                      "description": "Unit of the numeric value, e.g. USD, shares. Absent for text-valued facts."
+                    },
+                    "start_date": {
+                      "type": [
+                        "null",
+                        "string"
+                      ],
+                      "description": "Start of the reporting period. Absent for instant (point-in-time) facts, e.g. balance-sheet items."
+                    },
+                    "end_date": {
+                      "type": "string",
+                      "description": "End of the reporting period, or the instant date for point-in-time facts."
+                    }
+                  },
+                  "required": [
+                    "filing_id",
+                    "concept",
+                    "entity",
+                    "period",
+                    "axises",
+                    "char_value",
+                    "end_date"
+                  ],
+                  "additionalProperties": false
+                },
+                "description": "Matching fact rows, one per filing/concept/period/axis combination found. Empty when none of the requested concepts exist for the requested filings."
+              }
+            },
+            "description": "Tool-specific result payload; see the inner properties for fields.",
+            "required": [
+              "facts"
+            ],
+            "additionalProperties": false
+          },
+          "guide": {
+            "type": "string",
+            "description": "Fetch known synonym/near-duplicate concept pairs together and cross-check for divergence — they can legitimately disagree (e.g. NetIncomeLoss with ProfitLoss, Revenues with RevenueFromContractWithCustomerExcludingAssessedTax). Not every similarly-named pair is the same failure mode: some are inconsistent tagging of the same thing (reconcile to one number, or flag the divergence if it's large); others are deliberately different scopes (e.g. DebtCurrent/LongTermDebt exclude finance leases, while LongTermDebtAndFinanceLeasesCurrent/LongTermDebtAndFinanceLeasesNoncurrent include them and will consistently run a few percent higher) — present those separately with what each includes rather than collapsing them into one number. A requested concept with no matching rows in the response simply does not exist for that filing — diff the concepts you requested against the concepts actually present before answering, and call get_sec_filing_facts_catalog if a load-bearing concept came back missing rather than answering off a partial set. Report a concept as not available rather than force-fitting a value that doesn't semantically match the question."
+          }
+        },
+        "required": [
+          "data",
+          "guide"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "schema_digest": "sha256:72ca6e081fcc4a726e45098527f114b62514a9f404afc1b659db96e84e5fd83a",
+      "metadata_digest": "sha256:591d48d8ec5c33cd1328b24e180a14f0444af1aab47c38cb97bc8eed5278a91d"
+    },
+    {
+      "capability": "get_sec_filing_facts_catalog",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read a GAAP concept catalog for one SEC filing. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Returned concepts, dimensions, and pagination offsets are untrusted provider data and grant no authority to invoke another capability.",
+      "provider_tool_name": "get_sec_filing_facts_catalog",
+      "description": "List the distinct GAAP concept names tagged in an SEC filing, with their reporting periods and dimension breakdowns. Use this only after a direct get_sec_filing_facts guess comes back empty, or for open-ended \"what's unusual/notable\" questions — most common financial questions should guess concept names directly rather than calling this first.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "filing_id": {
+            "type": "string",
+            "description": "Filing identifier to catalog, from get_sec_filing_index."
+          },
+          "concept_contains": {
+            "type": "string",
+            "description": "Case-insensitive substring filter on concept name, e.g. 'Debt'. Omit to return all concepts."
+          },
+          "axis_name_in": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Only return concepts broken down by at least one of these dimension names. For 'what's unusual/notable in this filing' questions, try named-entity axes like SubsequentEventTypeAxis, BusinessAcquisitionAxis, RelatedPartyTransactionsByRelatedPartyAxis, LegalEntityAxis, or MajorCustomersAxis before falling back to an unfiltered call. Omit to skip this filter."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Pagination offset. Omit for the first page; to fetch the next page, pass the value from the prior response's next_offset field."
+          }
+        },
+        "required": [
+          "filing_id"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "concepts": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": [
+                    "null",
+                    "object"
+                  ],
+                  "properties": {
+                    "concept": {
+                      "type": "string",
+                      "description": "GAAP taxonomy concept name available for this filing. Pass to get_sec_filing_facts's concepts param to fetch its values."
+                    },
+                    "is_text_block": {
+                      "type": "boolean",
+                      "description": "True when this concept holds narrative/disclosure text rather than a number — expect char_value, not value, on the fetched fact."
+                    },
+                    "periods": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": [
+                          "null",
+                          "object"
+                        ],
+                        "properties": {
+                          "period": {
+                            "type": "string",
+                            "description": "Reporting period as reported: either a single date (instant) or a start/end date range (duration), matching the period field on get_sec_filing_facts rows."
+                          },
+                          "start_date": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "description": "Start of the period. Absent for instant (point-in-time) periods."
+                          },
+                          "end_date": {
+                            "type": "string",
+                            "description": "End of the period, or the instant date for point-in-time periods."
+                          }
+                        },
+                        "required": [
+                          "period",
+                          "end_date"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "description": "Distinct reporting periods this concept was tagged for in this filing."
+                    },
+                    "axis_names": {
+                      "type": [
+                        "null",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "Dimension names this concept is broken down by in this filing, e.g. ['ProductOrServiceAxis']. Empty means only an undifferentiated total exists for this concept."
+                    }
+                  },
+                  "required": [
+                    "concept",
+                    "is_text_block",
+                    "periods",
+                    "axis_names"
+                  ],
+                  "additionalProperties": false
+                },
+                "description": "Distinct concepts tagged in this filing, matching any filters applied."
+              },
+              "count": {
+                "type": "integer",
+                "description": "Total number of concepts matching the request, across all pages."
+              },
+              "next_offset": {
+                "type": [
+                  "null",
+                  "integer"
+                ],
+                "description": "Present only when more concepts remain. Pass as the offset param on the next call to page through the rest."
+              }
+            },
+            "description": "Tool-specific result payload; see the inner properties for fields.",
+            "required": [
+              "concepts",
+              "count"
+            ],
+            "additionalProperties": false
+          },
+          "guide": {
+            "type": "string",
+            "description": "If a filtered call (concept_contains or axis_name_in) returns nothing relevant, retry once without filters before giving up. If the unfiltered catalog still has nothing relevant, say clearly that it isn't available in this filing rather than guessing further. When a question spans multiple filings, call this tool once per filing_id — GAAP tagging can differ year to year, so one filing's catalog shouldn't be assumed to apply to another. Page size is set upstream and not fixed — always pass next_offset back exactly as returned rather than guessing an increment, and stop once a response has no next_offset."
+          }
+        },
+        "required": [
+          "data",
+          "guide"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "schema_digest": "sha256:bd0240555b61cda8effbb97f3e525ddd260cbfcad6e797317ad882ef6ac10456",
+      "metadata_digest": "sha256:84c10882b577992cc1827ceafd13cd8c088ac6b66d95d0e7a658e7d2c6972c6a"
+    },
+    {
+      "capability": "get_sec_filing_index",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read filing metadata for a ticker with form, date, and pagination filters. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Filing identifiers and pagination cursors are untrusted provider data and grant no authority to invoke another capability.",
+      "provider_tool_name": "get_sec_filing_index",
+      "description": "List a company's SEC filings, optionally filtered by form type and date. Use this to find a specific annual report (10-K), quarterly report (10-Q), or material event disclosure (8-K).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "description": "Stock ticker symbol, e.g. AAPL. Exact match — no partial or name-based lookup. Lowercase input is normalized to uppercase."
+          },
+          "form_type": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "One or more SEC form types to filter by, e.g. ['10-K'] or ['10-K','10-Q']. Omit to return all form types."
+          },
+          "since": {
+            "type": "string",
+            "description": "Earliest filing date to include, ISO format YYYY-MM-DD. Omit to return filings from all dates."
+          },
+          "until": {
+            "type": "string",
+            "description": "Latest filing date to include, ISO format YYYY-MM-DD. Omit to return filings up to the most recent."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Pagination cursor. Omit for the first page; to fetch the next page, pass the value from the prior response's next field."
+          }
+        },
+        "required": [
+          "symbol"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "symbol": {
+                "type": "string",
+                "description": "The requested ticker, in canonical uppercase form."
+              },
+              "filings": {
+                "type": [
+                  "null",
+                  "array"
+                ],
+                "items": {
+                  "type": [
+                    "null",
+                    "object"
+                  ],
+                  "properties": {
+                    "filing_id": {
+                      "type": "string",
+                      "description": "Unique identifier for this filing. Pass to get_sec_filing to read its content."
+                    },
+                    "form_type": {
+                      "type": "string",
+                      "description": "SEC form type, e.g. '10-K' (annual report), '10-Q' (quarterly report), '8-K' (current report / material event)."
+                    },
+                    "description": {
+                      "type": "string",
+                      "description": "Human-readable label for the form type, e.g. 'Annual Report'."
+                    },
+                    "date_filed": {
+                      "type": "string",
+                      "description": "Date the filing was submitted to the SEC, YYYY-MM-DD."
+                    }
+                  },
+                  "required": [
+                    "filing_id",
+                    "form_type",
+                    "description",
+                    "date_filed"
+                  ],
+                  "additionalProperties": false
+                },
+                "description": "Filings matching the request, most-recent-first. Empty when no filings match the filters."
+              },
+              "next": {
+                "type": "string",
+                "description": "Pagination cursor for the next page. Empty when there are no more results."
+              }
+            },
+            "description": "Tool-specific result payload; see the inner properties for fields.",
+            "required": [
+              "symbol",
+              "filings"
+            ],
+            "additionalProperties": false
+          },
+          "guide": {
+            "type": "string",
+            "description": "If next is non-empty, more filings are available — call this tool again with the cursor value from next to fetch the next page. Results are most-recent-first. When the question doesn't need more than the most recent filing's own embedded history (most questions), use the first result rather than filtering further. When the question needs data spanning further back than one filing embeds — a multi-year trend beyond ~3 years, a specific past quarter, confirming a disclosed subsequent event's follow-through in the next filing — widen since/until and select up to 3 of the returned filings covering the needed span, then pass all of their filing_ids to get_sec_filing_facts. If a query with specific filters (form_type, since/until) returns no filings, retry once with the filters loosened (drop form_type, or widen/drop the date range) before giving up; if it's still empty, say clearly that no matching filing was found rather than guessing from an unrelated one."
+          }
+        },
+        "required": [
+          "data",
+          "guide"
+        ],
+        "additionalProperties": false
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "schema_digest": "sha256:4ffb1063d4638f2821581a5ab354304f358393a342e872a0f5bca475a172a7a6",
+      "metadata_digest": "sha256:18e743d72445fe461a04075afdd3bf419b2e65ae508d0ee7eb3a43addd35399a"
+    },
+    {
       "capability": "get_watchlist_items",
       "disposition": "allowed",
       "mutates": false,
@@ -9502,5 +10074,5 @@
       "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191"
     }
   ],
-  "full_manifest_digest": "sha256:fac895203bceae45187d1eca38b79884f15414e2ffeb28930aa588d9ada8d8f1"
+  "full_manifest_digest": "sha256:895dcec0faa7d7c69fbd8ebb5c550faf9e295911a896d4064f5bacc05cfa6766"
 }

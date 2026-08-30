@@ -1,9 +1,9 @@
 [project]
 name = "rh-mcp"
-# 0.4.1 carries the independently reviewed 2026.08.28 provider tool-set
-# expansion. Package code and the 0.4 public API are unchanged; consumers also
-# pin the separately reviewed full-manifest digest. See CHANGELOG.md.
-version = "0.4.1"
+# 0.4.2 carries the reviewed 2026.08.30 provider tool-set expansion. Package
+# code and the 0.4 public API are unchanged; consumers also pin the separately
+# reviewed full-manifest digest. See CHANGELOG.md.
+version = "0.4.2"
 description = "A default-deny Python Read Gateway for Robinhood's official MCP server"
 readme = "README.md"
 license = "Apache-2.0"

@@ -36,8 +36,8 @@ There is deliberately no arbitrary `call_tool` or raw MCP session interface.
 OAuth credentials are capable of trading because Robinhood does not advertise
 separate read/write scopes; the committed manifest and fail-closed schema
 checks are therefore the security boundary. That boundary is **"no trading",
-not "no writes"** — the reviewed manifest denies all six order tools and both
-order simulators, and allows 11 non-trading mutations (watchlist and
+not "no writes"** — the reviewed manifest denies every live trading and order
+simulation tool, and allows 11 non-trading mutations (watchlist and
 saved-scan management) alongside its reads. Each entry carries a reviewed
 `mutates` flag, so a consumer that gates writes never has to infer which
 capabilities are which.
@@ -63,11 +63,12 @@ manifest lineage observed on `2026.08.09`, distinct from the already released
 refresh described below.
 
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
-and has been re-run on each observed drift since. A human has reviewed all 59
-discovered tools: **47 allowed, 12 denied**. Eight denied tools are the trading
-surface — the six order tools plus both order simulators — and the other four
-are new SEC filing reads kept default-denied because no current consumer needs
-them. The allowed set remains 36 reads plus 11 non-trading
+and has been re-run on each observed drift since. A human has reviewed all 73
+discovered tools: **47 allowed, 26 denied**. The 14 tools added on 2026-09-06
+remain default-denied: crypto trading and preview operations, alert mutations,
+and crypto/alert reads that no current consumer needs. The earlier eight
+trading/simulation tools and four SEC reads also remain denied. The allowed set
+remains 36 reads plus 11 non-trading
 mutations (watchlist and saved-scan management), each carrying a reviewed
 `mutates` flag so a consumer gating writes never has to infer which is which.
 
@@ -93,6 +94,13 @@ data and grant no authority to invoke another capability. All four remain
 permissions, and a consumer that actually needs SEC data must request a
 separate permission review.
 
+Fourteen crypto and alert tools appeared together on `2026.09.06`. Two can
+place or cancel live crypto orders; four mutate persistent alert state; one
+previews a crypto order; and seven read crypto or alert data. All fourteen are
+explicitly denied. Their `mutates` flags record the actual blast radius, but no
+annotation, name, or non-mutating shape grants permission. Existing consumers
+gain no new callable capability from this drift recovery.
+
 On `2026.08.12`, Robinhood expanded `create_scan` within the already allowed
 saved-scanner write domain: it can append a new active configuration version
 to an existing scan and persist expression filters. It remains
@@ -104,11 +112,11 @@ tool surface; like the five existing dangling tool references, it is inert in
 this gateway but must not be forwarded into a model or user-facing context.
 
 <!-- manifest-automation:current-start -->
-The current source declares package version `v0.4.2` and carries
-manifest `2026.08.30`. Its full-manifest digest is:
+The current source declares package version `v0.4.3` and carries
+manifest `2026.09.06`. Its full-manifest digest is:
 
 ```
-sha256:895dcec0faa7d7c69fbd8ebb5c550faf9e295911a896d4064f5bacc05cfa6766
+sha256:83174a2c7446f0cd4d5ab15003bbdb6ebfd9d73cfd35e961537b98d3145ca696
 ```
 
 The version and digest belong to this source tree. A GitHub release exists only

@@ -28,6 +28,45 @@ that carries them.
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-09-06
+
+### Manifest
+
+#### `2026.09.06` — reviewed crypto and alert tools, default-denied
+
+Two consecutive owner-assisted discovery runs returned the same stable
+73-tool provider surface after removing only the observation timestamp. The
+guarded refresh correctly refused the 14-tool expansion because no prior
+review decisions existed.
+
+All 14 new tools are explicitly denied. `place_crypto_order` and
+`cancel_crypto_order` mutate live trading state; four alert operations mutate
+persistent provider state; `preview_crypto_order` is non-mutating but remains
+part of an unneeded trading workflow; and seven crypto/alert reads are not
+required by a current consumer. Their complete schemas and annotations are
+recorded for drift detection, not permission. Three existing tools changed
+description metadata only; their schemas and reviewer decisions are unchanged.
+
+The allowed surface remains exactly 36 reads plus 11 non-trading mutations.
+The denied surface is now 26 tools, and every new tool remains fail-closed.
+
+Manifest version: `2026.09.06`
+
+Provider-surface digest:
+
+```
+sha256:cccffe9fd1fbbe715aa49ba07878e3a807f84323f1cb0d34ba79ba9a592fb5b3
+```
+
+Full-manifest digest:
+
+```
+sha256:83174a2c7446f0cd4d5ab15003bbdb6ebfd9d73cfd35e961537b98d3145ca696
+```
+
+This tool-set expansion triggers DESIGN §12.4: the exact source and release
+artifacts require fresh independent review before consumers pin them.
+
 ## [0.4.2] — 2026-08-30
 
 ### Manifest
@@ -954,7 +993,8 @@ description changed. No disposition moved.
   than during, unlike the HTTP path.
 
 <!-- manifest-automation:release-links-start -->
-[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/likefudan/rh-mcp/compare/v0.4.2...HEAD
+[0.4.3]: https://github.com/likefudan/rh-mcp/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/likefudan/rh-mcp/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/likefudan/rh-mcp/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/likefudan/rh-mcp/compare/v0.3.3...v0.4.0

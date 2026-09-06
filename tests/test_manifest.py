@@ -1360,7 +1360,7 @@ class TestTheShippedManifest:
     # Pin the digest. Any edit to the manifest moves it, which is the point:
     # a permission change must show up as a deliberate diff in this constant,
     # not as a quiet edit to a 450 KB JSON file. Consumers pin this same value.
-    SHIPPED_DIGEST = "sha256:895dcec0faa7d7c69fbd8ebb5c550faf9e295911a896d4064f5bacc05cfa6766"
+    SHIPPED_DIGEST = "sha256:83174a2c7446f0cd4d5ab15003bbdb6ebfd9d73cfd35e961537b98d3145ca696"
 
     # Robinhood's own description of the first of these is "Place a real equity
     # order with real money". If a change ever flips one of these to allowed,
@@ -1602,10 +1602,9 @@ class TestTheShippedManifest:
         provider_result_fields = {"exercise_cost"}
         assert mentioned - offered - declared_fields - provider_result_fields == {
             "get_advanced_orders",
-            "get_crypto_positions",
-            "get_currency_pairs",
             "get_quotes",
             "get_scanner_datapoints",
+            "place_order",
             "preview_scan",
         }
 
@@ -2042,7 +2041,7 @@ class TestTheShippedManifest:
     def test_the_allowed_set_is_the_size_the_reviewer_approved(self) -> None:
         """A bare count, so an entry appearing or vanishing cannot pass quietly."""
         manifest = load_active_manifest()
-        assert len(manifest.entries) == 59
+        assert len(manifest.entries) == 73
         assert len(manifest.read_capabilities) == 47
 
         # The denied count was implied by the other two and asserted by
@@ -2051,32 +2050,80 @@ class TestTheShippedManifest:
         # whether the 54th entry is denied or was never added. DESIGN §12.4 and
         # CI's deselection comment both cite the allowed/denied split as a property
         # held here, so it is held here.
-        assert sum(1 for e in manifest.entries if not e.read_allowed) == 12
+        assert sum(1 for e in manifest.entries if not e.read_allowed) == 26
 
-        # And the denied set is exactly the eight trading/simulation tools plus
-        # the four explicitly least-privilege SEC reads — §2.1's normative
-        # claim, held as a set so nothing can join or disappear quietly.
+        # The denied set is exact: the prior trading/simulation and SEC tools,
+        # plus all fourteen newly observed crypto/alert tools. Drift recovery
+        # records the provider surface without silently widening authority.
         denied_sec = {
             "get_sec_filing",
             "get_sec_filing_facts",
             "get_sec_filing_facts_catalog",
             "get_sec_filing_index",
         }
-        assert {e.provider_tool_name for e in manifest.entries if not e.read_allowed} == set(
-            self.TRADING_TOOLS + self.SIMULATION_TOOLS
-        ) | denied_sec
+        newly_denied = {
+            "cancel_crypto_order",
+            "create_alert",
+            "delete_alert",
+            "get_alert_log",
+            "get_alerts",
+            "get_crypto_account_onboarding_info",
+            "get_crypto_orders",
+            "get_crypto_positions",
+            "get_crypto_quotes",
+            "get_currency_pairs",
+            "mark_alerts_read",
+            "place_crypto_order",
+            "preview_crypto_order",
+            "update_alert",
+        }
+        assert {e.provider_tool_name for e in manifest.entries if not e.read_allowed} == (
+            set(self.TRADING_TOOLS + self.SIMULATION_TOOLS) | denied_sec | newly_denied
+        )
 
-    def test_provider_annotations_match_the_measured_40_19_split(self) -> None:
+    @pytest.mark.parametrize(
+        ("capability", "mutates"),
+        [
+            ("cancel_crypto_order", True),
+            ("create_alert", True),
+            ("delete_alert", True),
+            ("get_alert_log", False),
+            ("get_alerts", False),
+            ("get_crypto_account_onboarding_info", False),
+            ("get_crypto_orders", False),
+            ("get_crypto_positions", False),
+            ("get_crypto_quotes", False),
+            ("get_currency_pairs", False),
+            ("mark_alerts_read", True),
+            ("place_crypto_order", True),
+            ("preview_crypto_order", False),
+            ("update_alert", True),
+        ],
+    )
+    def test_new_crypto_and_alert_tools_are_explicitly_default_denied(
+        self, capability: str, mutates: bool
+    ) -> None:
+        entry = load_active_manifest().capabilities[capability]
+
+        assert entry.disposition == "denied"
+        assert entry.read_allowed is False
+        assert entry.mutates is mutates
+        assert entry.input_schema["type"] == "object"
+        assert entry.input_schema["additionalProperties"] is False
+        assert entry.output_schema is not None
+        assert entry.output_schema["type"] == "object"
+
+    def test_provider_annotations_match_the_measured_47_26_split(self) -> None:
         """Pin annotation evidence without treating it as permission authority."""
         entries = load_active_manifest().entries
         annotated = [entry for entry in entries if entry.annotations]
         unannotated = [entry for entry in entries if not entry.annotations]
 
-        assert len(annotated) == 40
-        assert len(unannotated) == 19
+        assert len(annotated) == 47
+        assert len(unannotated) == 26
         assert all(entry.annotations == {"readOnlyHint": True} for entry in annotated)
         assert sum(entry.read_allowed and not entry.mutates for entry in annotated) == 36
-        assert sum(not entry.read_allowed and not entry.mutates for entry in annotated) == 4
+        assert sum(not entry.read_allowed and not entry.mutates for entry in annotated) == 11
 
     def test_equity_news_is_a_bounded_read_and_article_text_grants_nothing(self) -> None:
         """The 2026-08-28 tool-set decision is explicit, not inferred from its name."""
@@ -3019,12 +3066,12 @@ class TestTheWriteGateAgainstTheShippedManifest:
         The eight trading tools were unreachable before the gate existed and
         would be unreachable if it were deleted: their reviewed disposition
         is `denied`. The gate closes the *watchlist and saved-scan* writes.
-        Counting all nineteen as its work overstates it, which is the kind of
+        Counting every denied write as its work overstates it, which is the kind of
         adjacent claim this repository keeps having to correct.
         """
         gateway, recorder, manifest = self._gateway(allow_mutations=True)
         denied = [entry for entry in manifest.entries if not entry.read_allowed and entry.mutates]
-        assert len(denied) == 8
+        assert len(denied) == 14
 
         outcomes: list[tuple[str | None, ErrorCode | None]] = []
         for entry in denied:

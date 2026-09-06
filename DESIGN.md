@@ -1,8 +1,8 @@
 # rh-mcp — Design
 
 Status: **released.** `v0.1.0` shipped on 2026-08-03, `v0.2.0` on 2026-08-04,
-and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 59
-tools; a human reviewed 47 allowed / 12 denied (§2.1).
+and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 73
+tools; a human reviewed 47 allowed / 26 denied (§2.1).
 
 The §12 acceptance list is now satisfied: license, changelog, tagged artifact
 with published digests, the independent security review, and — as of §12.5 —
@@ -64,13 +64,13 @@ not inferred from the token, a tool name, or an MCP annotation.
 Authenticated discovery (§13) settled two facts that this section previously
 had to speculate about, and both matter more than they look:
 
-- The provider surface is 59 tools, and **six of them place, cancel, or
+- The provider surface is 73 tools, and **eight of them place, cancel, or
   exercise real orders**. They arrive over the same session, under the same
   token, as every quote and position read. This manifest is the only thing
   between a consumer and a trade.
-- **All 40 read-shaped tools carry `readOnlyHint: true`; the other 19 tools
+- **All 47 read-shaped tools carry `readOnlyHint: true`; the other 26 tools
   carry no annotation at all.** Rule 4 below says annotations are evidence and
-  never authority. Thirty-six are allowed reads; the four new SEC tools remain
+  never authority. Thirty-six are allowed reads; 11 reviewed reads remain
   denied even though their schemas are read-shaped, because no current
   consumer needs them and drift recovery must not silently expand permission.
 
@@ -86,7 +86,7 @@ The governing rules are:
 5. **Trading support** — order submission, cancellation, replacement, and
    option exercise — must use a separate client surface, credential namespace,
    runtime identity, and deployment role. It must not be added by widening
-   this gateway. The six trading tools and both order-simulation tools are
+   this gateway. The eight live trading tools and three order-simulation tools are
    denied in the committed manifest, and a reviewer moving any of them to
    allowed is making that change, not a configuration tweak.
 
@@ -97,21 +97,29 @@ the consumer (§10).
 
 ### 2.1 What the active manifest actually allows
 
-47 of 59 tools are allowed; 12 are denied. Eight denied entries are exactly the
-trading surface:
+47 of 73 tools are allowed; 26 are denied. Eleven denied entries are the
+trading and simulation surface:
 
 | denied | why |
 |---|---|
 | `place_equity_order`, `place_option_order` | Robinhood's own description: "Place a real equity order with **real money**" |
+| `place_crypto_order` | places a real crypto order with real money |
 | `cancel_equity_order`, `cancel_option_order`, `cancel_option_exercise` | change the state of a live order |
+| `cancel_crypto_order` | changes the state of a live crypto order |
 | `exercise_option` | exercises a position |
-| `review_equity_order`, `review_option_order` | "simulate an order without placing it" — denied anyway. Simulation is not a read of account state, it takes a complete order as its argument, and the meaning of "simulate" is defined entirely on Robinhood's side. If that meaning ever shifts, what we handed over was an order. |
+| `review_equity_order`, `review_option_order`, `preview_crypto_order` | simulate or preview an order without placing it — denied anyway. Simulation is not a read of account state, it takes a complete order as its argument, and its meaning is defined entirely on Robinhood's side. If that meaning ever shifts, what we handed over was an order. |
 
 The other four denied entries are the SEC filing tools observed on
 `2026.08.30`. They are `mutates: false`, but remain denied under rule 1 because
 no current consumer requires them. This preserves least privilege without
 misclassifying them as trading; a future consumer must request a separate
 permission review before any can move to `allowed`.
+
+The 14 tools observed on `2026.09.06` are also denied. Seven are crypto or
+alert reads, four mutate persistent alert state, two place or cancel live
+crypto orders, and one previews a crypto order. Recording their exact schemas
+restores drift detection without expanding the callable surface. Their output
+and annotations remain untrusted evidence and grant no authority.
 
 The allowed set remains 36 reads plus **11 non-trading mutations**: watchlist
 create/update/add/remove/follow/unfollow, and saved-scan create/update. They
@@ -933,7 +941,7 @@ exact split assertion stale. CI
 deselects those three assertions by full node id and records why, while every other
 reviewer test still runs. The properties they guarded are held independently by
 `TestTheShippedManifest`, which asserts the same 8 trading denials, the same 11 flagged
-mutations, the current 59-entry / 36-allowed-read / 47-allowed / 12-denied
+mutations, the current 73-entry / 36-allowed-read / 47-allowed / 26-denied
 split, and the exact denied set against whatever manifest ships. It also
 asserts the denied set *as a set*, which the 2026.08.09 review added after a
 draft of that change put a ninth entry in it and every existing count assertion
@@ -1219,7 +1227,7 @@ historical entries while refreshing the manifest. A consumer pinning the
 digest the artifact refuses readiness against.
 
 <!-- manifest-automation:current-start -->
-The current source declares package `0.4.2` and carries manifest `2026.08.30` / `895dcec0…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
+The current source declares package `0.4.3` and carries manifest `2026.09.06` / `83174a2c…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
 <!-- manifest-automation:current-end -->
 That does not fix anything above and is
 not meant to read as though it did: both changelog entries still print
@@ -1439,9 +1447,9 @@ Two provider behaviours observed across the initial and later discoveries and
 deliberately not worked around:
 
 - **Annotation practice changed over time.** On 2026-08-03 none of the initial
-  53 tools carried an annotation. On 2026-08-30 all 40 current read-shaped
-  tools carry `readOnlyHint: true`; four of those SEC tools remain denied,
-  while the other 19 current tools carry no annotation.
+  53 tools carried an annotation. On 2026-09-06 all 47 current read-shaped
+  tools carry `readOnlyHint: true`; 11 of those tools remain denied,
+  while the other 26 current tools carry no annotation.
   Rule 4 remains substantive: annotations are pinned evidence, never authority
   for disposition or mutation classification.
 - **Session termination returns 400.** The MCP SDK sends a DELETE on close and

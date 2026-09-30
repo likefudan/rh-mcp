@@ -1,8 +1,8 @@
 # rh-mcp — Design
 
 Status: **released.** `v0.1.0` shipped on 2026-08-03, `v0.2.0` on 2026-08-04,
-and `v0.3.0` on 2026-08-12. Owner-assisted discovery has since observed 73
-tools; a human reviewed 47 allowed / 26 denied (§2.1).
+and `v0.3.0` on 2026-08-12. Owner-assisted discovery now observes 76
+tools; a human reviewed 46 allowed / 30 denied (§2.1).
 
 The §12 acceptance list is now satisfied: license, changelog, tagged artifact
 with published digests, the independent security review, and — as of §12.5 —
@@ -64,13 +64,13 @@ not inferred from the token, a tool name, or an MCP annotation.
 Authenticated discovery (§13) settled two facts that this section previously
 had to speculate about, and both matter more than they look:
 
-- The provider surface is 73 tools, and **eight of them place, cancel, or
+- The provider surface is 76 tools, and **eight of them place, cancel, or
   exercise real orders**. They arrive over the same session, under the same
   token, as every quote and position read. This manifest is the only thing
   between a consumer and a trade.
-- **All 47 read-shaped tools carry `readOnlyHint: true`; the other 26 tools
+- **All 50 read-shaped tools carry `readOnlyHint: true`; the other 26 tools
   carry no annotation at all.** Rule 4 below says annotations are evidence and
-  never authority. Thirty-six are allowed reads; 11 reviewed reads remain
+  never authority. Thirty-five are allowed reads; 15 reviewed reads remain
   denied even though their schemas are read-shaped, because no current
   consumer needs them and drift recovery must not silently expand permission.
 
@@ -97,7 +97,7 @@ the consumer (§10).
 
 ### 2.1 What the active manifest actually allows
 
-47 of 73 tools are allowed; 26 are denied. Eleven denied entries are the
+46 of 76 tools are allowed; 30 are denied. Eleven denied entries are the
 trading and simulation surface:
 
 | denied | why |
@@ -121,7 +121,14 @@ crypto orders, and one previews a crypto order. Recording their exact schemas
 restores drift detection without expanding the callable surface. Their output
 and annotations remain untrusted evidence and grant no authority.
 
-The allowed set remains 36 reads plus **11 non-trading mutations**: watchlist
+On `2026.09.30`, `get_equity_news` disappeared and four read-shaped tools
+appeared: `get_equity_analyst_ratings`, `get_politician_trades`,
+`get_scanner_datapoints`, and `preview_scan`. The removed tool no longer has a
+manifest entry. All four additions are explicitly `denied` /
+`mutates: false`; recording their schemas restores drift detection without
+granting a new permission.
+
+The allowed set is 35 reads plus **11 non-trading mutations**: watchlist
 create/update/add/remove/follow/unfollow, and saved-scan create/update. They
 write to Robinhood; they move no money and touch no order.
 
@@ -138,7 +145,8 @@ section's opening claim false — the denied set would no longer have been exact
 the trading surface — which is the clearest statement of why the two had to
 agree.
 
-The 36th read is `get_equity_news`, observed on `2026.08.28`. It takes a
+The former 36th read was `get_equity_news`, observed on `2026.08.28` and
+withdrawn by the provider on `2026.09.30`. It took a
 ticker plus optional bounded pagination and returns publisher-attributed news
 articles. Its schema accepts no account, order, cash, position, watchlist, or
 scan field, and invocation changes no provider state. Article content is
@@ -451,7 +459,7 @@ and `get_advanced_orders` "in parallel". The provider does not offer a
 The first draft of that observation called this the first instance of provider
 prose directing a call to a tool that does not exist. That was wrong, and the
 correction is more useful than the claim. Sweeping every description and
-schema-description string in the observed surface finds **five** such
+schema-description string in that observed surface found **five** such
 references, and four of them —
 `get_quotes` from `get_watchlist_items`, `get_crypto_positions` from
 `get_accounts`, `get_currency_pairs` from `add_to_watchlist`, and
@@ -474,17 +482,20 @@ entirely downstream: a consumer that forwards provider prose into a model's
 context is handing the provider a channel for instructions addressed to that
 model, which is what the `v0.2.0` review's consumer requirement 5 — discard
 provider `guide`, tool descriptions and schema descriptions from model,
-Telegram, CLI and log context — already requires be closed. Five live dangling
+Telegram, CLI and log context — already requires be closed. Live dangling
 references make that requirement continuously load-bearing rather than
 precautionary. Recorded here because the control §6.1.1 relies on is a human
 reading what moved, and this is what that reading is for.
 
 The `2026.08.12` scanner refresh added a **sixth** dangling name:
 `get_scanner_datapoints`, repeated in `create_scan`'s description, filter
-schema, and result guide. The offered tool set still has no such name. It is
-the same downstream prompt-channel risk and changes no enforcement result:
-provider prose is data, the gateway never resolves a name from it, and a
-consumer must discard it rather than follow it.
+schema, and result guide. On `2026.09.30`, both it and `preview_scan` appeared
+as offered but default-denied tools, while `get_crypto_tax_lots` became a new
+dangling reference. The current dangling set is four names:
+`get_advanced_orders`, `get_crypto_tax_lots`, `get_quotes`, and `place_order`.
+The enforcement result is unchanged: provider prose is data, the gateway
+never resolves a name from it, and a consumer must discard it rather than
+follow it.
 
 ### 6.2 Startup and call preflight
 
@@ -935,13 +946,13 @@ manifest version and digest, so after a refresh it fails on the first line and
 never reaches the assertions its name is about. Their file is not edited for
 this — editing an auditor's evidence to make it pass is only defensible when
 the file contradicts itself, which this does not. The v0.3.3 review separately
-pins the complete 54-entry / 35-read split. The independently reviewed
-`get_equity_news` addition and four explicitly denied SEC tools make only that
-exact split assertion stale. CI
+pins the complete 54-entry / 35-read split. Later reviewed additions and the
+provider's withdrawal of `get_equity_news` make only that exact split assertion
+stale. CI
 deselects those three assertions by full node id and records why, while every other
 reviewer test still runs. The properties they guarded are held independently by
 `TestTheShippedManifest`, which asserts the same 8 trading denials, the same 11 flagged
-mutations, the current 73-entry / 36-allowed-read / 47-allowed / 26-denied
+mutations, the current 76-entry / 35-allowed-read / 46-allowed / 30-denied
 split, and the exact denied set against whatever manifest ships. It also
 asserts the denied set *as a set*, which the 2026.08.09 review added after a
 draft of that change put a ninth entry in it and every existing count assertion
@@ -1227,7 +1238,7 @@ historical entries while refreshing the manifest. A consumer pinning the
 digest the artifact refuses readiness against.
 
 <!-- manifest-automation:current-start -->
-The current source declares package `0.4.3` and carries manifest `2026.09.06` / `83174a2c…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
+The current source declares package `0.4.4` and carries manifest `2026.09.30` / `b73100b3…`. This statement is about source identity; publication is established only by a completed tag workflow and GitHub release.
 <!-- manifest-automation:current-end -->
 That does not fix anything above and is
 not meant to read as though it did: both changelog entries still print
@@ -1434,7 +1445,8 @@ All six owner-assisted observations are **closed**, on 2026-08-03:
 2. ~~Determine whether an explicit scope is required.~~ `internal` was granted.
    The credential is write-capable and the token lifetime is ~4.7 days.
 3. ~~Capture the authenticated tool surface.~~ 53 tools.
-4. ~~Review each tool and commit dispositions.~~ 45 allowed, 8 denied (§2.1).
+4. ~~Review each tool and commit dispositions.~~ The initial 45/8 decision is
+   now 46 allowed / 30 denied after reviewed provider drift (§2.1).
 5. ~~Compute and publish the full-manifest digest.~~ Pinned in
    `tests/test_manifest.py::TestTheShippedManifest` and published in §12's
    release artifact.
@@ -1447,8 +1459,8 @@ Two provider behaviours observed across the initial and later discoveries and
 deliberately not worked around:
 
 - **Annotation practice changed over time.** On 2026-08-03 none of the initial
-  53 tools carried an annotation. On 2026-09-06 all 47 current read-shaped
-  tools carry `readOnlyHint: true`; 11 of those tools remain denied,
+  53 tools carried an annotation. On 2026-09-30 all 50 current read-shaped
+  tools carry `readOnlyHint: true`; 15 of those tools remain denied,
   while the other 26 current tools carry no annotation.
   Rule 4 remains substantive: annotations are pinned evidence, never authority
   for disposition or mutation classification.

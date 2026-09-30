@@ -15,7 +15,7 @@ The public surfaces are:
 - **CLI** — `rh-mcp`, for authentication, readiness diagnostics,
   owner-assisted manifest discovery, and reviewed read capabilities.
 
-Eleven of the forty-seven allowed capabilities mutate state — watchlists and
+Eleven of the forty-six allowed capabilities mutate state — watchlists and
 saved scans, never orders or funds. Since `0.4.0` they are **refused by
 default**: `GatewayConfig.allow_mutations` gates them and defaults to `False`,
 so a consumer that only reads gets that enforced in code rather than by
@@ -63,12 +63,12 @@ manifest lineage observed on `2026.08.09`, distinct from the already released
 refresh described below.
 
 Owner-assisted discovery ran against the live Robinhood server on 2026-08-03
-and has been re-run on each observed drift since. A human has reviewed all 73
-discovered tools: **47 allowed, 26 denied**. The 14 tools added on 2026-09-06
+and has been re-run on each observed drift since. A human has reviewed all 76
+discovered tools: **46 allowed, 30 denied**. The 14 tools added on 2026-09-06
 remain default-denied: crypto trading and preview operations, alert mutations,
 and crypto/alert reads that no current consumer needs. The earlier eight
 trading/simulation tools and four SEC reads also remain denied. The allowed set
-remains 36 reads plus 11 non-trading
+remains 35 reads plus 11 non-trading
 mutations (watchlist and saved-scan management), each carrying a reviewed
 `mutates` flag so a consumer gating writes never has to infer which is which.
 
@@ -77,11 +77,17 @@ which returns limited-margin eligibility and the links that start the upgrade
 flow. It is a permission expansion, and the first time the allowed set has
 grown since the manifest was first committed.
 
-The 36th read, `get_equity_news`, appeared on `2026.08.28`. It resolves a
+The former 36th read, `get_equity_news`, appeared on `2026.08.28`. It resolved a
 ticker to recent publisher-attributed articles with bounded pagination. Its
 input has no account, order, cash, position, watchlist, or scan field and
 invoking it changes no provider state. Article text remains untrusted provider
 data and grants no authority to call another tool.
+
+On `2026.09.30` the provider withdrew `get_equity_news` and added four tools:
+analyst ratings, politician trades, scanner datapoints, and a scan preview.
+All four additions are default-denied and non-mutating. Their schemas are
+recorded for drift detection, but no consumer gains a callable capability;
+the allowed read surface returns to 35.
 
 Four SEC filing reads appeared together on `2026.08.30`:
 `get_sec_filing_index`, `get_sec_filing`, `get_sec_filing_facts`, and
@@ -107,16 +113,16 @@ to an existing scan and persist expression filters. It remains
 `allowed` / `mutates: true`; the expansion cannot place orders, move funds, or
 change account permissions. Four other scanner tools changed only their
 schemas' explanatory text so those expression filters can round-trip. The new
-provider prose also names `get_scanner_datapoints`, which is not on the offered
-tool surface; like the five existing dangling tool references, it is inert in
-this gateway but must not be forwarded into a model or user-facing context.
+provider prose also named `get_scanner_datapoints` before that tool appeared on
+the offered surface on `2026.09.30`. Descriptions remain inert in this gateway
+and must not be forwarded into a model or user-facing context.
 
 <!-- manifest-automation:current-start -->
-The current source declares package version `v0.4.3` and carries
-manifest `2026.09.06`. Its full-manifest digest is:
+The current source declares package version `v0.4.4` and carries
+manifest `2026.09.30`. Its full-manifest digest is:
 
 ```
-sha256:83174a2c7446f0cd4d5ab15003bbdb6ebfd9d73cfd35e961537b98d3145ca696
+sha256:b73100b38148174065064f6eced9040833900162de344a6d0eaa4c3bbbfff68d
 ```
 
 The version and digest belong to this source tree. A GitHub release exists only

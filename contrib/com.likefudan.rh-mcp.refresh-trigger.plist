@@ -12,9 +12,10 @@
   error. `gh` also keeps its token in the keychain, so this agent would fail
   the same way for the same reason.
 
-  StartCalendarInterval rather than a GitHub cron. launchd re-runs a missed
-  calendar interval at the next wake; GitHub's scheduler queues a job and lets
-  it time out. That difference is the entire point of this file.
+  StartInterval rather than a GitHub cron. The script is idempotent against
+  GitHub state, so hourly invocations provide bounded retries after network,
+  sleep, or provider failures without stacking runs. Once it dispatches a run,
+  it holds a macOS wake assertion until that exact workflow completes.
 
   Install:
     cp contrib/com.likefudan.rh-mcp.refresh-trigger.plist ~/Library/LaunchAgents/
@@ -31,14 +32,11 @@
     <string>/Users/kel/codebase/rh-mcp/contrib/local_refresh_trigger.sh</string>
   </array>
 
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>10</integer>
-    <key>Minute</key><integer>17</integer>
-  </dict>
+  <key>StartInterval</key>
+  <integer>3600</integer>
 
   <key>RunAtLoad</key>
-  <false/>
+  <true/>
 
   <key>StandardOutPath</key>
   <string>/Users/kel/Library/Logs/rh-mcp/local-refresh-trigger.out.log</string>

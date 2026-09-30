@@ -184,9 +184,12 @@ browser.
 
 ### Automated manifest refresh
 
-`.github/workflows/manifest-refresh.yml` checks the provider once a day at
-10:17 UTC and can also be run manually. The credential-bearing job is confined
-to a repository-scoped self-hosted Mac runner labelled `rh-mcp-probe`; it has
+`.github/workflows/manifest-refresh.yml` is dispatched automatically by an
+hourly, wake-aware LaunchAgent and can also be run manually. The trigger skips
+once a run is active or successful for the UTC day, retries completed failures
+at most three times, and uses `caffeinate` to keep the Mac awake until the exact
+workflow run finishes. The credential-bearing job is confined to a
+repository-scoped self-hosted Mac runner labelled `rh-mcp-probe`; it has
 read-only repository permission, receives no GitHub App private key, and runs
 two discovery-only observations one minute apart. Because Actions artifacts in
 a public repository are readable public resources, the candidate is encrypted
@@ -227,9 +230,11 @@ One-time repository setup:
    bypass. Add a tag ruleset matching `v*` that blocks creation except for the
    separate Release App (and an owner emergency bypass). This is what prevents
    the PR App's branch-writing permission from minting a release tag.
-6. Run `Robinhood manifest refresh` once with **Run workflow**. A no-drift run
-   should finish without a branch or PR. After that, only a changed observation
-   creates work.
+6. Install `contrib/com.likefudan.rh-mcp.refresh-trigger.plist` as documented
+   in that file, then run `Robinhood manifest refresh` once with **Run
+   workflow**. A no-drift run should finish without a branch or PR. After that,
+   the hourly trigger is idempotent and only a changed observation creates
+   work.
 
 The credential-bearing job retries only the CLI's provider/runtime failure
 bucket (exit `1`), with bounded 5- and 15-second delays. Authentication,

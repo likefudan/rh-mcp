@@ -1,4 +1,5 @@
 name: Robinhood manifest refresh
+run-name: Robinhood manifest refresh ${{ inputs.dispatch_id || github.run_id }}
 
 on:
   # Dispatch only. There is deliberately no `schedule:` here.
@@ -11,11 +12,17 @@ on:
   # was still working on it — a failure that says nothing about the manifest.
   # Seven of the eleven scheduled runs before that failed the same way or worse.
   #
-  # `contrib/local_refresh_trigger.sh`, run by a LaunchAgent on that same Mac,
-  # dispatches this instead. launchd re-runs a missed StartCalendarInterval at
-  # the next wake, so "run it when the machine is on" is a property of the
-  # trigger rather than a bet about 3am.
+  # `contrib/local_refresh_trigger.sh`, run hourly by a LaunchAgent on that same
+  # Mac, dispatches this instead. It skips after an active/successful daily run,
+  # retries failures at most three times, and holds a wake assertion until the
+  # exact workflow run completes. "Run it when the machine is on" is therefore
+  # a property of the trigger rather than a bet about 3am.
   workflow_dispatch:
+    inputs:
+      dispatch_id:
+        description: Unique correlation id supplied by the local trigger
+        required: false
+        type: string
 
 permissions:
   actions: read

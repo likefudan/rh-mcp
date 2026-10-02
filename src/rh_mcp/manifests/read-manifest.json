@@ -2,9 +2,9 @@
   "manifest_format_version": "1.2",
   "canonicalization_version": "rh-canon-1",
   "digest_algorithm": "sha256",
-  "manifest_version": "2026.09.30",
-  "provider_surface_digest": "sha256:d28615cb6b6889a747d1501bd7ed44af068e05cbd624a7a2a999c7c369704aa3",
-  "observed_at": "2026-09-30T12:01:50.472888+00:00",
+  "manifest_version": "2026.10.02",
+  "provider_surface_digest": "sha256:60abe50a04576da9b65d4d242d2ab3dde753d629376473fb7520a296f83c4d0a",
+  "observed_at": "2026-10-02T04:30:32.978290+00:00",
   "reviewer": {
     "name": "Ke Li",
     "reviewed_at": "2026-09-30T12:01:50.472888+00:00"
@@ -12,6 +12,9 @@
   "entries": [
     {
       "capability": "add_option_to_watchlist",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Adds option contracts to the options watchlist. Additive.",
       "provider_tool_name": "add_option_to_watchlist",
       "description": "Add option contracts to the user's options watchlist. Works for both equity options (AAPL, NVDA) and index options (SPX, NDX, RUT). Source option_ids from get_option_instruments. Confirm with the user before calling — this is a real write.",
       "input_schema": {
@@ -93,13 +96,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:03c105535f08d3bc9c7477d3daa8499807bf5e05d4690d53b534624f4384203a",
-      "metadata_digest": "sha256:a9d0bc28c7c76c1f962802bd5a934c1f8ddf7ce384bba6d2fd70f41a2c35b1cc",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Adds option contracts to the options watchlist. Additive."
+      "metadata_digest": "sha256:a9d0bc28c7c76c1f962802bd5a934c1f8ddf7ce384bba6d2fd70f41a2c35b1cc"
     },
     {
       "capability": "add_to_watchlist",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Adds symbols to an existing watchlist. Additive within one list.",
       "provider_tool_name": "add_to_watchlist",
       "description": "Add items to a watchlist. Exactly one of symbols (stocks/ETFs), currency_pair_ids (crypto), or index_ids (market indexes like SPX, NDX) is required — mutually exclusive. For options use add_option_to_watchlist (separate dedicated watchlist). Futures still require the Robinhood app. Already-present items are no-ops. Confirm with the user before calling.",
       "input_schema": {
@@ -220,13 +223,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:8b68c4ccc739d61be6fa3098cefbdc343c6093adac6bf914eedbe06c69a7b33f",
-      "metadata_digest": "sha256:8adb597d7f36d80590f658a5d3d002158f06651d2c9720e015862ee18ef89267",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Adds symbols to an existing watchlist. Additive within one list."
+      "metadata_digest": "sha256:8adb597d7f36d80590f658a5d3d002158f06651d2c9720e015862ee18ef89267"
     },
     {
       "capability": "cancel_crypto_order",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Cancels a live crypto order and changes trading state. Trading operations are denied.",
       "provider_tool_name": "cancel_crypto_order",
       "description": "Cancel an open crypto order by order_id. Always confirm with the user before calling. Resolve order_id via get_crypto_orders if the user refers to it by description; pass the same rhs_account_number that owns the order. Cancellation may be rejected if the order has already filled, was already canceled, or is otherwise ineligible.",
       "input_schema": {
@@ -277,13 +280,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:696194e0399524eb44d2cc5950df2173db137fa03050ad71cd1c934d2b6b0947",
-      "metadata_digest": "sha256:d95ca53a159de7ff4561f8cda6c412c97ca53093adf90e9c9275a64ad54b081b",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Cancels a live crypto order and changes trading state. Trading operations are denied."
+      "metadata_digest": "sha256:d95ca53a159de7ff4561f8cda6c412c97ca53093adf90e9c9275a64ad54b081b"
     },
     {
       "capability": "cancel_equity_order",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading.",
       "provider_tool_name": "cancel_equity_order",
       "description": "Cancel an open equity order by order_id. Always confirm with the user before calling. Resolve order_id via get_equity_orders if the user refers to it by symbol or description; pass the same account_number. Requires an agentic_allowed=true account; non-agentic accounts are rejected — do not call. Cancellation may be rejected if the order has already filled, was already cancelled, or is otherwise ineligible.",
       "input_schema": {
@@ -334,13 +337,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:eedeaf9b62d74e3f238f2a58be54100b55551a5bedd0380b1e502e692d76a4fb",
-      "metadata_digest": "sha256:b05d589328e3934bfda4a99f3fa25854e40b2683f93d48c83747d1894cddc0ea",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "metadata_digest": "sha256:b05d589328e3934bfda4a99f3fa25854e40b2683f93d48c83747d1894cddc0ea"
     },
     {
       "capability": "cancel_option_exercise",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading.",
       "provider_tool_name": "cancel_option_exercise",
       "description": "Cancel all queued exercise requests for an option position. Pass the same account_number and option_id used for exercise_option. Internally looks up all queued exercise events for that option and cancels each one. Typically there is one; multiple means the user submitted separate exercise batches. Only cancels events in state=queued — events already processing are rejected by the broker. Always confirm with the user before calling.",
       "input_schema": {
@@ -483,13 +486,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:f7a52eb7b548b5d1b22edffcc9f6f960a614b4ea9768ee2d4a9f849fcc92dd9b",
-      "metadata_digest": "sha256:d6fd36c7da95e88277e6de771f9cab00d4a652a4eaf5cbef5043aab08f30e552",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "metadata_digest": "sha256:d6fd36c7da95e88277e6de771f9cab00d4a652a4eaf5cbef5043aab08f30e552"
     },
     {
       "capability": "cancel_option_order",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading.",
       "provider_tool_name": "cancel_option_order",
       "description": "Cancel an open option order by account_number + order_id. Always confirm with the user before calling. Resolve order_id via get_option_orders if the user refers to it by description; pass the same account_number you used there. Requires an agentic_allowed=true account; non-agentic accounts are rejected. Cancellation may be rejected if the order has already filled, was already cancelled, or is otherwise ineligible.",
       "input_schema": {
@@ -540,13 +543,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:f6ad968e464a38d27305db854bffc4ef02f35abbc2bb3f573df7794d3c76b095",
-      "metadata_digest": "sha256:49e66324eb083505d19c57b24b57d782b40a71ae5c27af4f8ee4850d978262e9",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "metadata_digest": "sha256:49e66324eb083505d19c57b24b57d782b40a71ae5c27af4f8ee4850d978262e9"
     },
     {
       "capability": "create_alert",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Creates persistent provider alert state. No current consumer requires alert mutations.",
       "provider_tool_name": "create_alert",
       "description": "Create a price or indicator alert on an equity or crypto symbol. Confirm the symbol and condition with the user before calling — this is a real write; when it fires the user gets their usual Robinhood notification.\n\nParameter rules:\n- price_above / price_below / price_crosses: threshold is the trigger price. Do not send indicator.\n- sma_above, sma_below, sma_crosses, ema_above, ema_below, ema_crosses, vwap_above, vwap_below, vwap_crosses, rsi_above, rsi_below, rsi_crosses (the indicator's own value vs your target): threshold is the target indicator value AND indicator is required.\n- price_above_sma, price_below_sma, price_crosses_sma, price_above_ema, price_below_ema, price_crosses_ema, price_above_vwap, price_below_vwap, price_crosses_vwap, price_above_boll_upper, price_below_boll_lower, price_crosses_boll_mid, macd_above_signal, macd_below_signal, macd_crosses_signal (price vs indicator line): indicator only — do not send threshold.\n- Pick the family by WHAT crosses WHAT: sma_crosses means the SMA's own value crosses your numeric threshold; price_crosses_sma means the market price crosses the SMA line and takes no threshold. \"Alert me when the price crosses the 50-day SMA\" is price_crosses_sma, never sma_crosses — a mixed-up sibling still creates a well-formed but wrong alert.\n- indicator fields: period + interval_secs for sma/ema/rsi; interval_secs only for vwap (must be 300 / 5m bars); fast_period + slow_period + signal_period + interval_secs for macd; period + std_dev + ma_type + interval_secs for boll.\n- Crypto symbols support price conditions only.",
       "input_schema": {
@@ -772,15 +775,15 @@
       },
       "annotations": {},
       "schema_digest": "sha256:8a0e28a3872d5164ceb0fde86a8224a97fb7ac1ac4a0c5dd03a054a852ff1910",
-      "metadata_digest": "sha256:2e00e17b6de8ff8dfd3adaed2d35786087125d5f875657896e8882a4b7ab9fa8",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Creates persistent provider alert state. No current consumer requires alert mutations."
+      "metadata_digest": "sha256:2e00e17b6de8ff8dfd3adaed2d35786087125d5f875657896e8882a4b7ab9fa8"
     },
     {
       "capability": "create_scan",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Creates a saved scanner or appends a new active configuration version to an existing scanner; it never trades or moves funds. The new-scan enum path can leave partial state, and existing-scan updates use REPLACE semantics, so callers must supply the full intended filter set.",
       "provider_tool_name": "create_scan",
-      "description": "Create a new saved scanner (screener) on the user's account — or, with scan_id, update an existing one by appending a new configuration version. Filters can be enum-based (from get_scanner_filter_specs) or expression-based (a raw market-data expression built from get_scanner_datapoints). Returns the scan's id, title, applied filters, and live market results.\n\nPrefer an enum filter_type whenever one covers the request: enum filters are pre-validated and render as standard, user-editable filters in Legend. Build a raw expression only when no enum filter covers the request, and validate it with preview_scan before saving it here. This is the only tool that saves expression filters — update_scan_filters rejects them — so to change a scan that has an expression filter, call this tool with that scan's scan_id and the full desired filter set.\n\nColumns display values, filters screen. To show a datapoint in results without restricting matches, pass it in columns — never fake it with a no-op filter like \">= 0\", which pollutes the scan's filter list. A column is a display_name plus an expression, or a standard column's display name alone. A couple of contextual columns supporting the filters make a scan read better in Legend.\n\nTwo execution paths:\n- New scan, enum-only filters (or none), no columns: composes multiple Beacon operations — create the scan, apply the preset configuration if non-INITIAL, apply filters, set the title. If a step after the initial create fails, the scan still exists in its partial state; the response surfaces what was applied, and update_scan_filters / update_scan_config can fix the rest.\n- scan_id set, any expression filter present, or any columns present: a single transactional Beacon call that persists the filters and columns as a new ACTIVE configuration version (on the given scan, or on a brand-new one). All-or-nothing — an expression the market-data provider rejects means NOTHING is persisted, and the provider's validation error is returned. Earlier versions of a scan are never edited. A non-INITIAL preset cannot be combined with this path.\n\nParameters:\n- scan_id (optional) — update this existing scan instead of creating one. REPLACE semantics: the new version holds exactly the filters and columns passed, so read the current set via get_scans first and send the complete intended set. Cortex-managed scans are rejected.\n- preset (optional) — starting preset for a new scan. Default: DAILY_GAINERS when no filters supplied, INITIAL when filters supplied. Valid values: INITIAL, DAILY_GAINERS, DAILY_LOSERS, HIGH_OPTIONS_VOLUME_IV, UPCOMING_EARNINGS.\n- filters (optional for a new scan, required with scan_id) — array of filter specs, enum and/or expression. Call get_scanner_filter_specs for enum filters; call get_scanner_datapoints before composing an expression.\n- columns (optional) — extra result columns on top of the filters' own columns and the standard defaults. An expression matching a standard column's canonical form is saved as that standard column, canonical name included (e.g. \"optionsPutDayVolume\" always saves as \"Total put volume\").\n- title (optional) — custom human-readable name for the scan.\n\nExample: to make \"stocks with RSI > 70 and volume > 1M\", call with\n  preset = \"INITIAL\"\n  filters = [\n    {\"filter_type\": \"FILTER_TYPE_RSI\", \"predicate\": \">\", \"values\": [\"70\"], \"interval\": \"1d\", \"length\": 14},\n    {\"filter_type\": \"FILTER_TYPE_VOLUME\", \"predicate\": \">\", \"values\": [\"1000000\"], \"interval\": \"1d\"}\n  ]\n  title = \"High RSI + High Volume\"\n\nExample: to save \"stocks where put option volume exceeds call option volume\" (no enum filter compares two datapoints), showing both volumes and the ratio as context, call with\n  filters = [\n    {\"expression\": \"optionsPutDayVolume > optionsCallDayVolume\", \"predicate\": \"=\", \"values\": [\"True\"], \"display_title\": \"Put exceeds call\"}\n  ]\n  columns = [\n    {\"display_name\": \"Put volume\", \"expression\": \"optionsPutDayVolume\"},\n    {\"display_name\": \"Call volume\", \"expression\": \"optionsCallDayVolume\"},\n    {\"display_name\": \"Put/Call ratio\", \"expression\": \"optionsPutDayVolume / optionsCallDayVolume\"}\n  ]\n  title = \"Put hedging screen\"\n  (the first two save under their canonical standard names, \"Total put volume\" and \"Total call volume\")\n\nExample: to tighten that saved screen later without creating a second scan, call with\n  scan_id = \"<its scan_id from get_scans>\"\n  filters = [the scan's current filters, copied from get_scans (expressions verbatim, enum filters by filter_type_enum), with the desired change applied]\n  columns = [the scan's current extra columns, copied from get_scans, if they should be kept]",
+      "description": "Create a new saved scanner (screener) on the user's account — or, with scan_id, update an existing one by appending a new configuration version. Filters can be enum-based (from get_scanner_filter_specs) or expression-based (a raw market-data expression built from get_scanner_datapoints). Returns the scan's id, title, applied filters, and live market results.\n\nPrefer an enum filter_type whenever one covers the request: enum filters are pre-validated and render as standard, user-editable filters in Legend. Build a raw expression only when no enum filter covers the request, and validate it with preview_scan before saving it here. This is the only tool that saves expression filters — update_scan_filters rejects them — so to change a scan that has an expression filter, call this tool with that scan's scan_id and the full desired filter set.\n\nColumns display values, filters screen. To show a datapoint in results without restricting matches, pass it in columns — never fake it with a no-op filter like \">= 0\", which pollutes the scan's filter list. A column is a display_name plus an expression, or a standard column's display name alone. A couple of contextual columns supporting the filters make a scan read better in Legend.\n\nTwo execution paths:\n- New scan, enum-only filters (or none), no columns: composes multiple Beacon operations — create the scan, apply the preset configuration if non-INITIAL, apply filters, set the title. If a step after the initial create fails, the scan still exists in its partial state; the response surfaces what was applied, and update_scan_filters / update_scan_config can fix the rest.\n- scan_id set, any expression filter present, or any columns present: a single transactional Beacon call that persists the filters and columns as a new ACTIVE configuration version (on the given scan, or on a brand-new one). All-or-nothing — an expression the market-data provider rejects means NOTHING is persisted, and the provider's validation error is returned. Earlier versions of a scan are never edited. A non-INITIAL preset cannot be combined with this path.\n\nParameters:\n- scan_id (optional) — update this existing scan instead of creating one. REPLACE semantics: the new version holds exactly the filters and columns passed, so read the current set via get_scans first and send the complete intended set. Cortex-managed scans are rejected.\n- preset (optional) — starting preset for a new scan. Default: DAILY_GAINERS when no filters supplied, INITIAL when filters supplied. Valid values: INITIAL, DAILY_GAINERS, DAILY_LOSERS, HIGH_OPTIONS_VOLUME_IV, UPCOMING_EARNINGS.\n- filters (optional for a new scan, required with scan_id) — array of filter specs, enum and/or expression. Call get_scanner_filter_specs for enum filters; call get_scanner_datapoints before composing an expression.\n- columns (optional) — extra result columns on top of the filters' own columns and the standard defaults. An expression matching a standard column's canonical form is saved as that standard column, canonical name included (e.g. \"optionsPutDayVolume\" always saves as \"Total put volume\"). When re-sending a column the scan already has, send it by display_name ALONE if it comes from one of the scan's filters or is a standard column, and by display_name plus its expression only if it is a column you yourself added with an expression. Do not echo back the expression get_scans reports for a filter-created or standard column: that is rejected with \"column already exists from a filter\".\n- title (optional) — custom human-readable name for the scan.\n\nExample: to make \"stocks with RSI > 70 and volume > 1M\", call with\n  preset = \"INITIAL\"\n  filters = [\n    {\"filter_type\": \"FILTER_TYPE_RSI\", \"predicate\": \">\", \"values\": [\"70\"], \"interval\": \"1d\", \"length\": 14},\n    {\"filter_type\": \"FILTER_TYPE_VOLUME\", \"predicate\": \">\", \"values\": [\"1000000\"], \"interval\": \"1d\"}\n  ]\n  title = \"High RSI + High Volume\"\n\nExample: to save \"stocks where put option volume exceeds call option volume\" (no enum filter compares two datapoints), showing both volumes and the ratio as context, call with\n  filters = [\n    {\"expression\": \"optionsPutDayVolume > optionsCallDayVolume\", \"predicate\": \"=\", \"values\": [\"True\"], \"display_title\": \"Put exceeds call\"}\n  ]\n  columns = [\n    {\"display_name\": \"Put volume\", \"expression\": \"optionsPutDayVolume\"},\n    {\"display_name\": \"Call volume\", \"expression\": \"optionsCallDayVolume\"},\n    {\"display_name\": \"Put/Call ratio\", \"expression\": \"optionsPutDayVolume / optionsCallDayVolume\"}\n  ]\n  title = \"Put hedging screen\"\n  (the first two save under their canonical standard names, \"Total put volume\" and \"Total call volume\")\n\nExample: to tighten that saved screen later without creating a second scan, call with\n  scan_id = \"<its scan_id from get_scans>\"\n  filters = [the scan's current filters, copied from get_scans (expressions verbatim, enum filters by filter_type_enum), with the desired change applied]\n  columns = [the scan's current extra columns, copied from get_scans, if they should be kept]",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -863,7 +866,7 @@
                 },
                 "expression": {
                   "type": "string",
-                  "description": "Raw market-data expression computing the column's value, built from get_scanner_datapoints (same language as expression filters), e.g. \"optionsPutDayVolume / optionsCallDayVolume\". Omit to reference a standard column by display_name alone. If the expression equals a standard column's canonical form, the column is saved as that standard column and display_name is REPLACED by its canonical name (e.g. \"optionsPutDayVolume\" always saves as \"Total put volume\")."
+                  "description": "Raw market-data expression computing the column's value, built from get_scanner_datapoints (same language as expression filters), e.g. \"optionsPutDayVolume / optionsCallDayVolume\". Omit to reference a standard column by display_name alone. Also omit it when display_name matches a column one of this scan's filters already creates: passing both is rejected with \"column already exists from a filter\". The expression get_scans reports on an existing column is read-only explanation, not an input, and echoing it back is the usual cause of that rejection. If the expression equals a standard column's canonical form, the column is saved as that standard column and display_name is REPLACED by its canonical name (e.g. \"optionsPutDayVolume\" always saves as \"Total put volume\")."
                 },
                 "visible": {
                   "type": [
@@ -887,7 +890,7 @@
               ],
               "additionalProperties": false
             },
-            "description": "Optional result columns to display on top of what the filters and the standard default columns already show. Each column: display_name plus either an expression (from get_scanner_datapoints) or nothing (a standard column referenced by name, e.g. \"Market cap\"). Columns display values, filters screen — to show a datapoint without restricting results, add a column here, never a no-op filter (e.g. >= 0). A couple of contextual columns supporting the filters make the scan read better in Legend."
+            "description": "Optional result columns to display on top of what the filters and the standard default columns already show. Each column: display_name plus either an expression (from get_scanner_datapoints) or nothing (a standard column named by display_name; an unknown name is rejected with the full list of valid ones). Columns display values, filters screen — to show a datapoint without restricting results, add a column here, never a no-op filter (e.g. >= 0). A couple of contextual columns supporting the filters make the scan read better in Legend."
           },
           "title": {
             "type": "string",
@@ -1043,7 +1046,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "How to interpret the response:\n- result.scan_id — the created scan (or, when scan_id was passed, that same scan: the update landed as a new configuration version on it). Pass this to run_scan, update_scan_filters, or update_scan_config in follow-up calls.\n- result.scan_title — final title (custom if provided; else Beacon's default for a new scan, or the existing title on a scan_id update).\n- result.filters_applied — the filter set actually in effect after the call. If this doesn't match what the user asked for, one of the composite steps failed silently — surface that to the user.\n- result.results — initial live results (real-time market data at scan creation time).\n- result.total_items — total matches. May exceed len(results) if the scan's frontend_limit is hit.\n\nWhen presenting:\n- Confirm the scan was created and note its title + filters_applied (so the user knows what was actually saved).\n- Render the initial results as a table.\n- Tell the user the scan is saved and can be re-run anytime with run_scan + the returned scan_id.\n- If results is empty: tell the user no instruments match the filters right now, and suggest broadening them with update_scan_filters.\n\nError handling:\n- \"unknown preset X\" → preset enum not recognized. List the valid presets to the user.\n- \"filter[N]: ...\" → filter validation failure at index N. Tell the user which filter and why. Rejected before any Beacon call — nothing was created.\n- \"created by Cortex and cannot be modified\" (with scan_id) → the target scan is Cortex-managed. Offer to create a fresh scan (omit scan_id) instead.\n- Partial-failure responses (e.g. \"scan X created but preset Y could not be applied\") indicate a partial success on the enum path: the scan exists but is missing some of the intended state. Use filters_applied on the response to see what actually landed; mention this clearly to the user so they know whether they need to follow up with update_scan_filters.\n- With expression filters there are no partial failures: an upstream validation error (e.g. \"unresolved reference: X\", \"unsupported candle-period\") means nothing was saved. Fix the expression — get_scanner_datapoints has the valid names and signatures — and call again, or iterate with preview_scan first."
+            "description": "How to interpret the response:\n- result.scan_id — the created scan (or, when scan_id was passed, that same scan: the update landed as a new configuration version on it). Pass this to run_scan, update_scan_filters, or update_scan_config in follow-up calls.\n- result.scan_title — final title (custom if provided; else Beacon's default for a new scan, or the existing title on a scan_id update).\n- result.filters_applied — the filter set actually in effect after the call. If this doesn't match what the user asked for, one of the composite steps failed silently — surface that to the user.\n- result.results — initial live results (real-time market data at scan creation time).\n- result.total_items — total matches. May exceed len(results) if the scan's frontend_limit is hit.\n\nWhen presenting:\n- Confirm the scan was created and note its title + filters_applied (so the user knows what was actually saved).\n- Render the initial results as a table.\n- Tell the user the scan is saved and can be re-run anytime with run_scan + the returned scan_id.\n- If results is empty: tell the user no instruments match the filters right now, and suggest broadening them with update_scan_filters.\n\nError handling:\n- \"unknown preset X\" → preset enum not recognized. List the valid presets to the user.\n- \"filter[N]: ...\" → filter validation failure at index N. Tell the user which filter and why. Rejected before any Beacon call — nothing was created.\n- \"created by Cortex and cannot be modified\" (with scan_id) → the target scan is Cortex-managed. Offer to create a fresh scan (omit scan_id) instead.\n- \"column X already exists from a filter\" → one of the scan's filters already produces a column with that display name, and an expression was passed for it as well. Re-send that column with NO expression to customize it (visibility, position), or give it a different display_name. Do not drop the filter.\n- \"no standard column is named X\" → the display name is not a standard column and no expression was given. Pick one of the valid names the error lists, or supply an expression from get_scanner_datapoints.\n- Partial-failure responses (e.g. \"scan X created but preset Y could not be applied\") indicate a partial success on the enum path: the scan exists but is missing some of the intended state. Use filters_applied on the response to see what actually landed; mention this clearly to the user so they know whether they need to follow up with update_scan_filters.\n- With expression filters there are no partial failures: an upstream validation error (e.g. \"unresolved reference: X\", \"unsupported candle-period\") means nothing was saved. Fix the expression — get_scanner_datapoints has the valid names and signatures — and call again, or iterate with preview_scan first."
           }
         },
         "required": [
@@ -1053,14 +1056,14 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:4d1324ece0ffd8918fb36a52d304363e24b590a36a4e336f1968e6fda7c2fc09",
-      "metadata_digest": "sha256:d0e53a81a19a134952ba0501e7061a46d73c8f4dbe45d81d9d220306f804f6af",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Creates a saved scanner or appends a new active configuration version to an existing scanner; it never trades or moves funds. The new-scan enum path can leave partial state, and existing-scan updates use REPLACE semantics, so callers must supply the full intended filter set."
+      "schema_digest": "sha256:f9c22c9fa9f74943813fd5ce7442c57e1a01887112499b5ca44481161029dd67",
+      "metadata_digest": "sha256:27777ae586c55a813c56b4c11c71b05e390707c173172a072a2f8ac29f1beb1d"
     },
     {
       "capability": "create_watchlist",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Creates a new watchlist. Additive; leaves existing lists untouched. Partial state is possible if the call fails midway, so a retry may leave a duplicate list.",
       "provider_tool_name": "create_watchlist",
       "description": "Create a new custom watchlist for the user — a real write. When the user has already specified the name, call this directly; ask for a name first only when they have not. Do not use this to follow a Robinhood-curated list (use follow_watchlist).",
       "input_schema": {
@@ -1160,13 +1163,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:869caf9bf0aebfb3313d815eb862c2c85ebd619d224fc3ad6a14294e02c8ad9a",
-      "metadata_digest": "sha256:195991c3ad8e62109ee0aee7eea622fc36520e1b4bd906236240974850e2e616",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Creates a new watchlist. Additive; leaves existing lists untouched. Partial state is possible if the call fails midway, so a retry may leave a duplicate list."
+      "metadata_digest": "sha256:195991c3ad8e62109ee0aee7eea622fc36520e1b4bd906236240974850e2e616"
     },
     {
       "capability": "delete_alert",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Deletes persistent provider alert state. No current consumer requires alert mutations.",
       "provider_tool_name": "delete_alert",
       "description": "Permanently delete a price or indicator alert, with a server-enforced confirmation step: a call without confirm deletes nothing and returns a preview of exactly what would be deleted; show that preview to the user, and only after they approve call again with confirm=true. There is no undo. If the user only wants to stop notifications for a while, disable the alert with update_alert (enabled=false) instead of deleting it.",
       "input_schema": {
@@ -1337,13 +1340,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:dcb8ab78a99ee7dc9a0fa977bc9df0a591cd869fd31d5aff572ced7a310cccde",
-      "metadata_digest": "sha256:e1f669375c6dc413b653241863feba3d049b0eeec1bb8a0b6a77e5ebf23051f9",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Deletes persistent provider alert state. No current consumer requires alert mutations."
+      "metadata_digest": "sha256:e1f669375c6dc413b653241863feba3d049b0eeec1bb8a0b6a77e5ebf23051f9"
     },
     {
       "capability": "exercise_option",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading.",
       "provider_tool_name": "exercise_option",
       "description": "Exercise a long options position — a call exercises the right to buy the underlying shares at the strike price; a put exercises the right to sell. Exercise is irrevocable once state moves past queued.\n\nNever call this tool without asking the user to explicitly confirm the specific exercise first: state the option, quantity, and expected cash impact (debit for calls, credit for puts), then wait for their affirmative reply before calling. The user's original request to exercise is NOT itself sufficient confirmation — a generic \"exercise my calls\" does not confirm a specific option and quantity.\n\nPosition requirements: confirm via get_option_positions that the position type=long and quantity > 0.\n\nAccount requirements: confirm via get_accounts that the chosen account is agentic_allowed=true AND has option_level_2 or option_level_3. If agentic_allowed=false do NOT call. If option_level is empty or option_level_0, do NOT call; follow the get_accounts guide for how to direct the user to enroll.\n\nIndex options cannot be manually exercised and will be rejected. Exercises submitted during market hours execute the same day; requests submitted after market close — including on late-close trading days — are queued for overnight processing.\n\nParameter rules:\n- quantity must be a positive integer and cannot exceed the position's available contracts.\n- allow_shorts=true only applies to PUT exercises where the account does not own enough shares to deliver. Require explicit user confirmation before setting this — it creates a short equity position in the underlying stock.\n- reason is optional but recommended; collect it from the user when they volunteer a motivation.\n- ref_id: use the same UUID on retries of the same logical exercise; use a new UUID for a new exercise.",
       "input_schema": {
@@ -1492,13 +1495,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:9179ebd01003589b86705ab0ae77438aece943d7bb0e886173dac962bbfc0a9a",
-      "metadata_digest": "sha256:d7c6838de68f33160b4aa4d6ce05a3d3c7f4b8866946be1c3cc0d8bbb0c66ab1",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "metadata_digest": "sha256:d7c6838de68f33160b4aa4d6ce05a3d3c7f4b8866946be1c3cc0d8bbb0c66ab1"
     },
     {
       "capability": "follow_watchlist",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Follows a public watchlist. Additive; affects only the follow relationship.",
       "provider_tool_name": "follow_watchlist",
       "description": "Follow a Robinhood-curated list so it appears in the user's watchlists. Confirm with the user before calling. Use only for curated lists; the user already owns their custom lists.",
       "input_schema": {
@@ -1586,13 +1589,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:ec2a8ace831acb7a6acd377186d9196cdc1c9afa1be30e2489a5a8ecf47aa26f",
-      "metadata_digest": "sha256:9cf7c85d378bf9ac2ea97bc1cf6e2e1596e17b371c226fc3fdb01c57f853cd90",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Follows a public watchlist. Additive; affects only the follow relationship."
+      "metadata_digest": "sha256:9cf7c85d378bf9ac2ea97bc1cf6e2e1596e17b371c226fc3fdb01c57f853cd90"
     },
     {
       "capability": "get_accounts",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_accounts",
       "description": "List the user's brokerage accounts. Each account includes an agentic_allowed field indicating whether it's tradable by you — accounts where it's false are read-only to you. Use this to look up account_number values needed by other tools. Exactly one account is tradable by you; when the user is choosing an account for a trade, use that account directly without asking. Does NOT return reliable buying power — route buying-power questions through get_portfolio.",
       "input_schema": {
@@ -1719,13 +1722,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:f87a68807d3e458839e2ca0cf451daf4da4cb52a5c4ce634be2b9ed004f9a0a6",
-      "metadata_digest": "sha256:0fb6231d2aaef18bd7c42f7f3d4e1b83883b2a5702a03ed6196487ae6ce7a991",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:0fb6231d2aaef18bd7c42f7f3d4e1b83883b2a5702a03ed6196487ae6ce7a991"
     },
     {
       "capability": "get_alert_log",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Reads provider alert history. No current consumer requires it, so it remains default-denied.",
       "provider_tool_name": "get_alert_log",
       "description": "Read the log of fired alerts — what fired, when, and at what price or indicator value — with read/unread state. Poll this to learn whether any alert has fired; alert events are not pushed to the agent.",
       "input_schema": {
@@ -1927,13 +1930,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:1e56891f1368609c0014fb27759da15101bbc1ca0bfc6360366d631051bb6a2b",
-      "metadata_digest": "sha256:095282941c296ac78e1d969fd502857f654b5025945dc0d6a61313e95ef5ebee",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Reads provider alert history. No current consumer requires it, so it remains default-denied."
+      "metadata_digest": "sha256:095282941c296ac78e1d969fd502857f654b5025945dc0d6a61313e95ef5ebee"
     },
     {
       "capability": "get_alerts",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Reads configured provider alerts. No current consumer requires it, so it remains default-denied.",
       "provider_tool_name": "get_alerts",
       "description": "List the price/indicator alerts the user currently has configured (equities and crypto only), optionally filtered to one symbol. Use to look up alert_id values for update_alert/delete_alert, or to check what's currently being watched.",
       "input_schema": {
@@ -2119,13 +2122,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:03efa821d538f2523cb44fb20c2f53053b6bd3310f6b8e3fcd024b8c26fe1f45",
-      "metadata_digest": "sha256:37d792ad78b95d617589f7741b8fc07ead9f6453cec2ea6c75c3b800a5297e21",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Reads configured provider alerts. No current consumer requires it, so it remains default-denied."
+      "metadata_digest": "sha256:37d792ad78b95d617589f7741b8fc07ead9f6453cec2ea6c75c3b800a5297e21"
     },
     {
       "capability": "get_crypto_account_onboarding_info",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Reads crypto-account onboarding state. No current consumer requires it, so it remains default-denied.",
       "provider_tool_name": "get_crypto_account_onboarding_info",
       "description": "Get the link a user opens to sign the crypto agreement and open a crypto account. Call when the user wants to trade crypto but has no crypto account.",
       "input_schema": {
@@ -2168,13 +2171,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:ab127dee62c14f803349fb683ed442c877ebc5d3b637921dc72c6d5c3fdfe8f5",
-      "metadata_digest": "sha256:0fab19920613375f1c990976274042b0a2f4021906f706e426a4faf089e81c48",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Reads crypto-account onboarding state. No current consumer requires it, so it remains default-denied."
+      "metadata_digest": "sha256:0fab19920613375f1c990976274042b0a2f4021906f706e426a4faf089e81c48"
     },
     {
       "capability": "get_crypto_orders",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Reads account-bound crypto orders. No current consumer requires it, so it remains default-denied.",
       "provider_tool_name": "get_crypto_orders",
       "description": "List crypto order history for an account — newest first. Open and closed orders, including fills, cancellations, and rejections. Pass order_id to retrieve a single order by UUID.\n\nFiltering tips:\n- Prefer narrow queries: combine state (or state_group), symbol, and/or created_at_gte for specific questions.\n- created_at_gte: interpret relative times in the user's timezone, convert to UTC before sending.\n- updated_at_gte: useful when polling for order fills or state transitions.\n- symbol triggers a symbol→currency_pair_id lookup; omit it if you don't need it.\n\nWhen the user asks broadly for \"orders\" or \"my orders\" without naming an asset class or order type, call get_equity_orders, get_option_orders, get_crypto_orders, and get_advanced_orders in parallel so OCO groups are not omitted.\n\nFor requests spanning all accounts, re-fetch the account list with get_accounts first — a list from earlier in the conversation may be missing newly created accounts.",
       "input_schema": {
@@ -2604,13 +2607,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:ab622ca3581761dba8a0a5c8607d0779a51e07d50d6643b854c06f5618bbcdbd",
-      "metadata_digest": "sha256:7adf953149611b3c46cf96d6353a57d7e7fc650327d02b6c0aa44e6beeccb8cc",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Reads account-bound crypto orders. No current consumer requires it, so it remains default-denied."
+      "metadata_digest": "sha256:7adf953149611b3c46cf96d6353a57d7e7fc650327d02b6c0aa44e6beeccb8cc"
     },
     {
       "capability": "get_crypto_positions",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Reads account-bound crypto positions. No current consumer requires it, so it remains default-denied.",
       "provider_tool_name": "get_crypto_positions",
       "description": "List open crypto positions for a specific brokerage account. Returns asset, quantity, transferable amount, and cost-basis breakdown.",
       "input_schema": {
@@ -2770,13 +2773,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:d6e7f3321bc32be817f9b337759110a2576ce4d0d50a10601b97951185d98b45",
-      "metadata_digest": "sha256:dcc81133e1a30d62896808f4d4a4767ebbe5c1c545d3ad3b5c6d11704547eb1c",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Reads account-bound crypto positions. No current consumer requires it, so it remains default-denied."
+      "metadata_digest": "sha256:dcc81133e1a30d62896808f4d4a4767ebbe5c1c545d3ad3b5c6d11704547eb1c"
     },
     {
       "capability": "get_crypto_quotes",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Reads crypto quotes. No current consumer requires this source, so it remains default-denied.",
       "provider_tool_name": "get_crypto_quotes",
       "description": "Get real-time bid/ask/mark prices plus the previous close for one or more crypto pair symbols (e.g. BTC-USD).",
       "input_schema": {
@@ -2905,13 +2908,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:cedec9ed6e7aa17642ef550e3813247b7f1641c0ca19646aa9f5d22187bfdb85",
-      "metadata_digest": "sha256:5969a8bc9001df704f4c81827cadfab37e041d056e00659a6c38d884f6d4dff3",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Reads crypto quotes. No current consumer requires this source, so it remains default-denied."
+      "metadata_digest": "sha256:5969a8bc9001df704f4c81827cadfab37e041d056e00659a6c38d884f6d4dff3"
     },
     {
       "capability": "get_currency_pairs",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Reads supported crypto currency pairs. No current consumer requires it, so it remains default-denied.",
       "provider_tool_name": "get_currency_pairs",
       "description": "List Robinhood-supported crypto currency pairs (e.g. BTC-USD, ETH-USD), including any with an active trading halt. Catalog-only coins that Robinhood does not offer are excluded. Use this to discover symbols and per-pair order constraints before calling get_crypto_quotes or referencing positions.",
       "input_schema": {
@@ -3131,13 +3134,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:2b499d5008083f33bbf21d1c0d656404b45730d4d386a5acff245103786b52fb",
-      "metadata_digest": "sha256:3bd662e5854a109248020c5a9310f3dc4e1b2a0722d8779bd61d1e1e8be4c1a9",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Reads supported crypto currency pairs. No current consumer requires it, so it remains default-denied."
+      "metadata_digest": "sha256:3bd662e5854a109248020c5a9310f3dc4e1b2a0722d8779bd61d1e1e8be4c1a9"
     },
     {
       "capability": "get_earnings_calendar",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_earnings_calendar",
       "description": "List earnings reports scheduled across the market over a date window (up to 31 days), optionally limited to high-market-cap names. Returns one entry per report event — estimated/actual EPS, report date and timing (am/pm), and company-verification status. Use this for market-wide discovery (\"what large-caps report this week?\"). For a specific known ticker, use get_earnings_results instead. Read-only.",
       "input_schema": {
@@ -3279,13 +3282,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:ed7fb826132d31f3c8b2759af53f2c8c3cf1fd9a0c356a765e576c175f884eb5",
-      "metadata_digest": "sha256:440127568f380d812c99cff920b646aaeb9a43ec5f18cd9510dfc3a264e1e924",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:440127568f380d812c99cff920b646aaeb9a43ec5f18cd9510dfc3a264e1e924"
     },
     {
       "capability": "get_earnings_results",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_earnings_results",
       "description": "Get recent and upcoming earnings for ONE equity symbol — estimated/actual EPS, report date and timing (am/pm), and company-verification status. Returns the trailing up to 8 quarters. Use this for earnings-timing questions (\"does AAPL report this week?\"), EPS surprise analysis, and screening for upcoming earnings risk on a specific stock. For market-wide earnings calendar queries across many symbols, use get_earnings_calendar. Read-only.",
       "input_schema": {
@@ -3432,13 +3435,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:ff2381947760c458170610bde3da39e0818438adf51f8d6738fd2a8dd89a2a8b",
-      "metadata_digest": "sha256:9406982052bfa055a94521ee09af85605f221ac07364f1cab219d192e261c283",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:9406982052bfa055a94521ee09af85605f221ac07364f1cab219d192e261c283"
     },
     {
       "capability": "get_equity_analyst_ratings",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped analyst-rating data newly observed on 2026-09-30. It remains default-denied until a consumer defines bounded inputs, a normalized projection, provenance handling, and tests; discovery alone grants no authority.",
       "provider_tool_name": "get_equity_analyst_ratings",
       "description": "Get analyst price targets (high, low, average) and the Buy/Hold/Sell ratings breakdown for one or more equity symbols. Use for consensus/sentiment checks and comparing the current price to the analyst target range. Read-only.",
       "input_schema": {
@@ -3566,13 +3569,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:a34709cc98947e9a79e6ba097b2e8284fab82e849d866e202d246cea91edb1ab",
-      "metadata_digest": "sha256:567a47a987522bc48bf643c02dbd7dcd518dff9e6458db7cbb940ebe5760bd10",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Read-shaped analyst-rating data newly observed on 2026-09-30. It remains default-denied until a consumer defines bounded inputs, a normalized projection, provenance handling, and tests; discovery alone grants no authority."
+      "metadata_digest": "sha256:567a47a987522bc48bf643c02dbd7dcd518dff9e6458db7cbb940ebe5760bd10"
     },
     {
       "capability": "get_equity_fundamentals",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_fundamentals",
       "description": "Get today's fundamentals for one or more stock symbols — valuation ratios (PE, P/B), capitalization (market cap, shares outstanding, float), today's session OHLCV, trailing volume averages, 52-week range, dividend schedule, and company profile. For real-time quotes use get_equity_quotes; for time-series price history use get_equity_historicals.",
       "input_schema": {
@@ -3926,13 +3929,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:def12a35d0ee17fe2b4166745365428d7c20b91b98a486713a74f8cb486d8578",
-      "metadata_digest": "sha256:b8217ed83a61b6fbf3563c399b5a626715f79e3c71c5dee0edd94a1c50885335",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:b8217ed83a61b6fbf3563c399b5a626715f79e3c71c5dee0edd94a1c50885335"
     },
     {
       "capability": "get_equity_historicals",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_historicals",
       "description": "Get OHLCV bars for one or more equity symbols across an explicit time range. Use this for charting, \"recent activity\" questions, and backtesting. The server auto-selects an interval when one is not provided. If the bar's interpolated field is true, bar was synthesized to fill a gap and carry no new information.\n\nParameter rules:\n- interval is optional; when omitted, the server auto-selects an interval that targets ~2,500 bars across the requested range. Provide an explicit interval only when you need a specific granularity.\n- interval values are fixed; the server does NOT aggregate intermediate bars. For a custom interval (e.g. 3-minute), request the next-finer fixed interval and aggregate client-side.\n- bounds defaults to 'regular' (RTH only). Use 'extended' or '24_5' only when the user explicitly asks about extended-hours activity.\n- adjustment_type defaults to 'split' (split-adjusted, the right default for backtesting). Use 'none' for raw prices, 'all' for split + dividend adjustment.\n- If the range would produce more bars than the upstream allows at the explicitly requested interval, narrow the range or coarsen the interval — the call is rejected before reaching upstream. The cap does not apply when interval is auto-selected.",
       "input_schema": {
@@ -4100,13 +4103,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:7434bca043ea3a8d69bd14fcb72bf1a1b9ec1d134edd894de2faf6560c830662",
-      "metadata_digest": "sha256:8cb350d35f39d19add6f1a654d3320361d8b03a307d36b1815e9b8658a1ed040",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:8cb350d35f39d19add6f1a654d3320361d8b03a307d36b1815e9b8658a1ed040"
     },
     {
       "capability": "get_equity_orders",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_orders",
       "description": "Fetch equity orders for an account — list mode (newest first; open and closed, including fills, cancellations, rejections) or single-order mode by passing order_id. When the user asks broadly for \"orders\" or \"my orders\" without naming an asset class or order type, call get_equity_orders, get_option_orders, get_crypto_orders, and get_advanced_orders in parallel so OCO groups are not omitted.\n\nFiltering tips:\n- Prefer narrow queries: combine state, symbol, and/or created_at_gte for specific questions (e.g. \"my filled AAPL orders this week\") — the per-page cap is fixed.\n- created_at_gte: interpret relative times in the user's timezone, convert to UTC before sending.\n- symbol forces a symbol→instrument lookup; omit it if you don't need it.",
       "input_schema": {
@@ -4166,6 +4169,10 @@
                     "id": {
                       "type": "string",
                       "description": "Order UUID; needed by cancel_equity_order."
+                    },
+                    "ref_id": {
+                      "type": "string",
+                      "description": "Idempotency key the order is stored under, unique per account. Usually the ref_id passed to place_equity_order; an order placed through a trade approval carries that approval's id instead. Omitted when the order has none."
                     },
                     "instrument_id": {
                       "type": "string",
@@ -4368,14 +4375,14 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "schema_digest": "sha256:e2464b67f9731f34037e2e5f77307d1b0dadd73e4018f728a9e71b705a5afd2b",
-      "metadata_digest": "sha256:35738be50bbb1051d2f99e40af69b55dbc774511a499fcc895c5053d1445288a",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "schema_digest": "sha256:8f4ab699875a45287a64707332a54d61ab10ff61fde514801a2f0aa76c63ce7d",
+      "metadata_digest": "sha256:35738be50bbb1051d2f99e40af69b55dbc774511a499fcc895c5053d1445288a"
     },
     {
       "capability": "get_equity_positions",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_positions",
       "description": "List open equity positions for a specific brokerage account. Returns symbol, quantity, average cost, and per-position hold breakdowns.",
       "input_schema": {
@@ -4502,13 +4509,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:8196047100e0ff4f49f812d97897582c2f2d6636acbf5a62a25b5cb8d92f4d0e",
-      "metadata_digest": "sha256:d46433488d1b0eecf9f5d8155b403d4108654739dd6278d78a39df2f881c1dad",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:d46433488d1b0eecf9f5d8155b403d4108654739dd6278d78a39df2f881c1dad"
     },
     {
       "capability": "get_equity_price_book",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_price_book",
       "description": "Get a real-time bid/ask order book (Level 2) snapshot for one or more equity symbols (max 4), showing the ladder of price levels and resting share size on each side. Use to read supply/demand depth before entering or exiting a position.",
       "input_schema": {
@@ -4663,13 +4670,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:8cdff74ccedfaa101887749bb009cd93eaf3910f13bd23750dc5d1c0105fbc3a",
-      "metadata_digest": "sha256:702829c8ad5a8d92b482ac96a4cef185d695d6f44f75f1870ad244ee1c491089",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:702829c8ad5a8d92b482ac96a4cef185d695d6f44f75f1870ad244ee1c491089"
     },
     {
       "capability": "get_equity_quotes",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_quotes",
       "description": "Get real-time stock quotes and the official last-completed-session close for one or more symbols.",
       "input_schema": {
@@ -4882,13 +4889,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:bac99897df30d17e8510ea9c5978be038325326e8ba005383a6a64a962d138b6",
-      "metadata_digest": "sha256:a70382f674775248abfdde253ad10aef018d20bca9bae84a138b55346ee710a5",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:a70382f674775248abfdde253ad10aef018d20bca9bae84a138b55346ee710a5"
     },
     {
       "capability": "get_equity_tax_lots",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_tax_lots",
       "description": "List the open tax lots for one equity holding in an account — each lot is a separate acquisition with its own quantity, cost basis, acquisition date, and long/short-term status. Requires a symbol (tax lots are tracked per instrument). Use it for cost-basis, holding-period, or which-lots-would-sell questions.",
       "input_schema": {
@@ -5018,13 +5025,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:5a52bbe92edefc0e60de11ec2636e26ed64b167651af6868edeccbe57ace7a1a",
-      "metadata_digest": "sha256:c3918eb52e731a4dbb64b4f5842b533f421264ed63abcd72d408cbaf96224d39",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:c3918eb52e731a4dbb64b4f5842b533f421264ed63abcd72d408cbaf96224d39"
     },
     {
       "capability": "get_equity_technical_indicators",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_technical_indicators",
       "description": "Compute a technical indicator (RSI, MACD, Bollinger Bands, moving averages, ATR, VWAP, and more) over one equity symbol's OHLCV bars across a time range. For the raw OHLCV bars themselves, use get_equity_historicals.\n\nParameter rules:\n- The parameters an indicator accepts depend on type:\n  - period only: ema/sma (default 9); rsi/cci/atr/mfi (default 14); williams_r/adx (default 10); momentum (default 12); roc (default 14); donchian_channels (default 20).\n  - bollinger_bands: period (default 20) + num_std (default 2).\n  - macd: fast_period (12), slow_period (26), signal_period (9).\n  - keltner_channels: period (default 20) + multiplier (default 2).\n  - supertrend: period (default 10) + multiplier (default 3).\n  - pivot_points: method (only 'classic').\n  - vwap, obv: no parameters.\n  Omit a parameter to use its default. Passing a parameter the chosen type does not accept is rejected.\n- interval is REQUIRED — indicator periods are counted in bars, so there is no auto-selection.\n- adjustment_type defaults to 'split'; 'all' (split + dividend) requires a day-or-coarser interval.\n- If the requested range plus the indicator's warm-up exceeds the per-request bar cap, narrow the range or coarsen the interval.",
       "input_schema": {
@@ -5212,13 +5219,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:9b30ea9392a2b36970a859b0dafdbbf15e506251711ae113f84f0a437ba77b57",
-      "metadata_digest": "sha256:c8cb0106e4dbb31838b8dd61c32daa83210fdfed0232263db1c6255248373a32",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:c8cb0106e4dbb31838b8dd61c32daa83210fdfed0232263db1c6255248373a32"
     },
     {
       "capability": "get_equity_tradability",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_equity_tradability",
       "description": "Check tradability for up to 10 equity symbols on a given account: per-session eligibility and fractional. Call before placing an order to surface restrictions. Exact-ticker match — no name or partial-ticker resolution.",
       "input_schema": {
@@ -5396,13 +5403,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:bc4532cccba2350409d46e4b884512207c2c4810a2d64b665d2385de8bd31265",
-      "metadata_digest": "sha256:2893d676f4b994b3e303160afaa19d6218363b05d963b9a0d2085f03820511ea",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:2893d676f4b994b3e303160afaa19d6218363b05d963b9a0d2085f03820511ea"
     },
     {
       "capability": "get_financials",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_financials",
       "description": "Get a company's reported financial metrics over time — revenue, gross profit, net income, and net margin — by fiscal period (annual or quarterly), for one or more symbols. Use this for fundamental analysis like revenue-growth and margin-trend tracking, profitability screens, and period-over-period comparisons. Read-only.",
       "input_schema": {
@@ -5557,13 +5564,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:e03a274a79f36d541013fbbc48c3716694665113f90c139d01fc3d45ca7b57a8",
-      "metadata_digest": "sha256:632805c61bd1ad99b830ceddd297a963a3c8b82c7ae378df3c2cb1f2157a5517",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:632805c61bd1ad99b830ceddd297a963a3c8b82c7ae378df3c2cb1f2157a5517"
     },
     {
       "capability": "get_index_historicals",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_index_historicals",
       "description": "Get OHLC value bars for one or more market indexes (by instrument UUID) across an explicit time range. Use this for charting an index's history and \"recent movement\" questions. If the bar's interpolated field is true, bar was synthesized to fill a gap and carry no new information.\n\nParameter rules:\n- instrument_ids are index instrument UUIDs from get_indexes. Resolve symbols there first; this tool does not accept ticker symbols.\n- interval is required; pick the coarsest interval that answers the question. If the requested interval would produce too many bars for the range, the call is rejected — narrow the range or coarsen the interval.",
       "input_schema": {
@@ -5746,13 +5753,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:3b03c9c332ae39bead63ce55f004595a63ab77a8937e9e09e1c44a6bf8ef73ec",
-      "metadata_digest": "sha256:36c7d3c0ad88e0d325611a240bf4f2e964d4842eebfac058c0a2fa8aad1a5436",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:36c7d3c0ad88e0d325611a240bf4f2e964d4842eebfac058c0a2fa8aad1a5436"
     },
     {
       "capability": "get_index_quotes",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_index_quotes",
       "description": "Get real-time values for one or more market indexes by instrument ID. Returns current index level, state, and timestamps.",
       "input_schema": {
@@ -5883,13 +5890,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:fcb07859f0495652b435d79426c38b1cbb249e5c830d65d82776be0b91b7aad0",
-      "metadata_digest": "sha256:45b546064717fa2b2f9cf24d6d20043df856cab134fee596e08a9b2502857aaf",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:45b546064717fa2b2f9cf24d6d20043df856cab134fee596e08a9b2502857aaf"
     },
     {
       "capability": "get_indexes",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_indexes",
       "description": "Get index data for market indexes by symbol.\nOptionally pass a comma-separated list of symbols (e.g. 'SPX,NDX,DJI') to filter results. Omit symbols to return all available indexes.",
       "input_schema": {
@@ -6011,13 +6018,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:dcd39e8548cc280a892e5d07637d262b95662084bb25831e9553d866923b5d15",
-      "metadata_digest": "sha256:00fb90991964b51ce4ce3e392d2d9f80b9dc93d329df2d2584143ae47bc3d3f1",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:00fb90991964b51ce4ce3e392d2d9f80b9dc93d329df2d2584143ae47bc3d3f1"
     },
     {
       "capability": "get_limited_margin_upgrade_info",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns limited-margin eligibility and the links that start the upgrade flow; invoking it changes no provider state, because the upgrade happens only if a human completes Robinhood's own flow. Same shape and same treatment as get_option_level_upgrade_info, which gates a higher privilege.",
       "provider_tool_name": "get_limited_margin_upgrade_info",
       "description": "Check whether a cash account is eligible to upgrade to limited margin and return the links (web and mobile) that start the upgrade flow. Limited margin lets the account trade with unsettled funds — proceeds from a sale can go into a new order before that sale settles — while adding no borrowing or leverage. Call when the user asks about that capability, about trading with unsettled funds, or about enabling limited margin.",
       "input_schema": {
@@ -6087,13 +6094,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:c143382ccdfa261076221591ea25b7710b495be294be7f3eea6e4691fe9c40e6",
-      "metadata_digest": "sha256:585e55fdb1a7a15d4bf418c1763598c5a0a4fe7bc8fad406c8a1377493f38693",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns limited-margin eligibility and the links that start the upgrade flow; invoking it changes no provider state, because the upgrade happens only if a human completes Robinhood's own flow. Same shape and same treatment as get_option_level_upgrade_info, which gates a higher privilege."
+      "metadata_digest": "sha256:585e55fdb1a7a15d4bf418c1763598c5a0a4fe7bc8fad406c8a1377493f38693"
     },
     {
       "capability": "get_option_chains",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_option_chains",
       "description": "List option chains for one or more underlyings. A chain describes the full set of expiration dates and contracts for a given underlying. One of underlying_symbol or ids is required.",
       "input_schema": {
@@ -6266,13 +6273,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:0d11f4708830f7837c8e74176a07666bc09322c3007c35f7ff3b5e5a0a738a6c",
-      "metadata_digest": "sha256:0cfaf241c738054256a4b7cd6e609cdc5c5390dd8261d8ca4ca3981c11040681",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:0cfaf241c738054256a4b7cd6e609cdc5c5390dd8261d8ca4ca3981c11040681"
     },
     {
       "capability": "get_option_historicals",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_option_historicals",
       "description": "Get OHLC price bars for one or more option contracts (by instrument UUID) across an explicit time range. Use this for charting an option's price history and \"recent activity\" questions. The server auto-selects an interval when one is not provided. If the bar's interpolated field is true, bar was synthesized to fill a gap and carry no new information.\n\nParameter rules:\n- instrument_ids are option contract UUIDs from get_option_instruments. Resolve underlying -> get_option_chains -> get_option_instruments first; this tool does not accept ticker symbols.\n- interval is optional; when omitted the server auto-selects an interval that targets a bounded bar count across the range. Provide an explicit interval only when you need a specific granularity.\n- bounds defaults to 'regular' (regular hours). Use '24_5'/'24_7' only when the user explicitly asks about extended-hours or overnight option activity.\n- If an explicitly requested interval would produce more bars than the upstream allows for the range, the call is rejected — narrow the range or coarsen the interval. The cap does not apply when interval is auto-selected.",
       "input_schema": {
@@ -6445,13 +6452,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:11ceed9fc88534ce4f47a84c33f3ec5ffce8a333176384fbe111417d35423911",
-      "metadata_digest": "sha256:b629c76e12c8af907d8ad124ea373613489effaf829717bb258f95c8d1fb29c6",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:b629c76e12c8af907d8ad124ea373613489effaf829717bb258f95c8d1fb29c6"
     },
     {
       "capability": "get_option_instruments",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_option_instruments",
       "description": "List option contracts. One of chain_symbol, chain_id, or ids is required; narrow further with expiration_dates, strike_price, type, state. When looking up contracts for a specific expiration, call this in parallel for every chain whose expiration_dates (from get_option_chains) includes the date. For AM/PM/morning/evening preferences, first check settle_on_open on each chain via get_option_chains and only query matching chains.",
       "input_schema": {
@@ -6626,13 +6633,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:13c9553efe876a5fda966b9f3410c9497c523cf0ee695d999cf163e3cd8031ad",
-      "metadata_digest": "sha256:c8f2cdbf06fb8fa72225cef32abacdee3b49db8b52d0c46f23f86bf7ca0ef328",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:c8f2cdbf06fb8fa72225cef32abacdee3b49db8b52d0c46f23f86bf7ca0ef328"
     },
     {
       "capability": "get_option_level_upgrade_info",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_option_level_upgrade_info",
       "description": "Get the upgrade URL to apply for — or raise — options access on an account. The returned link routes the customer into the correct application for their target tier, including upgrading an existing option_level_2 account to option_level_3. Call when the user requests an options level their account doesn't yet have: option_level_2 enables long calls/puts, covered calls, and cash-secured puts; option_level_3 adds spreads and other multi-leg/complex strategies. option_level_3 additionally requires a margin or limited-margin account. If the account type is cash, do NOT call this tool for an L3 request — the customer must first switch to a margin/limited-margin account via get_limited_margin_upgrade_info, then re-fetch get_accounts; call this tool for L3 only once the account type is margin or limited margin. option_level_2 has no account-type requirement and is available on cash accounts. Map the user's requested strategy to its required level and call this tool if the account is below it — null/empty/option_level_0 for any options, or option_level_2 for an L3-only strategy such as a spread. Do NOT call when the account already has the required level or higher.",
       "input_schema": {
@@ -6685,13 +6692,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:636fd23dc3f09c593e02cb9f57fa9fb5c6a019ec1f82f80b692b38f7af930865",
-      "metadata_digest": "sha256:e7a5a5fe1d97e72fe1145d9c1a135026e2616f5db625be6d1a145649132ed58e",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:e7a5a5fe1d97e72fe1145d9c1a135026e2616f5db625be6d1a145649132ed58e"
     },
     {
       "capability": "get_option_orders",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_option_orders",
       "description": "Fetch options orders for an account — list mode (newest first; open and closed, including fills, cancellations, and rejections) or single-order mode by passing order_id. When the user asks broadly for \"orders\" or \"my orders\" without naming an asset class or order type, call get_equity_orders, get_option_orders, get_crypto_orders, and get_advanced_orders in parallel so OCO groups are not omitted.\n\nFiltering tips:\n- Prefer narrow queries: combine state and/or created_at_gte for specific questions — the per-page cap is fixed.\n- chain_ids filters by underlying chain UUID (from get_option_chains).\n- created_at_gte: interpret relative times in the user's timezone, convert to UTC before sending.",
       "input_schema": {
@@ -7025,13 +7032,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:5f0b7c65a4c42105911e951d0aec0a9f98c0f978df4d6171ba13b67cb7815acd",
-      "metadata_digest": "sha256:d408d16860a0ef72a788d8282dd0d03fcf1aca6e8bd7414f6b56d389b1f1a13e",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:d408d16860a0ef72a788d8282dd0d03fcf1aca6e8bd7414f6b56d389b1f1a13e"
     },
     {
       "capability": "get_option_positions",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_option_positions",
       "description": "List options positions for an account. Returns open and closed (zero-quantity) positions. Pass nonzero=true for \"what options do I have\" / \"show me my positions\" — the common case.",
       "input_schema": {
@@ -7212,13 +7219,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:a2b140a9410be8fff84383eb74974e0cd6958b09736242219c4d21e001316af6",
-      "metadata_digest": "sha256:58341cf752956ddf3dbde5e527fef0108ef38abfdb2c42458722ffa7bbd77356",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:58341cf752956ddf3dbde5e527fef0108ef38abfdb2c42458722ffa7bbd77356"
     },
     {
       "capability": "get_option_quotes",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_option_quotes",
       "description": "Get real-time quotes for one or more option contracts by instrument UUID, plus the official prior-session close for each.",
       "input_schema": {
@@ -7506,13 +7513,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:b17f30cd887b38812890c58d09b46168266c2a334ae61d466cdce899b32d4bff",
-      "metadata_digest": "sha256:d179387207425b48dc1e2c141cb883806bdc70aaf0a3e49fd60b6e442bbb5be3",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:d179387207425b48dc1e2c141cb883806bdc70aaf0a3e49fd60b6e442bbb5be3"
     },
     {
       "capability": "get_option_watchlist",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_option_watchlist",
       "description": "List the single-leg option contracts on the user's options watchlist. Use this instead of get_watchlist_items for the options watchlist — get_watchlist_items returns a generic shape that drops the option-specific title and the upstream rejects it with 400 anyway. Works for both equity options (AAPL, NVDA) and index options (SPX, NDX, RUT). Multi-leg strategies (verticals, condors, etc.) that may exist in the user's watchlist from app-side order placement are not shown — direct the user to the Robinhood app to view those.",
       "input_schema": {
@@ -7607,13 +7614,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:606c1b7819e1739b8315186f2a99828e94fcedc85692771998cf929df87408da",
-      "metadata_digest": "sha256:7c9d62afa112640803105060c6c2a9429f56746ca27fca4147fab7d9e23f17cd",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:7c9d62afa112640803105060c6c2a9429f56746ca27fca4147fab7d9e23f17cd"
     },
     {
       "capability": "get_pnl_trade_history",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_pnl_trade_history",
       "description": "Get a customer's per-trade realized profit & loss — a chronological, paginated list of closed/realizing trades (equities, options, crypto, prediction markets) with symbol, side, quantity, price, and realized gain/loss. This is the same data behind the app's PnL hub (\"Realized profit & loss\"). Read-only. Trades only. Use get_realized_pnl for aggregate/bucketed totals.",
       "input_schema": {
@@ -7729,13 +7736,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:5f4bca449a68dd1d749d81516a4ff9944ab98b3e1d221abc84128c95d88666de",
-      "metadata_digest": "sha256:87e31a0faf3c45537fbdd0c58ff1746cd3ea19bca81205bf8ce98956f5b9be57",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:87e31a0faf3c45537fbdd0c58ff1746cd3ea19bca81205bf8ce98956f5b9be57"
     },
     {
       "capability": "get_politician_trades",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped public-official transaction data newly observed on 2026-09-30. It remains default-denied until a consumer defines bounded inputs, a privacy-safe normalized projection, provenance handling, and tests; discovery alone grants no authority.",
       "provider_tool_name": "get_politician_trades",
       "description": "Get disclosed trading activity of US politicians from Tip Ranks. Use when the user asks about politician/congressional trades - either for a specific stock (\"which politicians traded NVDA?\") or a specific politician. Data comes from public STOCK Act disclosures; amounts are ranges, not exact values, and disclosures lag the actual trade by up to 45 days.",
       "input_schema": {
@@ -7868,13 +7875,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:6e3aa6074539ce08ef859144e21b1651bdac79a6752c8398a89794a90eb8dac3",
-      "metadata_digest": "sha256:f4a2e8bb5a64cf5ac726a53734d35acca24d0da12749cc8279093e4e1ae70f04",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Read-shaped public-official transaction data newly observed on 2026-09-30. It remains default-denied until a consumer defines bounded inputs, a privacy-safe normalized projection, provenance handling, and tests; discovery alone grants no authority."
+      "metadata_digest": "sha256:f4a2e8bb5a64cf5ac726a53734d35acca24d0da12749cc8279093e4e1ae70f04"
     },
     {
       "capability": "get_popular_watchlists",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_popular_watchlists",
       "description": "Discover Robinhood-curated lists the user can follow (e.g. '100 Most Popular', 'Daily Movers'). Use to find a list_id, then pass it to follow_watchlist.",
       "input_schema": {
@@ -7946,13 +7953,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:a2dd42e2f718fa568dea1710f3a74c39a540110c7dd53b22fabf1b7e95729c2f",
-      "metadata_digest": "sha256:993d0dd3754342f5f1d39e518243ac80ed8b24e2edec18c6c42a15b392cc820c",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:993d0dd3754342f5f1d39e518243ac80ed8b24e2edec18c6c42a15b392cc820c"
     },
     {
       "capability": "get_portfolio",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_portfolio",
       "description": "Get the account's portfolio market value breakdown by asset type and buying power. Use for \"how much is my account worth?\", \"what's my portfolio breakdown?\", \"how much do I have in options?\", and \"how much can I spend / afford?\" questions.",
       "input_schema": {
@@ -8109,13 +8116,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:e3930dacda466c192c2f9972f43fc3901f24e1eee44979826d8ab0f91199db48",
-      "metadata_digest": "sha256:f0c33fedf421d77adb0347e02b0f5ff2abce4008b80d3823aad51bfc9a949f62",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:f0c33fedf421d77adb0347e02b0f5ff2abce4008b80d3823aad51bfc9a949f62"
     },
     {
       "capability": "get_realized_pnl",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_realized_pnl",
       "description": "Get a customer's realized profit & loss for an account over a time window — per-bucket realized gain ($ and %) and the number of closing trades, plus window totals. Read-only. Aggregate, bucketed numbers only (not individual trades). Use for post-trade analysis like \"how did my last 90 days of trades do?\".",
       "input_schema": {
@@ -8262,13 +8269,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:1bb5ecc71a01c408ed7eb64afad70ff747031b1d76de3a72c6bafdfd2b72bdbf",
-      "metadata_digest": "sha256:11cefedcd735ed22eecc3dd6138645bde71c164676192fc6a9cb6a982ffe62e4",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:11cefedcd735ed22eecc3dd6138645bde71c164676192fc6a9cb6a982ffe62e4"
     },
     {
       "capability": "get_scanner_datapoints",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped scanner reference data newly observed on 2026-09-30. It remains default-denied until a consumer defines bounded inputs, a normalized projection, and schema-drift tests; discovery alone grants no authority.",
       "provider_tool_name": "get_scanner_datapoints",
       "description": "List the market-data datapoints available for building raw expressions: functions (with signatures) and fields, each with a category and description. Expressions serve two purposes — filters (screen on the expression's value) and columns (display it in results) — on preview_scan, create_scan and update_scan_config. Call this before constructing one; do not guess datapoint names or signatures.\n\nFor filters, use expressions only for screens no enum filter covers: check get_scanner_filter_specs first, and prefer an enum filter_type whenever one fits. For columns, a standard column referenced by display_name alone needs no expression at all.\n\nScoping a scan to a set of instruments is done here, not with an enum filter: the descriptive category's symbol field restricts a scan to named tickers or to an index's members. See the guide for the exact predicates.\n\nRequires a category, since the full catalog is too large to return at once. Pass \"technical\", \"price_volume\", \"fundamental\", \"options\", \"volatility\", \"quote\" or \"descriptive\"; the response lists every category with a description so you can pick a different one if needed.",
       "input_schema": {
@@ -8453,13 +8460,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:4deb2f84ffd88ea8403ead9d11d8894832e451bb419f4b2bacb4538ac07b2ea1",
-      "metadata_digest": "sha256:9311b414838db7873d5c7e3caa92cbc78706af82658854e0e71c9cf56c4ebb89",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Read-shaped scanner reference data newly observed on 2026-09-30. It remains default-denied until a consumer defines bounded inputs, a normalized projection, and schema-drift tests; discovery alone grants no authority."
+      "metadata_digest": "sha256:9311b414838db7873d5c7e3caa92cbc78706af82658854e0e71c9cf56c4ebb89"
     },
     {
       "capability": "get_scanner_filter_specs",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_scanner_filter_specs",
       "description": "List every valid scanner filter type and how to use it. Call this before constructing filters for create_scan or update_scan_filters — do not guess filter_type names.\n\nThis tool takes no parameters.",
       "input_schema": {
@@ -8587,13 +8594,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:9bb11bd386ccd7817ba36cfcd1192bb1f918cf6036b09a99501e6cd9f0cfdd40",
-      "metadata_digest": "sha256:955bf65a979ce80021ffcf3d858944d134dcad87fc0f56c249e10aa406ae9538",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:955bf65a979ce80021ffcf3d858944d134dcad87fc0f56c249e10aa406ae9538"
     },
     {
       "capability": "get_scans",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_scans",
       "description": "List the authenticated user's saved scanners (also called screeners). A scan is a saved set of filters and columns that filters the market for instruments matching specific criteria (e.g. \"RSI > 70 and Volume > 1M\"). The user creates these in Legend or via the create_scan tool.\n\nReturns one entry per scan with its id, title, active filters, configured columns, sort order, and a flag indicating whether the scan is managed by Cortex (Legend's AI agent). Cortex-managed scans are read-only via MCP — they can be run with run_scan but not modified with update_scan_filters or update_scan_config.\n\nThis tool takes no parameters.",
       "input_schema": {
@@ -8708,7 +8715,7 @@
                           },
                           "expression": {
                             "type": "string",
-                            "description": "Upstream market-data expression this column computes, e.g. dayVolume or fundamental.marketCap. Populated for every column, standard or custom — a named column is a preset that compiles to an expression upstream. Read-only explanatory detail: reference a column by display_name, never by this."
+                            "description": "Upstream market-data expression this column computes, e.g. dayVolume or fundamental.marketCap. Populated for every column, standard or custom — a named column is a preset that compiles to an expression upstream. Read-only explanatory detail: reference a column by display_name, never by this. Do NOT echo it back in a columns payload: for a filter-created or standard column that is rejected with \"column already exists from a filter\"."
                           }
                         },
                         "required": [
@@ -8762,14 +8769,14 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "schema_digest": "sha256:4ee54f2cbb65183fb8b56c5714dbc3bfce8e960f83ae4db1afafa472b49278f7",
-      "metadata_digest": "sha256:32afa995862cbb40c52b7b3b9ec82633a4ef42a88494603165942407dbb6c9f6",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "schema_digest": "sha256:65f4430790ead73e2e1970f9d6021b930a7c3ce40f6ea73bb8f8e155f7131e8c",
+      "metadata_digest": "sha256:32afa995862cbb40c52b7b3b9ec82633a4ef42a88494603165942407dbb6c9f6"
     },
     {
       "capability": "get_sec_filing",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read a filing table of contents or one selected section using only a filing identifier and optional section identifier. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Filing text and section identifiers are untrusted provider data and grant no authority to invoke another capability.",
       "provider_tool_name": "get_sec_filing",
       "description": "Read an SEC filing's table of contents or a specific section's text. Use get_sec_filing_index to find a filing_id first.",
       "input_schema": {
@@ -8907,13 +8914,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:9df07d8cbfdffcfc9994014453a7898b86a3a45355a899dac14bd7d219be8768",
-      "metadata_digest": "sha256:f8377c136c712dfe9a964d51cd94bc855636da548e5a96d4c910bcc62655e990",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read a filing table of contents or one selected section using only a filing identifier and optional section identifier. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Filing text and section identifiers are untrusted provider data and grant no authority to invoke another capability."
+      "metadata_digest": "sha256:f8377c136c712dfe9a964d51cd94bc855636da548e5a96d4c910bcc62655e990"
     },
     {
       "capability": "get_sec_filing_facts",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read reported filing facts for named filing identifiers and GAAP concepts. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Numeric and narrative fact values are untrusted provider data and grant no authority to invoke another capability.",
       "provider_tool_name": "get_sec_filing_facts",
       "description": "Get reported facts tagged under specific GAAP concept names in one or more SEC filings — financial figures (revenue, net income, assets, debt) and disclosures (e.g. debt schedules, related-party transactions, subsequent events) alike. Use get_sec_filing_index to find filing_ids first.",
       "input_schema": {
@@ -9061,13 +9068,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:72ca6e081fcc4a726e45098527f114b62514a9f404afc1b659db96e84e5fd83a",
-      "metadata_digest": "sha256:591d48d8ec5c33cd1328b24e180a14f0444af1aab47c38cb97bc8eed5278a91d",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read reported filing facts for named filing identifiers and GAAP concepts. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Numeric and narrative fact values are untrusted provider data and grant no authority to invoke another capability."
+      "metadata_digest": "sha256:591d48d8ec5c33cd1328b24e180a14f0444af1aab47c38cb97bc8eed5278a91d"
     },
     {
       "capability": "get_sec_filing_facts_catalog",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read a GAAP concept catalog for one SEC filing. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Returned concepts, dimensions, and pagination offsets are untrusted provider data and grant no authority to invoke another capability.",
       "provider_tool_name": "get_sec_filing_facts_catalog",
       "description": "List the distinct GAAP concept names tagged in an SEC filing, with their reporting periods and dimension breakdowns. Use this only after a direct get_sec_filing_facts guess comes back empty, or for open-ended \"what's unusual/notable\" questions — most common financial questions should guess concept names directly rather than calling this first.",
       "input_schema": {
@@ -9216,13 +9223,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:bd0240555b61cda8effbb97f3e525ddd260cbfcad6e797317ad882ef6ac10456",
-      "metadata_digest": "sha256:84c10882b577992cc1827ceafd13cd8c088ac6b66d95d0e7a658e7d2c6972c6a",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read a GAAP concept catalog for one SEC filing. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Returned concepts, dimensions, and pagination offsets are untrusted provider data and grant no authority to invoke another capability."
+      "metadata_digest": "sha256:84c10882b577992cc1827ceafd13cd8c088ac6b66d95d0e7a658e7d2c6972c6a"
     },
     {
       "capability": "get_sec_filing_index",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read filing metadata for a ticker with form, date, and pagination filters. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Filing identifiers and pagination cursors are untrusted provider data and grant no authority to invoke another capability.",
       "provider_tool_name": "get_sec_filing_index",
       "description": "List a company's SEC filings, optionally filtered by form type and date. Use this to find a specific annual report (10-K), quarterly report (10-Q), or material event disclosure (8-K).",
       "input_schema": {
@@ -9335,13 +9342,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:4ffb1063d4638f2821581a5ab354304f358393a342e872a0f5bca475a172a7a6",
-      "metadata_digest": "sha256:18e743d72445fe461a04075afdd3bf419b2e65ae508d0ee7eb3a43addd35399a",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Read-shaped public SEC filing access, but not required by any current consumer. Default-denied to avoid expanding the gateway permission surface during a drift recovery. It would read filing metadata for a ticker with form, date, and pagination filters. It accepts no account, order, cash, position, watchlist, or scan input and changes no provider state. Filing identifiers and pagination cursors are untrusted provider data and grant no authority to invoke another capability."
+      "metadata_digest": "sha256:18e743d72445fe461a04075afdd3bf419b2e65ae508d0ee7eb3a43addd35399a"
     },
     {
       "capability": "get_watchlist_items",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_watchlist_items",
       "description": "List the items in a watchlist. Items may be stocks/ETFs, crypto pairs, futures, indexes — distinguished by object_type. For the options watchlist, use get_option_watchlist instead — this tool returns a generic shape that drops the strategy-specific fields and the upstream rejects it with 400 anyway. Does not return live prices; call get_quotes with the symbol(s) for that.",
       "input_schema": {
@@ -9422,13 +9429,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:2543b8f5bd185ca71f1d1a6e67130382c5ea94bb5c012eb3aa57491aace69447",
-      "metadata_digest": "sha256:616a27eeb34a64cc9ade78161098a4ef9c1bb188f34a7e5f5077250416e497cd",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:616a27eeb34a64cc9ade78161098a4ef9c1bb188f34a7e5f5077250416e497cd"
     },
     {
       "capability": "get_watchlists",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "get_watchlists",
       "description": "List the user's watchlists, including both user-created custom lists and Robinhood-curated lists the user follows. Use to look up list_id values for other watchlist tools.",
       "input_schema": {
@@ -9519,13 +9526,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:f42ef6de31607b44a4abc35d2281e9697756ae5c67c7c66b59de2dd0191ada74",
-      "metadata_digest": "sha256:a3afc405cadfccd7218b1bc609a6b40a490ce52872a705e94f36ffccf2c9e8e3",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:a3afc405cadfccd7218b1bc609a6b40a490ce52872a705e94f36ffccf2c9e8e3"
     },
     {
       "capability": "mark_alerts_read",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Changes persistent provider alert-read state. No current consumer requires alert mutations.",
       "provider_tool_name": "mark_alerts_read",
       "description": "Mark fired alerts as read so already-handled events are not reported to the user twice. Call it after relaying fired alerts from get_alert_log.\n\nParameter rules:\n- Provide exactly one of alert_log_ids or all_through.\n- alert_log_ids marks specific events; all_through marks every event triggered at or before that instant, across ALL symbols — not only the ones just discussed.",
       "input_schema": {
@@ -9587,13 +9594,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:85e97e339acae21502522be4b96bc8158d4f21569879dfcc9b58f09cd8fcdd5e",
-      "metadata_digest": "sha256:757722d501a761a75ce83ed030e3ef1e891fc00ee96ed33ebd9a316fe1ef1db9",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Changes persistent provider alert-read state. No current consumer requires alert mutations."
+      "metadata_digest": "sha256:757722d501a761a75ce83ed030e3ef1e891fc00ee96ed33ebd9a316fe1ef1db9"
     },
     {
       "capability": "place_crypto_order",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Places a live crypto order and can move funds. Trading operations are denied.",
       "provider_tool_name": "place_crypto_order",
       "description": "Place a real crypto order with real money. Parameters mirror preview_crypto_order plus the optional ref_id. Requires an agentic-enabled crypto account.\n\nIdempotency: pass a fresh UUID as ref_id on the first call for each logical order, and re-send the SAME ref_id on retries of transient failures. Use a new ref_id only when the user wants a new order.\n\nParameter rules:\n- Provide exactly one of quantity or dollar_amount; dollar_amount works with every type.\n- limit_price is required for limit and stop_limit; stop_price is required for stop_loss and stop_limit.\n- symbol is resolved to a currency pair before placement; pass a bare asset symbol (e.g. 'BTC') or a pair ('BTC-USD').",
       "input_schema": {
@@ -10150,13 +10157,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:a66632dd0687f0846ebd0ed520b27a5538d32cacb66fb56bc465e0bd1b0883fc",
-      "metadata_digest": "sha256:3673eab1a71e20dfad998a7b64c9fd86b097f779a611e227c454cca7437cb80c",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Places a live crypto order and can move funds. Trading operations are denied."
+      "metadata_digest": "sha256:3673eab1a71e20dfad998a7b64c9fd86b097f779a611e227c454cca7437cb80c"
     },
     {
       "capability": "place_equity_order",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading.",
       "provider_tool_name": "place_equity_order",
       "description": "Place a real equity order with real money. Parameters mirror review_equity_order plus the optional ref_id. Requires an agentic_allowed=true account; non-agentic accounts are rejected — do not call.\n\nIdempotency: pass a fresh UUID as ref_id on the first call for each logical order, and re-send the SAME ref_id on retries of transient transport failures. Use a new ref_id only when the user wants a new order.\n\nParameter rules:\n- If the user has not specified type, ask. For immediate fills with price protection, prefer a marketable limit at the current ask over a plain market.\n- Outside regular hours, only limit orders execute. For an immediate fill during extended or overnight/24-hour sessions, place a limit order (a marketable limit at the current ask) with market_hours set to that session — not a market order. Market and stop orders are regular_hours-only; placed after hours as regular_hours they queue for the next regular open.\n- Provide exactly one of quantity or dollar_amount, and take the value from the user — if they did not say how much, ask. Never substitute a default such as 1 share or $100. dollar_amount requires type=market (server computes shares from last_trade_price).\n- Fractional shares: only on type=market with market_hours=regular_hours, eligible accounts, up to 6 decimal places, no short sells.\n- limit_price required for limit/stop_limit; stop_price required for stop_market/stop_limit.\n- Fractional and dollar-based orders only place in regular_hours; the tool rejects them in other sessions.\n- tax_lots (specified-lot selling, sell only): to sell specific lots, first call get_equity_tax_lots for the symbol, then pass tax_lots as {open_lot_id, quantity} pairs whose quantities sum to the order quantity. Omit for default (FIFO) cost basis. US accounts only; not allowed with dollar_amount, stop orders, all_day_hours, or fractional limit orders.",
       "input_schema": {
@@ -10255,6 +10262,10 @@
                   "id": {
                     "type": "string",
                     "description": "Order UUID; needed by cancel_equity_order."
+                  },
+                  "ref_id": {
+                    "type": "string",
+                    "description": "Idempotency key the order is stored under, unique per account. Usually the ref_id passed to place_equity_order; an order placed through a trade approval carries that approval's id instead. Omitted when the order has none."
                   },
                   "instrument_id": {
                     "type": "string",
@@ -10447,14 +10458,14 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:438e19d4e0e32963db5479020f6d031f41e0f66dafe84aa2c389e1c30dee34a2",
-      "metadata_digest": "sha256:28690c8e7f4c6f4d4dbba4d7ac5247ebb4e609c1af2eaf508ab7ab87fdeb63d9",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "schema_digest": "sha256:28a5d14e739826b93b15694bed33291776a2cdb38041a26c4516e0f8d4281157",
+      "metadata_digest": "sha256:28690c8e7f4c6f4d4dbba4d7ac5247ebb4e609c1af2eaf508ab7ab87fdeb63d9"
     },
     {
       "capability": "place_option_order",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading.",
       "provider_tool_name": "place_option_order",
       "description": "Place a real options order with real money.\n\nCapability: single-leg options orders — Level 2 strategies (covered calls, cash-secured puts, long calls and puts). Multi-leg spreads (Level 3 strategies) are supported on option_level_3 accounts.\n\nAccount requirements: confirm via get_accounts that the chosen account is agentic_allowed=true AND has option_level_2 or option_level_3. If agentic_allowed=false do NOT call. If option_level is empty or option_level_0, do NOT call; follow the get_accounts guide for how to direct the user to enroll.\n\nAlert handling: pre-trade alerts surface only in review_option_order. After the user has acknowledged the reviewed alert, call this tool with the same parameters.\n\nIdempotency: pass a fresh UUID as ref_id on the first call for each logical order, and re-send the SAME ref_id on retries of transient transport failures. Use a new ref_id only when the user wants a new order.\n\nTo find option_id: get_option_chains → get_option_instruments filtered by expiration_date/strike_price/type.\n\nParameter rules:\n- Multi-leg leg layouts — vertical spread: two legs, same expiration, different strikes, opposite sides. Calendar: two legs, same strike, different expirations. Iron condor: four legs, a put spread plus a call spread. Roll: close the leg you hold (position_effect 'close', side opposite the position) plus open the replacement ('open').\n- Get the net price from the user rather than inferring it from individual leg quotes.\n- Multi-leg is not available on cash or retirement accounts through this tool.\n- type: 'limit' (default), 'market', 'stop_limit', 'stop_market'. price for limit/stop_limit; stop_price for stop_market/stop_limit.\n- market, stop_market, and stop_limit are single-leg only. market and stop_market are also regular_hours, GFD only. stop_market is sell-to-close only with stop_price below the current ask.\n\nNot currently supported anywhere (including the Robinhood apps):\n- combo orders. At Robinhood, \"combo\" specifically means a stock-option combo: one option leg paired with 100 shares of the underlying equity. In broader industry use, \"combo\" without qualifier sometimes refers to multi-leg option structures.",
       "input_schema": {
@@ -10813,13 +10824,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:ae446b68187708275ef8e5b19d55c563474bf67be01fe76689e7fc26415093b1",
-      "metadata_digest": "sha256:44e9caef3e23a419dfaa560a14675c1832edd9014d4fa32581b2d041d9a680e9",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Trading surface. Places, cancels, or exercises a real order. Denied by §2 rule 5, which requires a separate client surface, credential namespace, runtime identity and deployment role for trading."
+      "metadata_digest": "sha256:44e9caef3e23a419dfaa560a14675c1832edd9014d4fa32581b2d041d9a680e9"
     },
     {
       "capability": "preview_crypto_order",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Previews a crypto order without mutation, but no current consumer requires this trading workflow; it remains default-denied.",
       "provider_tool_name": "preview_crypto_order",
       "description": "Simulate a crypto order without placing it — returns the transient order shape with the estimated cost/credit and fees resolved, plus any pre-trade validation errors. Call this by default before place_crypto_order unless the user has very explicitly asked to skip the preview. Requires an agentic-enabled crypto account.\n\nParameter rules:\n- Provide exactly one of quantity or dollar_amount; dollar_amount works with every type.\n- limit_price is required for limit and stop_limit; stop_price is required for stop_loss and stop_limit.\n- symbol is resolved to a currency pair before the preview; pass a bare asset symbol (e.g. 'BTC') or a pair ('BTC-USD').",
       "input_schema": {
@@ -11373,13 +11384,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:5d2269f580bb7e0755ee16e06581d7bceb53a5c25218e0604bed5543235023c3",
-      "metadata_digest": "sha256:b72344aad9c434e076157431b23e83c28538e12c7047cffc132d98e261a95061",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Previews a crypto order without mutation, but no current consumer requires this trading workflow; it remains default-denied."
+      "metadata_digest": "sha256:b72344aad9c434e076157431b23e83c28538e12c7047cffc132d98e261a95061"
     },
     {
       "capability": "preview_scan",
+      "disposition": "denied",
+      "mutates": false,
+      "rationale": "Provider-described non-persistent scan preview newly observed on 2026-09-30. It accepts a complete scanner definition and remains default-denied until its input and output boundaries are independently reviewed; discovery alone grants no authority.",
       "provider_tool_name": "preview_scan",
       "description": "Run a filter set against live market data and return the matching instruments WITHOUT saving a scan. Nothing is persisted and no scan_id is returned. A preview behaves exactly like creating a scan with these filters would — same filters, same default columns, same live evaluation — so it is the way to validate a filter set before create_scan or update_scan_filters.\n\nExpression-based filters run here and save through create_scan (update_scan_filters rejects them). An expression filter sets expression (and omits filter_type): either a value expression with a numeric predicate (expression \"dayVolume / volumeAvg(candleCount=30, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\", predicate PREDICATE_GREATER_THAN_OR_EQUAL, values [\"1.5\"]), or a boolean screen carrying the whole comparison inside the expression (expression \"tradeAllDay.price > closeAvg(candleCount=50, candlePeriod=\\\"1d\\\", session=\\\"all\\\")\", predicate PREDICATE_EQUAL, values [\"True\"]). An invalid expression comes back as a validation error from the market-data provider instead of failing a later save.\n\nPrefer an enum filter_type whenever one covers the request — enum filters are pre-validated and render as standard, user-editable filters in Legend. Call get_scanner_filter_specs first; build a raw expression only when no enum filter covers the request.\n\nColumns display values, filters screen. To show a datapoint in results without restricting matches, pass it in columns — never fake it with a no-op filter like \">= 0\", which pollutes the scan's filter list. A column is a display_name plus an expression, or a standard column's display name alone ({\"display_name\": \"Market cap\"}). Scans read best with a few contextual columns supporting the filters (e.g. a put/call screen showing both raw volumes).\n\nParameters:\n- filters (required, non-empty) — the complete filter set to evaluate.\n- columns (optional) — extra result columns on top of the filters' own columns and the standard defaults. Note: an expression matching a standard column's canonical form is shown as that standard column, canonical name included.",
       "input_schema": {
@@ -11456,7 +11467,7 @@
                 },
                 "expression": {
                   "type": "string",
-                  "description": "Raw market-data expression computing the column's value, built from get_scanner_datapoints (same language as expression filters), e.g. \"optionsPutDayVolume / optionsCallDayVolume\". Omit to reference a standard column by display_name alone. If the expression equals a standard column's canonical form, the column is saved as that standard column and display_name is REPLACED by its canonical name (e.g. \"optionsPutDayVolume\" always saves as \"Total put volume\")."
+                  "description": "Raw market-data expression computing the column's value, built from get_scanner_datapoints (same language as expression filters), e.g. \"optionsPutDayVolume / optionsCallDayVolume\". Omit to reference a standard column by display_name alone. Also omit it when display_name matches a column one of this scan's filters already creates: passing both is rejected with \"column already exists from a filter\". The expression get_scans reports on an existing column is read-only explanation, not an input, and echoing it back is the usual cause of that rejection. If the expression equals a standard column's canonical form, the column is saved as that standard column and display_name is REPLACED by its canonical name (e.g. \"optionsPutDayVolume\" always saves as \"Total put volume\")."
                 },
                 "visible": {
                   "type": [
@@ -11480,7 +11491,7 @@
               ],
               "additionalProperties": false
             },
-            "description": "Optional result columns to display on top of what the filters and the standard default columns already show. Each column: display_name plus either an expression (raw market-data expression from get_scanner_datapoints) or nothing (a standard column referenced by name, e.g. \"Market cap\"). Columns display values, filters screen — to show a datapoint without restricting results, add a column here, never a no-op filter (e.g. >= 0)."
+            "description": "Optional result columns to display on top of what the filters and the standard default columns already show. Each column: display_name plus either an expression (raw market-data expression from get_scanner_datapoints) or nothing (a standard column named by display_name; an unknown name is rejected with the full list of valid ones). Columns display values, filters screen — to show a datapoint without restricting results, add a column here, never a no-op filter (e.g. >= 0)."
           }
         },
         "required": [
@@ -11620,7 +11631,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "How to interpret the response:\n- result.total_items and result.results are exactly what a scan saved with these filters would return right now. Results are live; a later run will differ.\n- Nothing was persisted: there is no scan_id, the preview does not appear in get_scans, and there is nothing to clean up.\n- result.filters_applied echoes the filters as parsed: enum filters carry their filter_type_enum; expression filters echo FILTER_TYPE_CUSTOM with the expression.\n- Columns you passed appear as keys in each result row's columns map — under the canonical standard name when an expression matched a standard column's form. An empty cell means the datapoint is undefined for that instrument; the row still matched the filters.\n\nWhen presenting:\n- Render results as a table and state total_items.\n- Make clear this was a preview — nothing was saved. If the user is happy with the results, offer create_scan with the same filters, expressions included: create_scan is the tool that saves them (update_scan_filters does not accept expressions).\n\nError handling:\n- \"expression cannot be combined with filter_type\" / \"FILTER_TYPE_CUSTOM requires an expression\" / \"interval/length/plot are not used with an expression\" → fix the filter shape and retry; these are local checks, no market-data query was spent.\n- A market-data validation error (quotes the rejected expression and the reason, e.g. an unknown function or an out-of-range argument) → fix the expression and preview again. Do not attempt a save until a preview succeeds.\n- Each preview costs the same rate-limit budget as run_scan — fix everything you can between attempts rather than iterating one field at a time."
+            "description": "How to interpret the response:\n- result.total_items and result.results are exactly what a scan saved with these filters would return right now. Results are live; a later run will differ.\n- Nothing was persisted: there is no scan_id, the preview does not appear in get_scans, and there is nothing to clean up.\n- result.filters_applied echoes the filters as parsed: enum filters carry their filter_type_enum; expression filters echo FILTER_TYPE_CUSTOM with the expression.\n- Columns you passed appear as keys in each result row's columns map — under the canonical standard name when an expression matched a standard column's form. An empty cell means the datapoint is undefined for that instrument; the row still matched the filters.\n\nWhen presenting:\n- Render results as a table and state total_items.\n- Make clear this was a preview — nothing was saved. If the user is happy with the results, offer create_scan with the same filters, expressions included: create_scan is the tool that saves them (update_scan_filters does not accept expressions).\n\nError handling:\n- \"expression cannot be combined with filter_type\" / \"FILTER_TYPE_CUSTOM requires an expression\" / \"interval/length/plot are not used with an expression\" → fix the filter shape and retry; these are local checks, no market-data query was spent.\n- A market-data validation error (quotes the rejected expression and the reason, e.g. an unknown function or an out-of-range argument) → fix the expression and preview again. Do not attempt a save until a preview succeeds.\n- \"column X already exists from a filter\" → one of the scan's filters already produces a column with that display name, and an expression was passed for it as well. Re-send that column with NO expression to customize it (visibility, position), or give it a different display_name. Do not drop the filter.\n- \"no standard column is named X\" → the display name is not a standard column and no expression was given. Pick one of the valid names the error lists, or supply an expression from get_scanner_datapoints.\n- Each preview costs the same rate-limit budget as run_scan — fix everything you can between attempts rather than iterating one field at a time."
           }
         },
         "required": [
@@ -11632,14 +11643,14 @@
       "annotations": {
         "readOnlyHint": true
       },
-      "schema_digest": "sha256:163b6011da59dee2db0541cc43741e4e4171f8fa88183a7fad197b6b18dee90d",
-      "metadata_digest": "sha256:cbffc2fd2661369c0e970fdfcccb2ab288f86b8ec59f2d094ba6ed22ab555220",
-      "disposition": "denied",
-      "mutates": false,
-      "rationale": "Provider-described non-persistent scan preview newly observed on 2026-09-30. It accepts a complete scanner definition and remains default-denied until its input and output boundaries are independently reviewed; discovery alone grants no authority."
+      "schema_digest": "sha256:6b37f64f67b1495c763e31b7be91b60ae1365d0451437f7e28a90bbee3791a24",
+      "metadata_digest": "sha256:cbffc2fd2661369c0e970fdfcccb2ab288f86b8ec59f2d094ba6ed22ab555220"
     },
     {
       "capability": "remove_from_watchlist",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Removes symbols from an existing watchlist. Destructive within one list — the removed entries are not recoverable through this surface.",
       "provider_tool_name": "remove_from_watchlist",
       "description": "Remove items from a watchlist. Exactly one of symbols (stocks/ETFs), currency_pair_ids (crypto), or index_ids (market indexes) is required — mutually exclusive. For options use remove_option_from_watchlist. Items not on the list are no-ops (not errors). Confirm with the user before calling.",
       "input_schema": {
@@ -11760,13 +11771,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:f5c33e3b02647910eed125b5a8f819733b7bcd43342e4715e87ce7332c8f9d75",
-      "metadata_digest": "sha256:1e1163c9639d9bd55a01bd19c7e265d94a7630219fa973b274bc38c2155372a4",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Removes symbols from an existing watchlist. Destructive within one list — the removed entries are not recoverable through this surface."
+      "metadata_digest": "sha256:1e1163c9639d9bd55a01bd19c7e265d94a7630219fa973b274bc38c2155372a4"
     },
     {
       "capability": "remove_option_from_watchlist",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Removes option contracts from the options watchlist. Destructive within that list.",
       "provider_tool_name": "remove_option_from_watchlist",
       "description": "Remove option contracts from the user's options watchlist. Specify the same position_type used when the contract was added (defaults to \"long\"). Contracts not on the list are no-ops. Confirm with the user before calling.",
       "input_schema": {
@@ -11848,13 +11859,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:2723927b5a6ae80e2a34dc541fbd9f6be02d6fb17d675d8cf48e9ff2e05a7c63",
-      "metadata_digest": "sha256:25fa2e058b542f2d1e5e2d90d735281583c565f87928928e49839d9f6e0a38b3",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Removes option contracts from the options watchlist. Destructive within that list."
+      "metadata_digest": "sha256:25fa2e058b542f2d1e5e2d90d735281583c565f87928928e49839d9f6e0a38b3"
     },
     {
       "capability": "review_equity_order",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Order simulation. Its input schema is place_equity_order's minus exactly one property, ref_id — the idempotency key — with an identical required set. Allowing it would mean forwarding a complete equity order payload with nothing but the tool name between it and a fill. Flagged mutates=true deliberately: the only evidence it does not write is the provider's own claim, and this entry is denied precisely because that claim is not trusted. Asserting false would put a reviewer's signature on the evidence the denial rejects.",
       "provider_tool_name": "review_equity_order",
       "description": "Simulate a stock order without placing it. Returns the current quote plus pre-trade alerts (buying power, PDT, instrument halt, etc.). Call this by default before place_equity_order unless the user has very explicitly asked to skip review. Requires an agentic_allowed=true account; non-agentic accounts are rejected — do not call.\n\nParameter rules:\n- If the user has not specified type, ask. For immediate fills with price protection, prefer a marketable limit at the current ask over a plain market.\n- Outside regular hours, only limit orders execute. For an immediate fill during extended or overnight/24-hour sessions, place a limit order (a marketable limit at the current ask) with market_hours set to that session — not a market order. Market and stop orders are regular_hours-only; placed after hours as regular_hours they queue for the next regular open.\n- Provide exactly one of quantity or dollar_amount, and take the value from the user — if they did not say how much, ask. Never substitute a default such as 1 share or $100. dollar_amount requires type=market (server computes shares from last_trade_price).\n- Fractional shares: only on type=market with market_hours=regular_hours, eligible accounts, up to 6 decimal places, no short sells.\n- limit_price required for limit/stop_limit; stop_price required for stop_market/stop_limit.\n- Fractional and dollar-based orders only place in regular_hours; the tool rejects them in other sessions.\n- tax_lots (specified-lot selling, sell only): to sell specific lots, first call get_equity_tax_lots for the symbol, then pass tax_lots as {open_lot_id, quantity} pairs whose quantities sum to the order quantity. Omit for default (FIFO) cost basis. US accounts only; not allowed with dollar_amount, stop orders, all_day_hours, or fractional limit orders.",
       "input_schema": {
@@ -12091,13 +12102,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:65924b990a12ce20f88d6c405db3064a38d347e9a20010473f6f9ab848a2ccf4",
-      "metadata_digest": "sha256:98f51f98f15814d6367ffe7ee94ae882856608167fba8169becc85bd1cde3c73",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Order simulation. Its input schema is place_equity_order's minus exactly one property, ref_id — the idempotency key — with an identical required set. Allowing it would mean forwarding a complete equity order payload with nothing but the tool name between it and a fill. Flagged mutates=true deliberately: the only evidence it does not write is the provider's own claim, and this entry is denied precisely because that claim is not trusted. Asserting false would put a reviewer's signature on the evidence the denial rejects."
+      "metadata_digest": "sha256:98f51f98f15814d6367ffe7ee94ae882856608167fba8169becc85bd1cde3c73"
     },
     {
       "capability": "review_option_order",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Order simulation. Its input schema carries every property of place_option_order except ref_id, the idempotency key, with an identical required set; it additionally accepts chain_symbol and underlying_type, which place_option_order does not. So it is not a strict subset — but every field needed to describe a complete option order is present, which is the part that matters. Flagged mutates=true deliberately: the only evidence it does not write is the provider's own claim, and this entry is denied precisely because that claim is not trusted. Asserting false would put a reviewer's signature on the evidence the denial rejects.",
       "provider_tool_name": "review_option_order",
       "description": "Simulate an options order without placing it. Returns the current quote plus pre-trade alerts. Call this by default before place_option_order or replace_option_order unless the user has very explicitly asked to skip review.\n\nCapability: single-leg options orders — Level 2 strategies (covered calls, cash-secured puts, long calls and puts). Multi-leg spreads (Level 3 strategies) are supported on option_level_3 accounts.\n\nAccount requirements: confirm via get_accounts that the chosen account is agentic_allowed=true AND has option_level_2 or option_level_3. If agentic_allowed=false do NOT call. If option_level is empty or option_level_0, do NOT call; follow the get_accounts guide for how to direct the user to enroll.\n\nParameter rules:\n- legs: option_id (from get_option_instruments), side, position_effect, optional ratio_quantity per leg.\n- Multi-leg leg layouts — vertical spread: two legs, same expiration, different strikes, opposite sides. Calendar: two legs, same strike, different expirations. Iron condor: four legs, a put spread plus a call spread. Roll: close the leg you hold (position_effect 'close', side opposite the position) plus open the replacement ('open').\n- Get the net price from the user rather than inferring it from individual leg quotes.\n- Multi-leg is not available on cash or retirement accounts through this tool.\n- type: 'limit' (default), 'market', 'stop_limit', 'stop_market'. If unspecified, ask. price for limit/stop_limit; stop_price for stop_market/stop_limit.\n- market, stop_market, and stop_limit are single-leg only. market and stop_market are also GFD, regular_hours only. stop_market is sell-to-close only with stop_price below the current ask. Non-limit-immediate types are blocked in any extended-hours session.\n- Surface order_checks alerts verbatim — the detail strings carry the actual time/contract/BP values for the user.",
       "input_schema": {
@@ -12734,13 +12745,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:31784a89c6710fe611e3b2caebb8b65d896c6f9cf02891c967d69b4d4620d5fe",
-      "metadata_digest": "sha256:490e42eafab0ac9d20b9d485e15b81caba8c0fa0bbae45115430d8f6b82bbb5d",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Order simulation. Its input schema carries every property of place_option_order except ref_id, the idempotency key, with an identical required set; it additionally accepts chain_symbol and underlying_type, which place_option_order does not. So it is not a strict subset — but every field needed to describe a complete option order is present, which is the part that matters. Flagged mutates=true deliberately: the only evidence it does not write is the provider's own claim, and this entry is denied precisely because that claim is not trusted. Asserting false would put a reviewer's signature on the evidence the denial rejects."
+      "metadata_digest": "sha256:490e42eafab0ac9d20b9d485e15b81caba8c0fa0bbae45115430d8f6b82bbb5d"
     },
     {
       "capability": "run_scan",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "run_scan",
       "description": "Execute a saved scanner (also called screener) and return live market results. A scan's filters are evaluated against current market data at request time — results are real-time, not cached.\n\nReturns the scan's title, the total number of matching instruments, a list of instrument rows (with ticker, instrument_id, type, and one cell per visible column), plus the active sort and filters. The agent should present results as a table and mention this is live data.\n\nParameters:\n- scan_id (required) — the scan identifier from get_scans or create_scan. Returns an error if the scan does not exist or does not belong to the calling user.\n\nUse get_scans first to discover available scan_ids if the user has not specified one.",
       "input_schema": {
@@ -12916,13 +12927,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:6d2a4e180fb839ae2bf3dac3d880bca9a8c42c2b6c2194aa729d71eeb37084a8",
-      "metadata_digest": "sha256:d34285f04983267d7dcb2538b93cece77a259aadd137c42f1baf07bb858d8391",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:d34285f04983267d7dcb2538b93cece77a259aadd137c42f1baf07bb858d8391"
     },
     {
       "capability": "search",
+      "disposition": "allowed",
+      "mutates": false,
+      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state.",
       "provider_tool_name": "search",
       "description": "Resolve a natural-language query to Robinhood instruments (stocks/ETFs), crypto pairs, or market indexes. Use when the user names an asset by name (or partial name) instead of a ticker/pair/index symbol, or when you need an instrument_id / currency-pair UUID / market-index id for a downstream tool. Defaults to instrument search; pass asset_type=\"currency_pair\" for crypto or asset_type=\"market_index\" for indexes (SPX, NDX, DJI, etc.). Instrument results carry symbol + instrument_id (use with get_equity_quotes / get_equity_tradability / place_equity_order or any instrument_id-based tool). Crypto results carry hyphenated symbol (e.g. BTC-USD) + id — the symbol routes to crypto quote/order tools, the id routes to watchlist tools as currency_pair_ids. Market-index results carry symbol + id — pass id to index quote tools for current values, or in the index_ids array of watchlist tools.",
       "input_schema": {
@@ -13069,13 +13080,13 @@
         "readOnlyHint": true
       },
       "schema_digest": "sha256:c5f984e999b94c9c9d2704aa2d54d2e52bd7dda2e99a0af8e0a4953c32bb4663",
-      "metadata_digest": "sha256:658ea39efcde0e7b20bdc089f45c3137361dd6e5ba6e33835f7811c6ef61871a",
-      "disposition": "allowed",
-      "mutates": false,
-      "rationale": "Reviewed read. Returns account, market, or reference data without changing provider state."
+      "metadata_digest": "sha256:658ea39efcde0e7b20bdc089f45c3137361dd6e5ba6e33835f7811c6ef61871a"
     },
     {
       "capability": "unfollow_watchlist",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Unfollows a watchlist. Reverses a follow; does not delete the underlying list.",
       "provider_tool_name": "unfollow_watchlist",
       "description": "Stop following a Robinhood-curated list. The list itself is unchanged — it just no longer appears in the user's watchlists. Confirm with the user before calling.",
       "input_schema": {
@@ -13163,13 +13174,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:c75f7af53b54d19ed6d65eeb37fa2659f7805ca9488135831e79de1bee7ee688",
-      "metadata_digest": "sha256:26c9315ce898735f6810064c90d544ddebc46473b498fd0b481f27279b27fcd5",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Unfollows a watchlist. Reverses a follow; does not delete the underlying list."
+      "metadata_digest": "sha256:26c9315ce898735f6810064c90d544ddebc46473b498fd0b481f27279b27fcd5"
     },
     {
       "capability": "update_alert",
+      "disposition": "denied",
+      "mutates": true,
+      "rationale": "Changes persistent provider alert state. No current consumer requires alert mutations.",
       "provider_tool_name": "update_alert",
       "description": "Change an existing price or indicator alert: enable/disable it, adjust its threshold or indicator settings, or switch its condition within the same family. Confirm the change with the user before calling — this is a real write.\n\nParameter rules:\n- At least one of enabled, condition_type, threshold, or indicator is required; only the fields you send change, the rest keep their stored values.\n- condition_type may only change within the alert's current condition family — e.g. price_above -> price_below, or sma_above -> price_above_sma (both sma family). To change the indicator family or the symbol, create a new alert instead.\n- threshold/indicator rules per condition family match create_alert; conditions comparing price to an indicator line take no threshold.",
       "input_schema": {
@@ -13397,15 +13408,15 @@
       },
       "annotations": {},
       "schema_digest": "sha256:e94c0f6b50a232d7dffbeb1257c091c284d533ab7d9e06294c0ceaf7c2d495bb",
-      "metadata_digest": "sha256:fc9852b69c5dae701ae426d8824ba2245857d0c368668038de5f9ce78ee705f2",
-      "disposition": "denied",
-      "mutates": true,
-      "rationale": "Changes persistent provider alert state. No current consumer requires alert mutations."
+      "metadata_digest": "sha256:fc9852b69c5dae701ae426d8824ba2245857d0c368668038de5f9ce78ee705f2"
     },
     {
       "capability": "update_scan_config",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Changes a saved scan's sort column, sort direction, and extra display columns. `columns` uses REPLACE semantics over the scan's entire extra-column set, so a caller supplying it must supply the full intended set. Only `scan_id` is required. It never trades or moves funds.",
       "provider_tool_name": "update_scan_config",
-      "description": "Change the sort order of a saved scan's results table, and/or replace its extra result columns. The scan's filters are always preserved.\n\nParameters:\n- scan_id (required) — the scan to modify.\n- sorting_column (required unless columns is provided) — display name of the column to sort by. Must match a column on the scan; the error response lists available columns when no match is found.\n- sorting_direction — \"asc\" or \"desc\". Required with sorting_column.\n- columns (optional) — REPLACE the scan's extra result columns (beyond the filters' own columns and the standard defaults). The scan keeps its current filters verbatim and gets a new configuration version — earlier versions are preserved. To add one column, pass the complete intended set (current columns from get_scans plus the new one). Columns display values, filters screen — to show a datapoint without restricting results, this is the tool, never a no-op filter.\n\nRestrictions:\n- Cortex-managed scans (cortex_managed: true in get_scans) are rejected.\n- Omitted/empty columns means sorting-only. To remove every extra column, use create_scan with this scan's scan_id and its current filters.\n- An expression matching a standard column's canonical form is saved as that standard column, canonical name included.\n\nReturns the scan with the changes applied and fresh live results.",
+      "description": "Change the sort order of a saved scan's results table, and/or replace its extra result columns. The scan's filters are always preserved.\n\nParameters:\n- scan_id (required) — the scan to modify.\n- sorting_column (required unless columns is provided) — display name of the column to sort by. Must match a column on the scan; the error response lists available columns when no match is found.\n- sorting_direction — \"asc\" or \"desc\". Required with sorting_column.\n- columns (optional) — REPLACE the scan's extra result columns (beyond the filters' own columns and the standard defaults). The scan keeps its current filters verbatim and gets a new configuration version — earlier versions are preserved. To add one column, pass the complete intended set (current columns from get_scans plus the new one). When re-sending a column the scan already has, send it by display_name ALONE if it comes from one of the scan's filters or is a standard column, and by display_name plus its expression only if it is a column you yourself added with an expression. Do not echo back the expression get_scans reports for a filter-created or standard column: that is rejected with \"column already exists from a filter\". Columns display values, filters screen — to show a datapoint without restricting results, this is the tool, never a no-op filter.\n\nRestrictions:\n- Cortex-managed scans (cortex_managed: true in get_scans) are rejected.\n- Omitted/empty columns means sorting-only. To remove every extra column, use create_scan with this scan's scan_id and its current filters.\n- An expression matching a standard column's canonical form is saved as that standard column, canonical name included.\n\nReturns the scan with the changes applied and fresh live results.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -13435,7 +13446,7 @@
                 },
                 "expression": {
                   "type": "string",
-                  "description": "Raw market-data expression computing the column's value, built from get_scanner_datapoints (same language as expression filters), e.g. \"optionsPutDayVolume / optionsCallDayVolume\". Omit to reference a standard column by display_name alone. If the expression equals a standard column's canonical form, the column is saved as that standard column and display_name is REPLACED by its canonical name (e.g. \"optionsPutDayVolume\" always saves as \"Total put volume\")."
+                  "description": "Raw market-data expression computing the column's value, built from get_scanner_datapoints (same language as expression filters), e.g. \"optionsPutDayVolume / optionsCallDayVolume\". Omit to reference a standard column by display_name alone. Also omit it when display_name matches a column one of this scan's filters already creates: passing both is rejected with \"column already exists from a filter\". The expression get_scans reports on an existing column is read-only explanation, not an input, and echoing it back is the usual cause of that rejection. If the expression equals a standard column's canonical form, the column is saved as that standard column and display_name is REPLACED by its canonical name (e.g. \"optionsPutDayVolume\" always saves as \"Total put volume\")."
                 },
                 "visible": {
                   "type": [
@@ -13459,7 +13470,7 @@
               ],
               "additionalProperties": false
             },
-            "description": "REPLACE the scan's extra result columns (the ones beyond what its filters and the standard defaults contribute): the scan keeps its current filters verbatim and gets a new configuration version whose extra columns are exactly this list. To add one column, read the scan's current columns with get_scans and pass the complete intended set, carrying visible: false for any column get_scans shows as hidden (a hidden extra column re-sent without it becomes visible). Omitted or empty means sorting-only, columns untouched; to remove every extra column, use create_scan with this scan's scan_id and its current filters. Each column: display_name plus either an expression (from get_scanner_datapoints) or nothing (a standard column referenced by name, e.g. \"Market cap\")."
+            "description": "REPLACE the scan's extra result columns (the ones beyond what its filters and the standard defaults contribute): the scan keeps its current filters verbatim and gets a new configuration version whose extra columns are exactly this list. To add one column, read the scan's current columns with get_scans and pass the complete intended set, carrying visible: false for any column get_scans shows as hidden (a hidden extra column re-sent without it becomes visible). Omitted or empty means sorting-only, columns untouched; to remove every extra column, use create_scan with this scan's scan_id and its current filters. Each column: display_name plus either an expression (from get_scanner_datapoints) or nothing (a standard column named by display_name; an unknown name is rejected with the full list of valid ones)."
           }
         },
         "required": [
@@ -13614,7 +13625,7 @@
           },
           "guide": {
             "type": "string",
-            "description": "How to interpret the response:\n- result.sorted_by — the sort in effect (\"Volume desc\" etc.).\n- result.columns — the scan's columns after the change (when columns were passed, verify the intended set landed; expression columns matching a standard column adopt its canonical name).\n- result.results — live results reflecting the change.\n- The change is persisted: subsequent run_scan calls on this scan_id will return rows accordingly.\n\nWhen presenting:\n- Confirm what changed (sort, columns, or both) to the user.\n- Render the results as a table. Eyeball-verify a sort change with the user if they care: the top rows should match the requested direction.\n- Mention that the change is saved for future runs of the scan.\n\nError handling:\n- \"no column named X\" → the requested sorting_column does not match any column. The error message lists available columns — relay them to the user and ask which they meant. When changing columns and sort together, the sort can name one of the new columns; if the sort fails, the columns change has already landed — retry with update_scan_config sorting-only rather than re-sending columns.\n- \"columns[N]: ...\" → column validation failure at index N, nothing was changed.\n- \"no standard column is named X\" → the display name (without expression) isn't a standard column; the error lists valid names. Either pick one or provide an expression.\n- \"created by Cortex\" → the scan is read-only via MCP. Suggest creating a fresh scan via create_scan.\n- \"scan X does not exist or you do not have access\" → bad scan_id. Suggest get_scans."
+            "description": "How to interpret the response:\n- result.sorted_by — the sort in effect (\"Volume desc\" etc.).\n- result.columns — the scan's columns after the change (when columns were passed, verify the intended set landed; expression columns matching a standard column adopt its canonical name).\n- result.results — live results reflecting the change.\n- The change is persisted: subsequent run_scan calls on this scan_id will return rows accordingly.\n\nWhen presenting:\n- Confirm what changed (sort, columns, or both) to the user.\n- Render the results as a table. Eyeball-verify a sort change with the user if they care: the top rows should match the requested direction.\n- Mention that the change is saved for future runs of the scan.\n\nError handling:\n- \"no column named X\" → the requested sorting_column does not match any column. The error message lists available columns — relay them to the user and ask which they meant. When changing columns and sort together, the sort can name one of the new columns; if the sort fails, the columns change has already landed — retry with update_scan_config sorting-only rather than re-sending columns.\n- \"columns[N]: ...\" → column validation failure at index N, nothing was changed.\n- \"no standard column is named X\" → the display name (without expression) isn't a standard column; the error lists valid names. Either pick one or provide an expression.\n- \"column X already exists from a filter\" → one of the scan's filters already produces a column with that display name, and an expression was passed for it as well. Re-send that column with NO expression to customize it (visibility, position), or give it a different display_name. Do not drop the filter.\n- \"created by Cortex\" → the scan is read-only via MCP. Suggest creating a fresh scan via create_scan.\n- \"scan X does not exist or you do not have access\" → bad scan_id. Suggest get_scans."
           }
         },
         "required": [
@@ -13624,14 +13635,14 @@
         "additionalProperties": false
       },
       "annotations": {},
-      "schema_digest": "sha256:1e56e47085a95ad0e55a42a9a3131e9c5d54eda0c6cf3d55a58fb146869fcb58",
-      "metadata_digest": "sha256:53885660d97546020b1d1beb27829b76dc831a7e87c64481f9ea624bb48380a2",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Changes a saved scan's sort column, sort direction, and extra display columns. `columns` uses REPLACE semantics over the scan's entire extra-column set, so a caller supplying it must supply the full intended set. Only `scan_id` is required. It never trades or moves funds."
+      "schema_digest": "sha256:496adbe292caeedde13678cc4cfd53201df9edf710deebf9229b768ca8fb4c2b",
+      "metadata_digest": "sha256:517d9c3d9613d997ea9fb9f9378cadde47a71e2c7f3a29a8a800be51419c768a"
     },
     {
       "capability": "update_scan_filters",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Replaces a saved scan's filter set. REPLACE, not merge — the previous filters are discarded and are not recoverable through this surface. The widest blast radius of the eleven.",
       "provider_tool_name": "update_scan_filters",
       "description": "Replace the filters on an existing saved scan. The complete filter set provided replaces whatever filters the scan had — this is REPLACE semantics, not merge. To add a single filter to an existing scan, the agent must first read the scan (via get_scans or run_scan), then call this tool with all the existing filters plus the new one.\n\nParameters:\n- scan_id (required) — the scan to modify. Get from get_scans or create_scan.\n- filters (required) — the complete new filter set. Send [] to clear all filters. Each filter has filter_type (FILTER_TYPE_... enum), predicate, values, optional interval/length. Call get_scanner_filter_specs for valid combinations.\n\nRestrictions:\n- Cortex-managed scans (cortex_managed: true in get_scans) are rejected with a user-friendly error.\n- Returns an error and does not apply any change if any filter fails validation.\n\nReturns the scan with its new filters and fresh live results.",
       "input_schema": {
@@ -13863,13 +13874,13 @@
       },
       "annotations": {},
       "schema_digest": "sha256:adba729581dee18de15302d82380266ae2237a20c73e3e32a7f826ddd26d4ba7",
-      "metadata_digest": "sha256:21ce3a183b776f0ac2158c846796af2bddb04fb5ab36660b9682bd280c82f51f",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Replaces a saved scan's filter set. REPLACE, not merge — the previous filters are discarded and are not recoverable through this surface. The widest blast radius of the eleven."
+      "metadata_digest": "sha256:21ce3a183b776f0ac2158c846796af2bddb04fb5ab36660b9682bd280c82f51f"
     },
     {
       "capability": "update_watchlist",
+      "disposition": "allowed",
+      "mutates": true,
+      "rationale": "Renames a watchlist or changes its icon/description. Overwrites the named fields on an existing list; does not touch its contents.",
       "provider_tool_name": "update_watchlist",
       "description": "Rename a custom watchlist or change its icon/description. Robinhood-curated lists cannot be renamed; the call will fail with 404. Provide at least one of display_name, icon_emoji, display_description.",
       "input_schema": {
@@ -13973,11 +13984,8 @@
       },
       "annotations": {},
       "schema_digest": "sha256:abbaaec3b3879a9ceccf4d5654ede2f79f4962f634f7a441222483face5f0b49",
-      "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191",
-      "disposition": "allowed",
-      "mutates": true,
-      "rationale": "Renames a watchlist or changes its icon/description. Overwrites the named fields on an existing list; does not touch its contents."
+      "metadata_digest": "sha256:559591ab9ba11fb1566fb88165d643e5445e3048d8b8bd638371c2c063776191"
     }
   ],
-  "full_manifest_digest": "sha256:b73100b38148174065064f6eced9040833900162de344a6d0eaa4c3bbbfff68d"
+  "full_manifest_digest": "sha256:6ce87eea6f47e757ab8d6b2bf169be2b2a4b5215cd58590122327e8b2aef6177"
 }

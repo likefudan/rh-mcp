@@ -118,11 +118,11 @@ the offered surface on `2026.09.30`. Descriptions remain inert in this gateway
 and must not be forwarded into a model or user-facing context.
 
 <!-- manifest-automation:current-start -->
-The current source declares package version `v0.4.4` and carries
-manifest `2026.09.30`. Its full-manifest digest is:
+The current source declares package version `v0.4.5` and carries
+manifest `2026.10.06`. Its full-manifest digest is:
 
 ```
-sha256:b73100b38148174065064f6eced9040833900162de344a6d0eaa4c3bbbfff68d
+sha256:d40f713568caac4ba2bc166a873084ad2e2ae7d9780b6c3f31280e44de37764f
 ```
 
 The version and digest belong to this source tree. A GitHub release exists only
